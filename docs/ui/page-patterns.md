@@ -155,7 +155,7 @@ Dashboard is the overview for installed Agents and usage, not a second Connectio
 Connections is the general login list in a full-height workbench split. Logins created or imported here, including ones later selected into a local route, are Connections-managed. Editing a shared official login in the pool copies it to a Routes-owned row; the Connections original stays. Routes-owned official login and API Key entries marked “仅用于本机路由” use `home=route_pool` and may not appear here. Connections is not a list of generated route providers and it does not expose internal binding implementation names.
 
 - The top `AgentTabStrip` filters the list. Do not add a second row of “official / API key / unknown” filter chips.
-- The **添加登录** menu is **导入本机登录** / **官方登录** / **添加 API Key**, each with a one-line description; when a login is found on this computer the import item is highlighted. Official login and API Key are stored as separate rows. WorkBuddy custom models and ZCode catalog providers split into one login per directory row; desktop package logins are not imported.
+- The **添加登录** menu is **官方登录** / **添加 API Key**. **导入本机登录** appears only when Settings → Preferences **自动导入本机登录** is off (that preference defaults on and auto-imports detected this-computer logins). When the import item is shown, each add-menu row has a one-line description; if a login is found on this computer the import item is highlighted. Official login and API Key are stored as separate rows. WorkBuddy custom models and ZCode catalog providers split into one login per directory row; desktop package logins are not imported.
 - OAuth rows use an identity/person icon; API key rows use a key icon. The icon has an accessible label and a short hint.
 - Click the login **name** to open the right-hand detail. The pane is a quiet table without section titles or column headers. Rows stay in this order: status, usage, where it connects and models, who is using it, then related files and records. Related config files, last used, and added time stay expanded; record ID and import source sit under collapsed **更多**. The rest of the row (switch, edit, menu, sort) does not open inspect. If the detail pane is already open, clicking another row’s empty area switches the detail; a closed pane stays closed. The list uses masked labels; the file preview shows the stored snapshot.
 - The official-login wait page does not show internal status or login file paths; failure keeps **重试** as the primary action.
@@ -164,7 +164,7 @@ Connections is the general login list in a full-height workbench split. Logins c
 
 ### Features (Connections)
 
-- Full-height workbench split: `AgentTabStrip` filters; add menu **导入本机登录** / **官方登录** / **添加 API Key**.
+- Full-height workbench split: `AgentTabStrip` filters; **添加登录** menu **官方登录** / **添加 API Key**, plus **导入本机登录** only when auto-import is off.
 - Official login and API Key stored as separate rows; WorkBuddy custom models and ZCode catalog providers split one login per directory row; desktop package logins are not imported.
 - Click login **name** for right-hand detail (headerless labeled rows: status, usage, where it connects / models, who is using it, files and records; no section titles). Row menu only **取消添加** when that login is already written into the tool.
 - Distinct states for missing data vs a genuinely empty login list. Recycle bin restores to Connections only.

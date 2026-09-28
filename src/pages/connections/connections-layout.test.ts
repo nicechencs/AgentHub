@@ -21,7 +21,10 @@ describe('connections layout wiring', () => {
     );
     expect(page).toContain('const tabAgentIds = allowedAgents');
     expect(page).toContain('useOAuthLoginAgents(manageAuthAgentIds)');
-    expect(page).toContain('buildTicketAddMenu(manageAuthAgentIds, oauthLoginAgents)');
+    expect(page).toContain('buildTicketAddMenu(manageAuthAgentIds, oauthLoginAgents, includeImportLogin)');
+    expect(page).toContain('includeImportLogin={includeImportLogin}');
+    expect(page).toContain('showConnectionsImportLoginAction');
+    expect(page).toContain('planLocalLoginAutoImport');
     expect(page).toContain('oauthLoginAgents={oauthLoginAgents}');
     expect(page).toContain('disabled={authBlockedIds}');
     expect(page).toContain("t('connections.capability.authUnsupported')");

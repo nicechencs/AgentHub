@@ -97,6 +97,8 @@ describe('settings layout wiring', () => {
     expect(prefs).not.toContain("aria-label={t('settings.data.usageIntervalLabel')}");
     expect(prefs).toContain("t('settings.general.chatOutlineLabel')");
     expect(prefs).not.toContain("aria-label={t('settings.general.chatOutlineLabel')}");
+    expect(prefs).toContain("t('settings.general.autoImportLocalLoginLabel')");
+    expect(prefs).not.toContain("aria-label={t('settings.general.autoImportLocalLoginLabel')}");
     expect(shared).toContain('aria-labelledby');
     expect(shared).toContain('aria-describedby');
   });
@@ -111,6 +113,7 @@ describe('settings layout wiring', () => {
     const keys = [
       'sectionAppearance',
       'sectionLaunch',
+      'sectionConnections',
       'sectionRoutes',
       'sectionSkills',
       'sectionUsage',

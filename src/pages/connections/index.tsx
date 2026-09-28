@@ -104,8 +104,15 @@ import {
 import { listConnectionUsage } from '@/lib/api/usage';
 import type { ConnectionUsageSummary } from '@/lib/backend/contracts/usage-types';
 import { importProviderLive } from '@/lib/api/provider';
+import { getSettings } from '@/lib/api/settings';
 import type { Account, Provider } from '@/lib/types';
 import { StorageKey } from '@/lib/ui-preferences';
+import {
+  canAutoImportProbe,
+  planLocalLoginAutoImport,
+  resolveAutoImportLocalLogin,
+  showConnectionsImportLoginAction,
+} from './local-login-auto-import';
 
 type ConnectionInspect =
   | { kind: 'provider'; agentId: AgentKey; mode: 'add' | 'edit'; provider: Provider | null }
@@ -222,6 +229,9 @@ export default function ConnectionsPage() {
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [discoveryDismissed, setDiscoveryDismissed] = useState(false);
   const discoveryProbeGen = useRef(0);
+  const [autoImportLocalLogin, setAutoImportLocalLogin] = useState(true);
+  const autoImportTriedRef = useRef(new Set<string>());
+  const autoImportGen = useRef(0);
   const {
     loginImportOpen,
     setLoginImportOpen,
@@ -282,6 +292,22 @@ export default function ConnectionsPage() {
     );
   }, [discoveryAgentId, pool.state]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void getSettings()
+      .then((settings) => {
+        if (!cancelled) setAutoImportLocalLogin(resolveAutoImportLocalLogin(settings.autoImportLocalLogin));
+      })
+      .catch(() => {
+        if (!cancelled) setAutoImportLocalLogin(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const includeImportLogin = showConnectionsImportLoginAction(autoImportLocalLogin);
+
   const loadWallet = useCallback(async (): Promise<boolean> => {
     try {
       await walletReload();
@@ -321,6 +347,92 @@ export default function ConnectionsPage() {
   }, [tabAgentIds, visibleWallet]);
 
   const poolReload = pool.reload;
+
+  useEffect(() => {
+    if (!resolveAutoImportLocalLogin(autoImportLocalLogin)) return;
+    if (pool.state !== 'ready' && pool.state !== 'partial') return;
+    if (loginImportOpen || pendingGuide?.intent === 'import-login') return;
+    const pending = planLocalLoginAutoImport({
+      autoImportLocalLogin,
+      agentIds: manageAuthAgentIds,
+      alreadyTried: autoImportTriedRef.current,
+    });
+    if (pending.length === 0) return;
+
+    const generation = ++autoImportGen.current;
+    void (async () => {
+      const importedLabels: string[] = [];
+      let lastError: string | null = null;
+      for (const agentId of pending) {
+        if (autoImportGen.current !== generation) return;
+        if (autoImportTriedRef.current.has(agentId)) continue;
+        autoImportTriedRef.current.add(agentId);
+        let probe: LiveAuthProbe;
+        try {
+          probe = await probeLiveAuth(agentId);
+        } catch {
+          continue;
+        }
+        if (autoImportGen.current !== generation) return;
+        if (!canAutoImportProbe({
+          agentId,
+          poolState: pool.state,
+          probe,
+          accounts: accountsForAgent(pool.accounts, agentId),
+          providers: providersForAgent(pool.providers, agentId),
+          accountsFailed: Boolean(pool.errors.accounts),
+          providersFailed: Boolean(pool.errors.providers),
+        })) {
+          continue;
+        }
+        try {
+          const imported =
+            liveImportAction(liveImportDialogMode(probe), agentId) === 'provider'
+              ? await importProviderLive(agentId)
+              : await importCurrentLogin(agentId);
+          if (autoImportGen.current !== generation) return;
+          const label = 'label' in imported ? imported.label : imported.name;
+          importedLabels.push(label);
+        } catch (e) {
+          lastError = e instanceof Error ? e.message : String(e);
+        }
+      }
+      if (autoImportGen.current !== generation) return;
+      if (importedLabels.length > 0) {
+        toast({
+          title: importedLabels.length === 1
+            ? t('connections.import.toastOk')
+            : t('connections.import.toastOkMany', { n: importedLabels.length }),
+          description: importedLabels.length === 1
+            ? t('connections.import.toastOkDesc', { label: importedLabels[0] })
+            : undefined,
+          variant: 'success',
+        });
+        await poolReload().catch(() => {});
+        await loadWallet();
+      } else if (lastError) {
+        toast({
+          title: t('connections.import.toastFail'),
+          description: lastError,
+          variant: 'danger',
+        });
+      }
+    })();
+  }, [
+    autoImportLocalLogin,
+    loginImportOpen,
+    loadWallet,
+    manageAuthAgentIds,
+    pendingGuide,
+    pool.accounts,
+    pool.errors.accounts,
+    pool.errors.providers,
+    pool.providers,
+    pool.state,
+    poolReload,
+    t,
+    toast,
+  ]);
 
   const handleTrashChanged = useCallback(() => {
     void Promise.all([loadWallet(), poolReload().catch(() => {})]);
@@ -606,7 +718,11 @@ export default function ConnectionsPage() {
     providersFailed: Boolean(pool.errors.providers),
   });
   const showDiscoveryBanner =
-    !discoveryLoading && !discoveryDismissed && !loginImportOpen && discoveryKind !== null;
+    includeImportLogin
+    && !discoveryLoading
+    && !discoveryDismissed
+    && !loginImportOpen
+    && discoveryKind !== null;
 
   const confirmImportLogin = async () => {
     if (!activeImportGate.enabled) return;
@@ -855,7 +971,7 @@ export default function ConnectionsPage() {
         />
         <div className={pageRhythm.chromeActions}>
           <TicketAddMenu
-            agents={buildTicketAddMenu(manageAuthAgentIds, oauthLoginAgents)}
+            agents={buildTicketAddMenu(manageAuthAgentIds, oauthLoginAgents, includeImportLogin)}
             focusedAgentId={filterAgent === 'all' ? null : filterAgent}
             onImportLogin={(id) => openTicketAdd('import-login', id)}
             onOauth={(id) => openTicketAdd('oauth', id)}
@@ -944,6 +1060,7 @@ export default function ConnectionsPage() {
             onAddKey={(id) => openTicketAdd('api-key', id)}
             onImportLogin={(id) => openTicketAdd('import-login', id)}
             onOauth={(id) => openTicketAdd('oauth', id)}
+            includeImportLogin={includeImportLogin}
           />
         </>
       )}

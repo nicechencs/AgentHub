@@ -28,6 +28,9 @@ pub struct AppSettings {
     /// When true, creating a route with the same URL under the same Agent
     /// updates the existing route row instead of inserting a new one. Default on.
     pub update_duplicate_route_url: bool,
+    /// When true, Connections automatically imports this computer's detected
+    /// official / local logins. Default on. Manual import UI shows only when off.
+    pub auto_import_local_login: bool,
 }
 
 impl Default for AppSettings {
@@ -43,6 +46,7 @@ impl Default for AppSettings {
             keep_live_file_copies: true,
             warn_duplicate_route_credential: true,
             update_duplicate_route_url: true,
+            auto_import_local_login: true,
         }
     }
 }
