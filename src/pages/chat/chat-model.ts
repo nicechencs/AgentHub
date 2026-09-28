@@ -478,10 +478,28 @@ export function singleAgentConversationPatch(
   return { agentIds: [agentIds[0]] };
 }
 
+/** Folder of the most recently updated conversation that has one. */
+export function lastConversationCwd(
+  conversations: readonly Pick<Conversation, 'cwd' | 'updatedAt'>[] | null | undefined,
+): string | null {
+  let best: { cwd: string; updatedAt: string } | null = null;
+  for (const c of conversations ?? []) {
+    const cwd = c.cwd?.trim();
+    if (!cwd) continue;
+    if (!best || c.updatedAt > best.updatedAt) best = { cwd, updatedAt: c.updatedAt };
+  }
+  return best?.cwd ?? null;
+}
+
+/**
+ * New chat: active Agent + folder. Folder = active's, else the last folder used
+ * in any conversation. Still null → the desktop backend falls back to the user's home.
+ */
 export function newConversationDefaults(
   active: Conversation | null,
   agentStatus: AgentStatus[],
   savedLoginAgentIds?: ReadonlySet<AgentKey>,
+  conversations?: readonly Pick<Conversation, 'cwd' | 'updatedAt'>[],
 ): { agentIds: AgentKey[]; cwd: string | null } {
   const hidden = new Set(agentStatus.filter((a) => a.hidden).map((a) => a.agentId));
   const uninstalled = new Set(
@@ -493,8 +511,10 @@ export function newConversationDefaults(
   const fallback = agentStatus.find((a) => isChatAgentSelectable(a, authOpts(a.agentId)))?.agentId;
   const fallbackIds: AgentKey[] = fallback ? [fallback] : [];
 
+  const lastCwd = lastConversationCwd(conversations);
+
   if (!active) {
-    return { agentIds: fallbackIds, cwd: null };
+    return { agentIds: fallbackIds, cwd: lastCwd };
   }
 
   const byId = new Map(agentStatus.map((a) => [a.agentId, a]));
@@ -505,7 +525,7 @@ export function newConversationDefaults(
 
   return {
     agentIds: kept.length > 0 ? [kept[0]] : fallbackIds,
-    cwd: active.cwd ?? null,
+    cwd: active.cwd?.trim() ? active.cwd : lastCwd,
   };
 }
 

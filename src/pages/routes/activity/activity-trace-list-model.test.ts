@@ -47,7 +47,7 @@ describe('activity-trace-list-model', () => {
     expect(activityTraceColumnLabel('firstToken', t)).toBe('首字');
     expect(activityTraceColumnLabel('duration', t)).toBe('请求时长');
     expect(activityTraceColumnLabel('tokens', t)).toBe('Token');
-    expect(activityTraceColumnLabel('stages', t)).toBe('五段');
+    expect(activityTraceColumnLabel('stages', t)).toBe('各阶段耗时');
     expect(activityTraceColumnLabel('route', t)).toBe('路由');
     expect(activityTraceStageLabel('local_auth', t)).toBe('本机鉴权');
     expect(activityTraceStageStatusLabel('ok', t)).toBe('成功');

@@ -75,7 +75,7 @@ describe('ChatTranscript surfaces', () => {
     expect(html).not.toContain('请帮我了解这个项目的结构和主要功能。');
   });
 
-  it('replaces starters with the first send blocker as the primary action', () => {
+  it('keeps starters next to the folder button when only the folder is missing', () => {
     const html = renderMarkup(
       createElement(ChatTranscript, {
         active: conversation(),
@@ -92,9 +92,9 @@ describe('ChatTranscript surfaces', () => {
     );
     expect(html).toContain('开始对话');
     expect(html).not.toContain(' · demo');
-    expect(html).toContain('设置工作目录');
+    expect(html).toContain('选择文件夹');
     expect(html).not.toContain('发送第一条消息');
-    expect(html).not.toContain('了解这个项目');
+    expect(html).toContain('了解这个项目');
     expect(html).not.toContain('示例只填入输入框，由你发送');
   });
 

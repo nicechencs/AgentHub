@@ -786,7 +786,7 @@ describe('plan 预览人话化', () => {
         { target: 'claude', field: 'ANTHROPIC_AUTH_TOKEN', secret: true },
       ],
     }));
-    expect(view.title).toBe('本机路由');
+    expect(view.title).toBe('本机转发');
     expect(view.experimental).toBe(true);
     expect(view.reason).toBe('用这份 Grok 登录接到 /v1/messages。');
     expect(view.notes).toEqual(['关掉会进托盘，路由继续跑。']);
@@ -812,7 +812,7 @@ describe('plan 预览人话化', () => {
         reusePath: 'local_bridge',
         serviceImpact: 'requires_local_bridge',
       }));
-      expect(view.title).toBe('本机路由');
+      expect(view.title).toBe('本机转发');
       expect(view.reason).toBe(`用这份 Codex / ChatGPT 登录接到 ${path}。`);
       expect(view.reason).not.toContain('实验');
       expect(view.reason).not.toContain('未验证');
@@ -830,7 +830,7 @@ describe('plan 预览人话化', () => {
       reusePath: 'local_bridge',
       serviceImpact: 'requires_local_bridge',
     }));
-    expect(view.title).toBe('本机路由');
+    expect(view.title).toBe('本机转发');
     expect(view.reason).toBe('用这份 Grok 登录接到 /v1/responses。');
     expect(view.reason).not.toMatch(/接到 codex/);
   });

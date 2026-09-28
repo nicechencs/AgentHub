@@ -566,7 +566,7 @@ function reusePathForPlan(plan: AdapterApplyPlan): AdapterReusePath {
 }
 
 function titleForReusePath(reusePath: AdapterReusePath, t?: TranslateFn): string {
-  if (reusePath === 'local_bridge') return t ? t('kind.route.localRoute') : '本机路由';
+  if (reusePath === 'local_bridge') return t ? t('kind.route.localRoute') : '本机转发';
   if (reusePath === 'api_endpoint') return '';
   if (reusePath === 'native_subscription') return t ? t('kind.route.reuseLogin') : '用这份登录';
   return t ? t('kind.route.unsupported') : '当前不支持';
@@ -700,7 +700,7 @@ function poolFailureMessage(
   const parts: string[] = [];
   if (errors.accounts) parts.push(t ? t('connect.result.partAccounts') : '登录');
   if (errors.providers) parts.push(t ? t('connect.result.partProviders') : '供应商');
-  if (profilesError) parts.push(t ? t('connect.result.partProfiles') : '本机路由记录');
+  if (profilesError) parts.push(t ? t('connect.result.partProfiles') : '路由记录');
   if (parts.length === 0) return t ? t('connect.result.poolPartial') : '部分资源加载失败';
   return t
     ? t('connect.result.poolPartialParts', { parts: parts.join('、') })

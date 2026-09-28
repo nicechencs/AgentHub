@@ -629,7 +629,7 @@ export function localTokenEmptyCreateGate(
     reason: t
       ? t(needRoute ? 'routes.board.entryNeedRoute' : 'routes.tokens.createNeedPool')
       : (needRoute
-        ? '连接池已有登录。打开本机转发后，端点 Key 会出现在入口 Key 页'
+        ? '连接池已有登录。下一步：打开本机转发，然后在入口 Key 页复制或导入 Key'
         : '先在连接池加入登录'),
   };
 }

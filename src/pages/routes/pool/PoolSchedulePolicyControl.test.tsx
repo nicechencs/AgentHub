@@ -36,9 +36,9 @@ describe('pool schedule policy', () => {
         onChanged: () => {},
       }),
     ));
-    expect(markup).toContain('优先级故障转移');
-    expect(markup).toContain('轮询');
+    expect(markup).toContain('按顺序用，出错换下一个');
+    expect(markup).toContain('轮流用');
     expect(markup).toContain('aria-selected="true"');
-    expect(markup).toContain('轮询只在同一优先级');
+    expect(markup).toContain('「轮流用」只在同一优先级');
   });
 });

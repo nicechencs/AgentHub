@@ -102,7 +102,7 @@ function isMaskOnlyLabel(value: string): boolean {
 }
 
 function localRouteTitle(t?: TranslateFn): string {
-  return t ? t('kind.route.localRoute') : '本机路由';
+  return t ? t('kind.route.localRoute') : '本机转发';
 }
 
 function trashHost(item: ConnectionTrashItem): string | undefined {

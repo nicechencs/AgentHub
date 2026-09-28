@@ -4,7 +4,7 @@ description: AgentHub 用户界面、领域模型和内部实现术语的对应�
 type: reference
 audience: all
 status: current
-updated: 2026-09-20
+updated: 2026-09-28
 ---
 
 # 术语表
@@ -16,7 +16,7 @@ updated: 2026-09-20
 | Agent | `AgentId` / `AgentKey` / `AgentAdapter` | 被 AgentHub 检测、安装、配置或运行的第三方 CLI/runtime。开放注册表与新 TypeScript 契约优先 `AgentKey`；`AgentId` 为兼容别名 |
 | 登录 | account / credential / Ticket（内部） | 用户可选择的授权或 API key 记录。连接页与连接池各自管理自己添加的登录；从连接分享到池里的登录仍归连接页，直到在连接池里编辑该官方登录并保存：那时会复制成连接池自己的一份，连接页那份还在。实现中仍可能出现 Ticket，但 UI 不说“票” |
 | 官方登录 | oauth / 「官方登录」入口 | 浏览器或设备码订阅登录，与 API Key 分行保存 |
-| API Key | api_key / 「添加 API Key」 | 钥匙登录；本机若是官方登录则引导改用「导入授权」 |
+| API Key | api_key / 「添加 API Key」 | 钥匙登录；本机若是官方登录则引导改用「导入本机登录」 |
 | 相关文件 | credential files | 登录详情里记下的配置/登录文件（打码后可复制、打开所在目录） |
 | 保留本机配置副本 | `keepLiveFileCopies` | 切换/导入时把各家本机配置拷到备份目录；默认开启 |
 | 供应商 | provider | 某 Agent 的 API 端点、模型和相关配置记录 |
