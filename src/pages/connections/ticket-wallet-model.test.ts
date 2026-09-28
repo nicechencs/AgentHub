@@ -1445,7 +1445,7 @@ describe('handleTicketAddMenuSelect', () => {
 });
 
 describe('ticketAddMenuClosesOnKey', () => {
-  it('closes the expanded 添加授权 menu on Escape', () => {
+  it('closes the expanded 添加登录 menu on Escape', () => {
     expect(ticketAddMenuClosesOnKey('Escape')).toBe(true);
     expect(ticketAddMenuClosesOnKey('Esc')).toBe(true);
     expect(ticketAddMenuClosesOnKey('Enter')).toBe(false);

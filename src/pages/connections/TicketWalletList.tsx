@@ -87,7 +87,9 @@ import {
   formatCreditAmount,
   hasCreditWindow,
   hasOfficialQuotaWindow,
+  ticketAddActionDescription,
   ticketAddActionLabel,
+  ticketAddImportHighlighted,
   ticketAuthChip,
   cursorLoginKindLabel,
   ticketCardTitle,
@@ -903,9 +905,12 @@ export function TicketAddMenu({
   onOauth,
   onAddKey,
   variant = 'default',
+  importDetectedAgentId = null,
 }: {
   agents: TicketAddMenuAgent[];
   focusedAgentId?: AgentKey | null;
+  /** Discovery found a login on this computer for this Agent; highlight the import item. */
+  importDetectedAgentId?: AgentKey | null;
   onImportLogin?: (agentId: AgentKey) => void;
   onOauth?: (agentId: AgentKey) => void;
   onAddKey?: (agentId: AgentKey) => void;
@@ -930,9 +935,12 @@ export function TicketAddMenu({
   }, [open]);
 
   const renderActions = (agent: TicketAddMenuAgent) =>
-    agent.actions.map((action) => (
+    agent.actions.map((action) => {
+      const highlighted = ticketAddImportHighlighted(action.kind, agent.id, importDetectedAgentId);
+      return (
       <DropdownMenuItem
         key={action.kind}
+        className={cn('flex-col items-start gap-0.5', highlighted && 'bg-accent-subtle')}
         disabled={
           action.kind === 'import-login'
             ? !onImportLogin
@@ -949,9 +957,18 @@ export function TicketAddMenu({
           })
         }
       >
-        {ticketAddActionLabel(action.kind, t)}
+        <span className={cn('flex items-center gap-2', highlighted && 'font-medium text-accent')}>
+          {ticketAddActionLabel(action.kind, t)}
+          {highlighted ? (
+            <Badge variant="accent" className="px-1.5 py-0 text-meta">
+              {t('connections.list.importLoginDetected')}
+            </Badge>
+          ) : null}
+        </span>
+        <span className="text-meta text-muted">{ticketAddActionDescription(action.kind, t)}</span>
       </DropdownMenuItem>
-    ));
+      );
+    });
 
   return (
     <DropdownMenu
@@ -969,7 +986,7 @@ export function TicketAddMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        className="min-w-[12rem]"
+        className="min-w-[16rem]"
         onCloseAutoFocus={(event) => event.preventDefault()}
         onEscapeKeyDown={(event) => {
           event.preventDefault();

@@ -848,6 +848,7 @@ export default function ConnectionsPage() {
             onImportLogin={(id) => openTicketAdd('import-login', id)}
             onOauth={(id) => openTicketAdd('oauth', id)}
             onAddKey={(id) => openTicketAdd('api-key', id)}
+            importDetectedAgentId={discoveryKind ? discoveryAgentId : null}
           />
         </div>
       </div>
