@@ -152,6 +152,66 @@ fn apply_kimi_settings_model_override(toml_text: &str, model: &str) -> Result<St
     Ok(doc.to_string())
 }
 
+fn grok_document_has_api_key(doc: &toml_edit::DocumentMut) -> bool {
+    let nonempty = |item: Option<&toml_edit::Item>| {
+        item.and_then(toml_edit::Item::as_str)
+            .is_some_and(|value| !value.trim().is_empty())
+    };
+    if nonempty(doc.get("api_key")) {
+        return true;
+    }
+    doc.get("model")
+        .and_then(toml_edit::Item::as_table)
+        .is_some_and(|models| {
+            models
+                .iter()
+                .any(|(_, item)| nonempty(item.as_table().and_then(|entry| entry.get("api_key"))))
+        })
+}
+
+/// Copy desired auth keys onto the live table.
+///
+/// An API-key snapshot that predates `[auth]` still sets `preferred_method`
+/// without deleting OIDC or the other login settings.
+fn merge_grok_auth_preference(live: &mut toml_edit::DocumentMut, desired: &toml_edit::DocumentMut) {
+    let desired_pairs: Vec<(String, toml_edit::Item)> = desired
+        .get("auth")
+        .and_then(toml_edit::Item::as_table)
+        .map(|table| {
+            table
+                .iter()
+                .map(|(key, item)| (key.to_string(), item.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let desired_has_auth = desired
+        .get("auth")
+        .and_then(toml_edit::Item::as_table)
+        .is_some();
+    let has_api_key = grok_document_has_api_key(desired);
+    if !desired_has_auth && !has_api_key {
+        return;
+    }
+    if live
+        .get("auth")
+        .and_then(toml_edit::Item::as_table)
+        .is_none()
+    {
+        live.remove("auth");
+        live["auth"] = toml_edit::table();
+    }
+    let Some(auth) = live.get_mut("auth").and_then(toml_edit::Item::as_table_mut) else {
+        return;
+    };
+    if desired_has_auth {
+        for (key, item) in desired_pairs {
+            auth.insert(&key, item);
+        }
+        return;
+    }
+    auth.insert("preferred_method", toml_edit::value("api_key"));
+}
+
 fn merge_toml_provider_config(expected: AgentId, live: &str, desired: &str) -> Result<String> {
     use toml_edit::DocumentMut;
 
@@ -177,7 +237,13 @@ fn merge_toml_provider_config(expected: AgentId, live: &str, desired: &str) -> R
         live_doc.as_table_mut().remove(key);
     }
     for (key, item) in desired_doc.iter() {
+        if expected == AgentId::Grok && key == "auth" {
+            continue;
+        }
         live_doc.as_table_mut().insert(key, item.clone());
+    }
+    if expected == AgentId::Grok {
+        merge_grok_auth_preference(&mut live_doc, &desired_doc);
     }
 
     if expected == AgentId::Kimi {

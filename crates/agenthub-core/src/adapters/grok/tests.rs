@@ -92,6 +92,36 @@ api_backend = "responses"
 }
 
 #[test]
+fn grok_live_base_url_prefers_active_provider_table() {
+    let _guard = GROK_HOME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = tempdir().unwrap();
+    let prev = std::env::var_os("GROK_HOME");
+    std::env::set_var("GROK_HOME", dir.path());
+    fs::write(
+        dir.path().join("config.toml"),
+        r#"[models]
+default = "grok-4.7"
+
+[model_providers.proxy]
+base_url = "https://provider.example/v1"
+
+[model."grok-4.7"]
+model_provider = "proxy"
+base_url = "https://inline.example/v1"
+"#,
+    )
+    .unwrap();
+    let endpoint = super::read_grok_live_base_url();
+    match prev {
+        Some(value) => std::env::set_var("GROK_HOME", value),
+        None => std::env::remove_var("GROK_HOME"),
+    }
+    assert_eq!(endpoint.as_deref(), Some("https://provider.example/v1"));
+}
+
+#[test]
 fn grok_api_key_and_oauth_sets_also_present() {
     let dir = tempdir().unwrap();
     let config = dir.path().join("config.toml");
@@ -757,7 +787,7 @@ fn expand_grok_bundle_splits_oauth_people_and_api_key() {
         credentials: serde_json::json!({
             "format": "grok_bundle",
             "api_key": "xai-file-key",
-            "content": "[models]\ndefault = \"grok\"\n\n[model.\"grok\"]\nmodel = \"grok-4.5\"\nbase_url = \"https://relay.example/v1\"\napi_key = \"xai-file-key\"\napi_backend = \"responses\"\n\n[mcp_servers.echo]\ncommand = \"echo\"\n",
+            "content": "[models]\ndefault = \"grok\"\n\n[model_providers.proxy]\nbase_url = \"https://relay.example/v1\"\napi_backend = \"responses\"\n\n[model.\"grok\"]\nmodel = \"grok-4.5\"\nmodel_provider = \"proxy\"\napi_key = \"xai-file-key\"\n\n[mcp_servers.echo]\ncommand = \"echo\"\n",
             "auth": {
                 "https://auth.x.ai::client": {
                     "email": "a@example.com",
@@ -790,6 +820,7 @@ fn expand_grok_bundle_splits_oauth_people_and_api_key() {
     assert_eq!(keys.len(), 1);
     assert_eq!(keys[0].credentials["format"], "api_key");
     assert_eq!(keys[0].credentials["api_key"], "xai-file-key");
+    assert_eq!(keys[0].credentials["model_provider"], "proxy");
     assert_eq!(keys[0].credentials["base_url"], "https://relay.example/v1");
     assert_eq!(keys[0].credentials["api_backend"], "responses");
     assert!(keys[0].credentials["content"]
@@ -815,6 +846,7 @@ default = "grok"
 [model."grok"]
 model = "old-model"
 base_url = "https://old.example/v1"
+api_backend = "chat_completions"
 
 [mcp_servers.echo]
 command = "echo"
@@ -850,6 +882,344 @@ command = "echo"
     assert!(text.contains("context_window = 500000"));
     assert!(text.contains("[mcp_servers.echo]"));
     assert!(text.contains("command = \"echo\""));
+    let doc = text.parse::<toml_edit::DocumentMut>().unwrap();
+    assert_eq!(
+        doc["model_providers"]["proxy"]["base_url"].as_str(),
+        Some("https://relay.example/v1")
+    );
+    assert_eq!(
+        doc["model_providers"]["proxy"]["api_backend"].as_str(),
+        Some("responses")
+    );
+    assert_eq!(doc["auth"]["preferred_method"].as_str(), Some("api_key"));
+    assert!(doc["model"]["grok"].get("base_url").is_none());
+    assert!(doc["model"]["grok"].get("api_backend").is_none());
+    assert!(doc["model"]["grok"].get("env_key").is_none());
+}
+
+#[test]
+fn account_switch_uses_saved_provider_content_when_live_config_is_missing() {
+    let _guard = GROK_HOME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = tempdir().unwrap();
+    let prev = std::env::var_os("GROK_HOME");
+    std::env::set_var("GROK_HOME", dir.path());
+    let result = GrokAdapter.apply_account(&LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        credentials: serde_json::json!({
+            "format": "api_key",
+            "api_key": "xai-saved-key",
+            "alias": "grok-4.7",
+            "content": "[models]\ndefault = \"grok-4.6\"\n\n[model_providers.proxy]\nbase_url = \"https://saved.example/v1\"\napi_backend = \"responses\"\n\n[model.\"grok-4.7\"]\nmodel_provider = \"proxy\"\napi_key = \"***\"\n\n[model.\"grok-4.6\"]\nmodel_provider = \"proxy\"\napi_key = \"other-key\"\n"
+        }),
+        label_hint: Some("API Key".into()),
+        extra: serde_json::json!({ "source": "config.toml" }),
+    });
+    let text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    match prev {
+        Some(value) => std::env::set_var("GROK_HOME", value),
+        None => std::env::remove_var("GROK_HOME"),
+    }
+    result.unwrap();
+    let doc = text.parse::<toml_edit::DocumentMut>().unwrap();
+    assert_eq!(
+        doc["model_providers"]["proxy"]["base_url"].as_str(),
+        Some("https://saved.example/v1")
+    );
+    assert_eq!(
+        doc["model"]["grok-4.7"]["api_key"].as_str(),
+        Some("xai-saved-key")
+    );
+    assert_eq!(doc["models"]["default"].as_str(), Some("grok-4.7"));
+    assert_eq!(doc["models"]["web_search"].as_str(), Some("grok-4.7"));
+    assert_eq!(doc["auth"]["preferred_method"].as_str(), Some("api_key"));
+}
+
+#[test]
+fn account_switch_recovers_saved_alias_instead_of_the_file_default() {
+    let _guard = GROK_HOME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = tempdir().unwrap();
+    let prev = std::env::var_os("GROK_HOME");
+    std::env::set_var("GROK_HOME", dir.path());
+    let result = GrokAdapter.apply_account(&LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        credentials: serde_json::json!({
+            "format": "api_key",
+            "api_key": "xai-saved-key",
+            "alias": "grok-4.7",
+            "content": "[models]\ndefault = \"grok-4.6\"\n\n[model_providers.provider_a]\nbase_url = \"https://provider-a.example/v1\"\napi_backend = \"chat_completions\"\n\n[model_providers.provider_b]\nbase_url = \"https://provider-b.example/v1\"\napi_backend = \"responses\"\n\n[model.\"grok-4.7\"]\nmodel = \"grok-4.7\"\nmodel_provider = \"provider_a\"\napi_key = \"***\"\n\n[model.\"grok-4.6\"]\nmodel = \"grok-4.6\"\nmodel_provider = \"provider_b\"\napi_key = \"other-key\"\n"
+        }),
+        label_hint: Some("API Key".into()),
+        extra: serde_json::json!({ "source": "config.toml" }),
+    });
+    let text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    match prev {
+        Some(value) => std::env::set_var("GROK_HOME", value),
+        None => std::env::remove_var("GROK_HOME"),
+    }
+    result.unwrap();
+    let doc = text.parse::<toml_edit::DocumentMut>().unwrap();
+    assert_eq!(doc["models"]["default"].as_str(), Some("grok-4.7"));
+    assert_eq!(
+        doc["model"]["grok-4.7"]["model_provider"].as_str(),
+        Some("provider_a")
+    );
+    assert_eq!(
+        doc["model_providers"]["provider_a"]["base_url"].as_str(),
+        Some("https://provider-a.example/v1")
+    );
+    assert_eq!(
+        doc["model_providers"]["provider_a"]["api_backend"].as_str(),
+        Some("chat_completions")
+    );
+    assert_eq!(
+        doc["model_providers"]["provider_b"]["base_url"].as_str(),
+        Some("https://provider-b.example/v1")
+    );
+    assert!(doc["model"]["grok-4.7"].get("api_backend").is_none());
+}
+
+#[test]
+fn account_switch_restores_provider_link_and_syncs_only_matching_alias_keys() {
+    let _guard = GROK_HOME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = tempdir().unwrap();
+    let prev = std::env::var_os("GROK_HOME");
+    std::env::set_var("GROK_HOME", dir.path());
+    fs::write(
+        dir.path().join("config.toml"),
+        r#"[models]
+default = "grok"
+web_search = "grok"
+
+[model_providers.provider_a]
+base_url = "https://provider-a.example/v1"
+api_backend = "responses"
+keep_a = "yes"
+
+[model_providers.provider_b]
+base_url = "https://provider-b.example/v1"
+api_backend = "responses"
+keep_b = "yes"
+
+[model."grok"]
+model = "grok-4.7"
+model_provider = "provider_b"
+api_key = "live-target-b"
+
+[model."sibling_same"]
+model = "grok-4.6"
+model_provider = "provider_a"
+api_key = "live-sibling-b"
+env_key = "STALE_SIBLING_ENV"
+metadata = "keep-sibling"
+
+[model."sibling_other"]
+model = "grok-4.5"
+model_provider = "provider_b"
+api_key = "live-other-b"
+env_key = "KEEP_OTHER_ENV"
+"#,
+    )
+    .unwrap();
+
+    let result = GrokAdapter.apply_account(&LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        credentials: serde_json::json!({
+            "format": "api_key",
+            "api_key": "account-a-key",
+            "alias": "grok",
+            "content": "[models]\ndefault = \"grok\"\n\n[model_providers.provider_a]\nbase_url = \"https://provider-a.example/v1\"\napi_backend = \"responses\"\n\n[model.\"grok\"]\nmodel = \"grok-4.7\"\nmodel_provider = \"provider_a\"\napi_key = \"***\"\n"
+        }),
+        label_hint: Some("API Key A".into()),
+        extra: serde_json::json!({ "source": "config.toml" }),
+    });
+    let text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    match prev {
+        Some(value) => std::env::set_var("GROK_HOME", value),
+        None => std::env::remove_var("GROK_HOME"),
+    }
+    result.unwrap();
+
+    let doc = text.parse::<toml_edit::DocumentMut>().unwrap();
+    assert_eq!(doc["models"]["default"].as_str(), Some("grok"));
+    assert_eq!(doc["models"]["web_search"].as_str(), Some("grok"));
+    assert_eq!(
+        doc["model"]["grok"]["model_provider"].as_str(),
+        Some("provider_a")
+    );
+    assert_eq!(
+        doc["model"]["grok"]["api_key"].as_str(),
+        Some("account-a-key")
+    );
+    assert_eq!(
+        doc["model"]["sibling_same"]["api_key"].as_str(),
+        Some("account-a-key")
+    );
+    assert!(doc["model"]["sibling_same"].get("env_key").is_none());
+    assert_eq!(
+        doc["model"]["sibling_same"]["metadata"].as_str(),
+        Some("keep-sibling")
+    );
+    assert_eq!(
+        doc["model"]["sibling_other"]["api_key"].as_str(),
+        Some("live-other-b")
+    );
+    assert_eq!(
+        doc["model"]["sibling_other"]["env_key"].as_str(),
+        Some("KEEP_OTHER_ENV")
+    );
+    assert_eq!(
+        doc["model_providers"]["provider_a"]["base_url"].as_str(),
+        Some("https://provider-a.example/v1")
+    );
+    assert_eq!(
+        doc["model_providers"]["provider_b"]["base_url"].as_str(),
+        Some("https://provider-b.example/v1")
+    );
+    assert_eq!(
+        doc["model_providers"]["provider_a"]["keep_a"].as_str(),
+        Some("yes")
+    );
+    assert_eq!(
+        doc["model_providers"]["provider_b"]["keep_b"].as_str(),
+        Some("yes")
+    );
+}
+
+#[test]
+fn oauth_switch_clears_api_keys_on_every_model() {
+    let _guard = GROK_HOME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = tempdir().unwrap();
+    let prev = std::env::var_os("GROK_HOME");
+    std::env::set_var("GROK_HOME", dir.path());
+    fs::write(
+        dir.path().join("config.toml"),
+        r#"[models]
+default = "grok-4.7"
+
+[auth]
+preferred_method = "api_key"
+keep_this = "yes"
+
+[model_providers.proxy]
+base_url = "https://relay.example/v1"
+
+[model."grok-4.7"]
+model_provider = "proxy"
+api_key = "xai-live-key"
+env_key = "ACTIVE_GROK_KEY"
+
+[model."sibling"]
+model_provider = "proxy"
+api_key = "sibling-key"
+env_key = "SIBLING_ENV"
+metadata = "keep-sibling"
+"#,
+    )
+    .unwrap();
+    let result = GrokAdapter.apply_account(&LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: serde_json::json!({
+            "format": "auth_json",
+            "body": {
+                "access_token": "grok-oauth-access",
+                "refresh_token": "grok-oauth-refresh"
+            }
+        }),
+        label_hint: Some("grok-oauth".into()),
+        extra: serde_json::json!({ "source": "auth.json" }),
+    });
+    let config_text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    match prev {
+        Some(value) => std::env::set_var("GROK_HOME", value),
+        None => std::env::remove_var("GROK_HOME"),
+    }
+    result.unwrap();
+    let doc = config_text.parse::<toml_edit::DocumentMut>().unwrap();
+    assert!(doc["model"]["grok-4.7"].get("api_key").is_none());
+    assert!(doc["model"]["sibling"].get("api_key").is_none());
+    assert!(doc["model"]["sibling"].get("env_key").is_none());
+    assert_eq!(
+        doc["model"]["sibling"]["metadata"].as_str(),
+        Some("keep-sibling")
+    );
+    assert_eq!(doc["auth"]["keep_this"].as_str(), Some("yes"));
+    assert!(doc["auth"].get("preferred_method").is_none());
+}
+
+#[test]
+fn oauth_switch_clears_api_key_preference_and_provider_endpoint() {
+    let _guard = GROK_HOME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = tempdir().unwrap();
+    let prev = std::env::var_os("GROK_HOME");
+    std::env::set_var("GROK_HOME", dir.path());
+    fs::write(
+        dir.path().join("config.toml"),
+        r#"env_key = "ROOT_GROK_KEY"
+
+[models]
+default = "grok-4.7"
+web_search = "grok-4.7"
+
+[auth]
+preferred_method = "api_key"
+keep_this = "yes"
+
+[model_providers.proxy]
+base_url = "https://relay.example/v1"
+api_backend = "responses"
+
+[model."grok-4.7"]
+model_provider = "proxy"
+api_key = "xai-live-key"
+env_key = "ACTIVE_GROK_KEY"
+model = "grok-4.7"
+"#,
+    )
+    .unwrap();
+    let result = GrokAdapter.apply_account(&LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: serde_json::json!({
+            "format": "auth_json",
+            "body": {
+                "access_token": "grok-oauth-access",
+                "refresh_token": "grok-oauth-refresh"
+            }
+        }),
+        label_hint: Some("grok-oauth".into()),
+        extra: serde_json::json!({ "source": "auth.json" }),
+    });
+    let config_text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    let auth_text = fs::read_to_string(dir.path().join("auth.json")).unwrap();
+    match prev {
+        Some(value) => std::env::set_var("GROK_HOME", value),
+        None => std::env::remove_var("GROK_HOME"),
+    }
+    result.unwrap();
+
+    let doc = config_text.parse::<toml_edit::DocumentMut>().unwrap();
+    assert!(doc["model"]["grok-4.7"].get("api_key").is_none());
+    assert!(doc["model"]["grok-4.7"].get("env_key").is_none());
+    assert!(doc.get("env_key").is_none());
+    assert!(doc["model_providers"]["proxy"].get("base_url").is_none());
+    assert!(doc["auth"].get("preferred_method").is_none());
+    assert_eq!(doc["auth"]["keep_this"].as_str(), Some("yes"));
+    assert!(auth_text.contains("grok-oauth-access"));
+    assert!(auth_text.contains("grok-oauth-refresh"));
 }
 
 #[test]

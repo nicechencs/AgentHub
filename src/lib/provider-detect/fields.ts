@@ -39,6 +39,14 @@ function sanitizeSecretForForm(v: string): string {
   return looksRedactedOrPlaceholder(v) ? '' : v;
 }
 
+function sanitizeGrokApiKeyForForm(v: string): string {
+  const trimmed = v.trim();
+  if (/替换|第三方给你的key|your[-_ ]?api[-_ ]?key|^x{4,}$/i.test(trimmed)) {
+    return '';
+  }
+  return sanitizeSecretForForm(trimmed);
+}
+
 /** Empty / `***` / last4 masks are never a new secret. */
 export function writableSecret(v: string): string {
   const trimmed = v.trim();
@@ -676,6 +684,19 @@ function tomlTableRemove(text: string, table: string): string {
   return joined.replace(/\n{3,}/g, '\n\n');
 }
 
+function tomlTableUnset(text: string, table: string, key: string): string {
+  const header = `[${table}]`;
+  const start = text.indexOf(header);
+  if (start < 0) return text;
+  const bodyStart = start + header.length;
+  const after = text.slice(bodyStart);
+  const nextRel = after.search(/^\s*\[/m);
+  const body = nextRel < 0 ? after : after.slice(0, nextRel);
+  const rest = nextRel < 0 ? '' : after.slice(nextRel);
+  const nextBody = tomlUnset(body, key);
+  return text.slice(0, bodyStart) + nextBody + rest;
+}
+
 function kimiModelsTableName(text: string, alias: string): string {
   const quoted = `models."${alias}"`;
   const bare = `models.${alias}`;
@@ -733,6 +754,67 @@ function grokModelTable(text: string, alias: string): string {
   return quoted;
 }
 
+function grokProviderTable(provider: string): string {
+  return `model_providers.${provider}`;
+}
+
+function grokModelProvider(text: string, table: string): string {
+  return tomlTableGet(text, table, 'model_provider').trim();
+}
+
+function grokDraftDisplayName(model: string): string {
+  const trimmed = model.trim();
+  const suffix = trimmed.replace(/^grok(?:[-_. ]+)?/i, '').trim();
+  return `Grok ${suffix || trimmed}`.trim();
+}
+
+function renameGrokAlias(text: string, from: string, to: string): string {
+  if (!from || !to || from === to) return text;
+  const escapedFrom = escapeRegExp(from);
+  const escapedTo = to.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  let out = text.replace(
+    new RegExp(`^(\\[model\\."${escapedFrom}"\\])\\s*$`, 'm'),
+    `[model."${escapedTo}"]`,
+  );
+  out = out.replace(
+    new RegExp(`^(\\[model\\.${escapedFrom}\\])\\s*$`, 'm'),
+    `[model.${escapedTo}]`,
+  );
+  for (const key of ['default', 'web_search']) {
+    out = out.replace(
+      new RegExp(`^(\\s*${key}\\s*=\\s*")${escapedFrom}("\\s*)$`, 'm'),
+      `$1${escapedTo}$2`,
+    );
+  }
+  const table = grokModelTable(out, to);
+  const displayName = grokDraftDisplayName(to);
+  out = tomlTableSet(out, table, 'name', displayName);
+  out = tomlTableSet(out, table, 'description', displayName);
+  return out;
+}
+
+/** The built-in draft has one placeholder model which may follow a new id. */
+function isGrokDraftScaffold(text: string, alias: string): boolean {
+  if (grokModelTables(text).length !== 1) return false;
+  const table = grokModelTable(text, alias);
+  // The name/description pair is the marker carried by the built-in draft.
+  // It follows the current alias while the user types; a custom value stops
+  // draft handling and is preserved.
+  if (tomlTableGet(text, table, 'model') !== alias) return false;
+  const displayName = grokDraftDisplayName(alias);
+  if (tomlTableGet(text, table, 'name') !== displayName) return false;
+  if (tomlTableGet(text, table, 'description') !== displayName) return false;
+  if (grokModelProvider(text, table) !== 'proxy') return false;
+  const headers = text.match(/^\s*\[[^\]]+\]\s*$/gm) ?? [];
+  const modelHeader = new RegExp(
+    `^\\s*\\[model\\.(?:"${escapeRegExp(alias)}"|${escapeRegExp(alias)})\\]\\s*$`,
+  );
+  return headers.every((header) =>
+    /^\s*\[(?:models|auth|model_providers\.proxy)\]\s*$/.test(header) ||
+    modelHeader.test(header),
+  );
+}
+
 function ensureGrokRegistry(text: string, alias: string): string {
   let out = text;
   if (!/^\s*\[models\]\s*$/m.test(out)) {
@@ -758,26 +840,6 @@ function grokHasRegistry(text: string): boolean {
   return /^\s*\[models\]\s*$/m.test(text) || /^\s*\[model\./m.test(text);
 }
 
-/** Extra TOML tables (endpoints / auth / …) kept when migrating legacy grok. */
-function grokPreservedTables(text: string): string {
-  const re = /^\[([^\]]+)\]\s*$/gm;
-  const matches = [...text.matchAll(re)];
-  let extra = '';
-  for (let i = 0; i < matches.length; i++) {
-    const header = matches[i]?.[1] ?? '';
-    if (/^models$/i.test(header) || /^model\./i.test(header)) continue;
-    const start = matches[i]?.index ?? 0;
-    const end =
-      i + 1 < matches.length ? (matches[i + 1]?.index ?? text.length) : text.length;
-    extra += text.slice(start, end);
-  }
-  return extra.trim();
-}
-
-function isOfficialXaiUrl(url: string): boolean {
-  return /api\.x\.ai/i.test(url.trim());
-}
-
 function grokModelTables(text: string): string[] {
   const tables: string[] = [];
   const re = /^\[model\.(?:"([^"]+)"|([^\]]+))\]\s*$/gm;
@@ -793,70 +855,88 @@ function grokModelTables(text: string): string[] {
   return tables;
 }
 
-function applyGrokFormVars(configText: string, vars: ProviderFormVars): string {
+function applyGrokFormVars(
+  configText: string,
+  vars: ProviderFormVars,
+  opts?: { grokNewDraft?: boolean },
+): string {
   let text = configText;
+  let legacyApiKey = '';
   if (!grokHasRegistry(text)) {
-    // Migrate the legacy top-level shape while retaining extra tables.
+    // Migrate the legacy top-level shape while retaining extra tables. The
+    // old model/base_url/api_key keys are removed below and represented by
+    // the provider + model tables instead.
     const legacyModel = tomlGet(configText, 'model');
     const legacyBaseUrl = tomlGet(configText, 'base_url');
-    const legacyApiKey = writableSecret(tomlGet(configText, 'api_key'));
-    const model = vars.model.trim() || legacyModel || 'grok-4.5';
-    const baseUrl = vars.baseUrl.trim() || legacyBaseUrl;
-    const extra = grokPreservedTables(configText);
-    text = [
-      '[models]',
-      'default = "grok"',
-      'web_search = "grok"',
-      '',
-      '[model."grok"]',
-      `model = "${model}"`,
-      ...(baseUrl ? [`base_url = "${baseUrl}"`] : []),
-      'env_key = "XAI_API_KEY"',
-      `api_backend = "${vars.apiBackend?.trim() || 'responses'}"`,
-      '',
-      extra,
-    ]
-      .filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
-      .join('\n');
-    if (legacyApiKey && !text.includes('env_key')) {
-      text = tomlTableSet(text, 'model."grok"', 'api_key', legacyApiKey);
+    const legacyApiBackend = tomlGet(configText, 'api_backend');
+    legacyApiKey = writableSecret(tomlGet(configText, 'api_key'));
+    text = tomlUnset(text, 'model');
+    text = tomlUnset(text, 'base_url');
+    text = tomlUnset(text, 'api_key');
+    text = tomlUnset(text, 'api_backend');
+    text = tomlUnset(text, 'env_key');
+    const model = legacyModel || 'grok-4.5';
+    text = ensureGrokRegistry(text, 'grok');
+    text = tomlTableSet(text, 'model."grok"', 'model', model);
+    if (legacyBaseUrl) {
+      text = tomlTableSet(text, grokProviderTable('proxy'), 'base_url', legacyBaseUrl);
     }
-    if (text && !text.endsWith('\n')) text += '\n';
+    if (legacyApiBackend) {
+      text = tomlTableSet(text, grokProviderTable('proxy'), 'api_backend', legacyApiBackend);
+    }
+    const legacyEnvKey = tomlGet(configText, 'env_key');
+    if (legacyEnvKey && !legacyApiKey) {
+      text = tomlTableSet(text, 'model."grok"', 'env_key', legacyEnvKey);
+    }
+    if (!tomlTableGet(text, 'models', 'default_reasoning_effort')) {
+      text = tomlTableSet(text, 'models', 'default_reasoning_effort', 'high');
+    }
   }
 
-  const alias = grokDefaultAlias(text);
+  let alias = grokDefaultAlias(text);
+  if (opts?.grokNewDraft && vars.model.trim() && isGrokDraftScaffold(text, alias)) {
+    text = renameGrokAlias(text, alias, vars.model.trim());
+    alias = vars.model.trim();
+  }
   text = ensureGrokRegistry(text, alias);
   const table = grokModelTable(text, alias);
-  if (vars.model.trim()) text = tomlTableSet(text, table, 'model', vars.model.trim());
-  if (vars.baseUrl.trim()) {
-    const existing = tomlTableGet(text, table, 'base_url');
-    const next = vars.baseUrl.trim();
-    const keepCustom = Boolean(existing) && !isOfficialXaiUrl(existing) && isOfficialXaiUrl(next);
-    if (!keepCustom) {
-      text = tomlTableSet(text, table, 'base_url', next);
-    }
+  if (vars.model.trim()) {
+    text = tomlTableSet(text, table, 'model', vars.model.trim());
   }
-  if (vars.apiBackend?.trim()) {
-    text = tomlTableSet(text, table, 'api_backend', vars.apiBackend.trim());
+  if (!tomlTableGet(text, 'models', 'default')) {
+    text = tomlTableSet(text, 'models', 'default', alias);
   }
-  const hasEnvKey = Boolean(tomlTableGet(text, table, 'env_key'));
+  if (!tomlTableGet(text, 'models', 'web_search')) {
+    text = tomlTableSet(text, 'models', 'web_search', alias);
+  }
+  if (!tomlTableGet(text, 'auth', 'preferred_method')) {
+    text = tomlTableSet(text, 'auth', 'preferred_method', 'api_key');
+  }
+
+  const provider = grokModelProvider(text, table) || 'proxy';
+  text = tomlTableSet(text, table, 'model_provider', provider);
+  const providerTable = grokProviderTable(provider);
+  const oldModelBase = tomlTableGet(text, table, 'base_url');
+  const providerBase = tomlTableGet(text, providerTable, 'base_url');
+  const nextBase = vars.baseUrl.trim() || providerBase || oldModelBase;
+  if (nextBase) {
+    text = tomlTableSet(text, providerTable, 'base_url', nextBase);
+    // A legacy model-local URL is read for compatibility once, then migrated.
+    text = tomlTableUnset(text, table, 'base_url');
+  }
+  const oldBackend = tomlTableGet(text, table, 'api_backend');
+  const providerBackend = tomlTableGet(text, providerTable, 'api_backend');
+  const backend = vars.apiBackend?.trim() || providerBackend || oldBackend || 'responses';
+  text = tomlTableSet(text, providerTable, 'api_backend', backend);
+  // A model-level backend overrides the provider, so the editor value would not apply.
+  text = tomlTableUnset(text, table, 'api_backend');
   const secret = writableSecret(vars.apiKey);
-  if (secret || hasEnvKey) {
-    // Prefer env_key; never materialize a live api_key into the document.
-    if (!hasEnvKey) {
-      text = tomlTableSet(text, table, 'env_key', 'XAI_API_KEY');
-    }
-    if (tomlTableGet(text, table, 'api_key')) {
-      text = tomlTableSet(text, table, 'api_key', REDACTED_MARKER);
-    }
-  } else if (tomlTableGet(text, table, 'api_key')) {
-    // Empty / redacted means keep the native secret on materialize.
+  const existingKey = tomlTableGet(text, table, 'api_key');
+  if (secret || legacyApiKey || existingKey) {
+    text = tomlTableUnset(text, table, 'env_key');
+    // Never put the live key into configText. The projector receives it via
+    // the structured form values and fills it only when writing live config.
     text = tomlTableSet(text, table, 'api_key', REDACTED_MARKER);
-  }
-  for (const modelTable of grokModelTables(text)) {
-    if (!tomlTableGet(text, modelTable, 'api_backend')) {
-      text = tomlTableSet(text, modelTable, 'api_backend', 'responses');
-    }
   }
   return text;
 }
@@ -962,6 +1042,8 @@ export function extractFormVars(
   if (agentId === 'grok') {
     const alias = grokDefaultAlias(configText);
     const table = grokModelTable(configText, alias);
+    const provider = grokModelProvider(configText, table);
+    const providerTable = provider ? grokProviderTable(provider) : '';
     const rawKey =
       tomlTableGet(configText, table, 'api_key') || tomlGet(configText, 'api_key');
     return {
@@ -969,10 +1051,14 @@ export function extractFormVars(
       model:
         tomlTableGet(configText, table, 'model') || tomlGet(configText, 'model'),
       baseUrl:
+        (providerTable ? tomlTableGet(configText, providerTable, 'base_url') : '') ||
         tomlTableGet(configText, table, 'base_url') ||
         tomlGet(configText, 'base_url'),
-      apiKey: sanitizeSecretForForm(rawKey),
-      apiBackend: tomlTableGet(configText, table, 'api_backend') || 'responses',
+      apiKey: sanitizeGrokApiKeyForForm(rawKey),
+      apiBackend:
+        (providerTable ? tomlTableGet(configText, providerTable, 'api_backend') : '') ||
+        tomlTableGet(configText, table, 'api_backend') ||
+        'responses',
     };
   }
 
@@ -995,7 +1081,7 @@ export function applyFormVars(
   configText: string,
   format: 'json' | 'toml',
   vars: ProviderFormVars,
-  opts?: { extraEnv?: Record<string, string> },
+  opts?: { extraEnv?: Record<string, string>; grokNewDraft?: boolean },
 ): string {
   if (format === 'json' || agentId === 'claude') {
     // An opaque redaction marker / empty field starts from a scaffold. Any
@@ -1186,7 +1272,7 @@ export function applyFormVars(
     return text;
   }
 
-  if (agentId === 'grok') return applyGrokFormVars(text, vars);
+  if (agentId === 'grok') return applyGrokFormVars(text, vars, opts);
 
   // 其它顶层字段
   if (vars.model.trim()) text = tomlSet(text, 'model', vars.model.trim());
@@ -1230,16 +1316,29 @@ function defaultTomlScaffold(agentId: AgentKey, vars: ProviderFormVars): string 
     ].join('\n');
   }
   const grokModel = vars.model.trim() || 'grok-4.5';
+  const grokBackend = vars.apiBackend?.trim() || 'responses';
+  const grokUrl = vars.baseUrl.trim() || 'https://your-relay.example.com/v1';
   return [
     '[models]',
-    'default = "grok"',
-    'web_search = "grok"',
+    `default = "${grokModel}"`,
+    `web_search = "${grokModel}"`,
+    'default_reasoning_effort = "high"',
     '',
-    '[model."grok"]',
+    '[auth]',
+    'preferred_method = "api_key"',
+    '',
+    '[model_providers.proxy]',
+    `base_url = "${grokUrl}"`,
+    `api_backend = "${grokBackend}"`,
+    '',
+    `[model."${grokModel}"]`,
     `model = "${grokModel}"`,
-    `base_url = "${vars.baseUrl.trim() || 'https://your-relay.example.com/v1'}"`,
-    'env_key = "XAI_API_KEY"',
-    `api_backend = "${vars.apiBackend?.trim() || 'responses'}"`,
+    `name = "${grokDraftDisplayName(grokModel)}"`,
+    `description = "${grokDraftDisplayName(grokModel)}"`,
+    'model_provider = "proxy"',
+    'api_key = "***"',
+    'context_window = 500000',
+    'reasoning_summary = "concise"',
     '',
   ].join('\n');
 }

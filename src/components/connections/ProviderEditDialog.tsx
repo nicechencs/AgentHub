@@ -429,6 +429,7 @@ export function ProviderEditDialog({
           provider.configText,
           provider.configFormat,
           nextVars,
+          { grokNewDraft: false },
         ),
         provider.configFormat,
       );
@@ -479,7 +480,9 @@ export function ProviderEditDialog({
       setConfigFormat(scaffold.format);
       setConfigText(maskConfigSecrets(
         agentId,
-        applyFormVars(agentId, scaffold.text, scaffold.format, next),
+        applyFormVars(agentId, scaffold.text, scaffold.format, next, {
+          grokNewDraft: !isEdit,
+        }),
         scaffold.format,
       ));
       setConfigError(null);
@@ -580,7 +583,9 @@ export function ProviderEditDialog({
           : configText;
       const nextConfigText = maskConfigSecrets(
         agentId,
-        applyFormVars(agentId, base, configFormat, next),
+        applyFormVars(agentId, base, configFormat, next, {
+          grokNewDraft: !isEdit,
+        }),
         configFormat,
       );
       setConfigText(nextConfigText);
