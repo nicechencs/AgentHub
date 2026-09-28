@@ -846,7 +846,7 @@ describe('TicketDetailPanel', () => {
         onDelete() {},
       }),
     );
-    expect(markup).toContain('续期凭证');
+    expect(markup).toContain('续期用的登录信息');
     expect(markup).toContain('rt--••••wxyz');
     expect(markup).not.toContain(secret);
     expect(markup).not.toContain('导入自');

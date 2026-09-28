@@ -125,8 +125,8 @@ describe('locale key parity', () => {
     expect(translate('en', 'chat.actions.copyLatestReply')).toBe('Copy latest reply');
     expect(translate('zh', 'chat.actions.group.hub')).toBe('立刻执行');
     expect(translate('en', 'chat.actions.group.hub')).toBe('Run now');
-    expect(translate('zh', 'chat.actions.group.native')).toBe('对方命令');
-    expect(translate('en', 'chat.actions.group.native')).toBe('Their commands');
+    expect(translate('zh', 'chat.actions.group.native')).toBe('Agent 自带命令');
+    expect(translate('en', 'chat.actions.group.native')).toBe('Agent commands');
     expect(translate('zh', 'agents.card.startCli')).toBe('启动命令行');
     expect(translate('en', 'agents.card.startCli')).toBe('Start command line');
     expect(translate('zh', 'agents.card.startWeb')).toBe('打开网页会话');
