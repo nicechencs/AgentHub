@@ -38,6 +38,7 @@ futures-util = { workspace = true }
 async-stream = { workspace = true }
 zip = { workspace = true }
 zstd = { workspace = true }
+jsonc-parser = { version = "0.34.0", features = ["cst", "serde_json"] }
 
 [target.'cfg(windows)'.dependencies]
 socket2 = "0.5"

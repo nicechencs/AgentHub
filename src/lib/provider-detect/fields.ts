@@ -596,11 +596,11 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** 取第一个 [model_providers.xxx] / [providers.xxx] 的 slug */
+/** 取第一个 [model_providers.xxx] / [providers.xxx] 的 slug。没有表时返回空串。 */
 function firstTableSlug(text: string, prefix: 'model_providers' | 'providers'): string {
   const re = new RegExp(`^\\[(${prefix})\\.([^\\]]+)\\]`, 'm');
   const m = text.match(re);
-  return m?.[2]?.trim() || 'custom';
+  return m?.[2]?.trim() || '';
 }
 
 /** Collapse an accidental exact concat (`grok-4.6grok-4.6` → `grok-4.6`). */
@@ -1007,19 +1007,18 @@ export function extractFormVars(
   }
 
   if (agentId === 'codex') {
-    // 优先顶层 model_provider，否则第一个 [model_providers.xxx]
-    const topSlug = tomlGet(configText, 'model_provider');
-    const slug = topSlug || firstTableSlug(configText, 'model_providers');
+    // 只有顶层 model_provider 会选择自定义供应商；保留的表并不代表当前在用。
+    const slug = tomlGet(configText, 'model_provider');
     const table = `model_providers.${slug}`;
     // API Key 走 settings.auth.OPENAI_API_KEY（见 Provider.authApiKey），不进 TOML
     return {
       ...EMPTY_FORM_VARS,
       model: tomlGet(configText, 'model'),
-      baseUrl: tomlTableGet(configText, table, 'base_url'),
+      baseUrl: slug ? tomlTableGet(configText, table, 'base_url') : '',
       apiKey: '',
       reasoningEffort: tomlGet(configText, 'model_reasoning_effort'),
-      wireApi: tomlTableGet(configText, table, 'wire_api') || 'responses',
-      providerSlug: slug || 'custom',
+      wireApi: slug ? tomlTableGet(configText, table, 'wire_api') || 'responses' : '',
+      providerSlug: slug,
     };
   }
 
@@ -1214,7 +1213,16 @@ export function applyFormVars(
       : configText;
 
   if (agentId === 'codex') {
-    const slug = (vars.providerSlug || 'custom').trim() || 'custom';
+    const slug = codexProviderSlugForWrite(vars);
+    if (!slug) {
+      if (vars.model.trim()) text = tomlSet(text, 'model', vars.model.trim());
+      else text = tomlUnset(text, 'model');
+      if (vars.reasoningEffort.trim()) {
+        text = tomlSet(text, 'model_reasoning_effort', vars.reasoningEffort.trim());
+      }
+      text = tomlUnset(text, 'model_provider');
+      return text;
+    }
     const table = `model_providers.${slug}`;
     if (vars.model.trim()) text = tomlSet(text, 'model', vars.model.trim());
     else text = tomlUnset(text, 'model');
@@ -1283,9 +1291,18 @@ export function applyFormVars(
   return text;
 }
 
+function codexProviderSlugForWrite(vars: ProviderFormVars): string {
+  return vars.providerSlug.trim() || (vars.baseUrl.trim() ? 'custom' : '');
+}
+
 function defaultTomlScaffold(agentId: AgentKey, vars: ProviderFormVars): string {
-  const slug = (vars.providerSlug || 'custom').trim() || 'custom';
+  const slug = agentId === 'codex'
+    ? codexProviderSlugForWrite(vars)
+    : (vars.providerSlug || 'custom').trim() || 'custom';
   if (agentId === 'codex') {
+    if (!slug) {
+      return `model = "${vars.model.trim() || 'gpt-5.1-codex'}"\n`;
+    }
     return [
       `model_provider = "${slug}"`,
       `model = "${vars.model.trim() || 'gpt-5.1-codex'}"`,

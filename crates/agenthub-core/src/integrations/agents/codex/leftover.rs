@@ -8,11 +8,13 @@
 //!
 //! Boundaries:
 //! - `preferred_auth_method = "apikey"` is removed only when a leftover
-//!   `agenthub_*_bridge` slug is present. Without a slug it stays
+//!   `agenthub_*_bridge` slug is present, or when official login deactivates
+//!   some other `model_provider` pointer. Without either it stays
 //!   (GLM / DeepSeek restore).
 //! - A leftover `grok-*` / `claude-*` / `kimi-*` model is stripped even
 //!   when bridge slugs are empty, unless `model_provider` is a non-leftover
-//!   slug (e.g. `custom`). `deepseek-*` is not stripped here: GLM restore
+//!   slug (e.g. `custom`). Official login deactivates that pointer and then
+//!   drops the leftover model. `deepseek-*` is not stripped here: GLM restore
 //!   is a protection boundary.
 //! - `model_reasoning_effort` is removed only when `model` is leftover.
 //!   A missing `model` key does not drop effort.
@@ -171,14 +173,18 @@ fn rewrite_codex_toml(path: &Path, mutate: impl FnOnce(&mut DocumentMut) -> bool
     Ok(true)
 }
 
-/// Official ChatGPT OAuth writes `auth.json`. A leftover `model_provider`
-/// whose table requires `env_key` (OpenRouter, custom relays) still makes
-/// Codex look up that environment variable and fail locally.
+/// Official ChatGPT OAuth writes `auth.json`. Any active `model_provider`
+/// is a second live source and wins over that grant: `env_key` providers
+/// fail while looking up the variable, and a relay `base_url` (including
+/// AgentHub drafts that keep the key in `auth.json`) sends the ChatGPT token
+/// to the relay.
 ///
-/// Deactivate the leftover pointer. Do not invent a ChatGPT model name: drop
-/// OpenRouter-style leftover models (`provider/model`, `stealth/ox-*`) so
-/// Codex uses its own default. Keep the unused provider table so switching
-/// back to that API Key login can reuse it.
+/// Deactivate the pointer. Do not invent a ChatGPT model name: drop
+/// OpenRouter-style leftover models (`provider/model`, `stealth/ox-*`) and
+/// bridge model names (`grok-*` / `claude-*` / `kimi-*`) so Codex uses its
+/// own default. Keep the unused provider table so switching back to that
+/// API Key login can reuse it. Bridge slugs are owned by
+/// [`strip_bridge_leftovers_in_doc`].
 pub fn strip_env_key_provider_leftovers_in_doc(doc: &mut DocumentMut) -> bool {
     let slug = doc
         .get("model_provider")
@@ -192,18 +198,6 @@ pub fn strip_env_key_provider_leftovers_in_doc(doc: &mut DocumentMut) -> bool {
     if is_leftover_slug(&slug) {
         return false;
     }
-    let requires_env_key = doc
-        .get("model_providers")
-        .and_then(|item| item.as_table())
-        .and_then(|providers| providers.get(slug.as_str()))
-        .and_then(|item| item.as_table())
-        .and_then(|table| table.get("env_key"))
-        .and_then(|item| item.as_str())
-        .map(str::trim)
-        .is_some_and(|key| !key.is_empty());
-    if !requires_env_key {
-        return false;
-    }
     doc.remove("model_provider");
     if doc
         .get("preferred_auth_method")
@@ -213,6 +207,9 @@ pub fn strip_env_key_provider_leftovers_in_doc(doc: &mut DocumentMut) -> bool {
         doc.remove("preferred_auth_method");
     }
     strip_openrouter_style_leftover_model(doc, true);
+    // The custom pointer was what protected grok/claude/kimi model names.
+    // Official login has to drop them once that pointer is gone.
+    clear_leftover_bridge_model_keys(doc);
     true
 }
 
@@ -357,8 +354,8 @@ fn model_provider_is_non_leftover_slug(doc: &DocumentMut) -> bool {
         .is_some_and(|slug| !is_leftover_slug(slug))
 }
 
-/// Drop leftover bridge `model` (`grok-*` / `claude-*` / `kimi-*`) and its
-/// `model_reasoning_effort`.
+/// Drop leftover bridge `model` (`grok-*` / `claude-*` / `kimi-*`), its
+/// `model_reasoning_effort`, and a matching `review_model` override.
 ///
 /// Keep official `gpt-*` models, `mcp_servers`, and `disable_response_storage`.
 /// A non-leftover `model_provider` (e.g. `custom`) keeps leftover models and
@@ -382,6 +379,14 @@ fn clear_leftover_bridge_model_keys(doc: &mut DocumentMut) -> bool {
     };
     if leftover_reasoning && doc.get("model_reasoning_effort").is_some() {
         doc.remove("model_reasoning_effort");
+        changed = true;
+    }
+    if doc
+        .get("review_model")
+        .and_then(|item| item.as_str())
+        .is_some_and(is_leftover_bridge_model)
+    {
+        doc.remove("review_model");
         changed = true;
     }
     changed

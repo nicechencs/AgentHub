@@ -635,6 +635,37 @@ supports_backend_search = true
 }
 
 #[test]
+fn kimi_read_uses_default_provider_not_the_first_table() {
+    let dir = tempdir().unwrap();
+    let home = dir.path();
+    std::fs::write(
+        home.join("config.toml"),
+        r#"default_provider = "moonshot"
+
+[providers.relay]
+base_url = "https://relay.example/v1"
+api_key = "sk-relay"
+
+[providers.moonshot]
+base_url = "https://api.moonshot.cn/v1"
+api_key = "sk-moonshot"
+"#,
+    )
+    .unwrap();
+    let doc = test_configuration_service()
+        .read_at(AgentId::Kimi, Some(home))
+        .unwrap();
+    assert_eq!(
+        doc.values.get("providerSlug").and_then(|v| v.as_str()),
+        Some("moonshot")
+    );
+    assert_eq!(
+        doc.values.get("baseUrl").and_then(|v| v.as_str()),
+        Some("https://api.moonshot.cn/v1")
+    );
+}
+
+#[test]
 fn kimi_toml_roundtrip_and_secret_unchanged() {
     let dir = tempdir().unwrap();
     let home = dir.path();

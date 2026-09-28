@@ -54,6 +54,45 @@ pub fn is_pi_auth_json_slot(id: &str) -> bool {
     PI_AUTH_JSON_SLOTS.contains(&id)
 }
 
+/// Built-in Pi providers whose auth.json login must not inherit a models.json
+/// endpoint override. Keep this broader than the API-key slots AgentHub writes:
+/// imported Pi logins can use other built-in provider IDs.
+pub fn is_pi_builtin_auth_slot(id: &str) -> bool {
+    is_pi_auth_json_slot(id)
+        || PI_OAUTH_PROVIDER_KEYS.contains(&id)
+        || matches!(
+            id,
+            "mistral"
+                | "groq"
+                | "cerebras"
+                | "vercel-ai-gateway"
+                | "zai"
+                | "zai-coding-cn"
+                | "google-vertex"
+                | "typesafe"
+                | "opencode"
+                | "opencode-go"
+                | "huggingface"
+                | "fireworks"
+                | "together"
+                | "baseten"
+                | "meta"
+                | "minimax"
+                | "minimax-cn"
+                | "moonshotai"
+                | "moonshotai-cn"
+                | "qwen-token-plan"
+                | "qwen-token-plan-cn"
+                | "qwen-token-plan-individual"
+                | "cloudflare-workers-ai"
+                | "cloudflare-ai-gateway"
+                | "xiaomi"
+                | "xiaomi-token-plan-cn"
+                | "xiaomi-token-plan-ams"
+                | "xiaomi-token-plan-sgp"
+        )
+}
+
 /// `{ "type": "api_key", "key": "…" }` — official auth.json entry shape.
 pub fn pi_api_key_auth_entry(key: &str) -> Value {
     json!({

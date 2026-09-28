@@ -94,15 +94,20 @@ impl KimiConfigProjector {
     }
 
     fn first_slug(doc: &DocumentMut) -> String {
+        if let Some(name) = doc
+            .get("default_provider")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        {
+            return name.to_string();
+        }
         if let Some(providers) = doc.get("providers").and_then(|p| p.as_table()) {
             if let Some((name, _)) = providers.iter().next() {
                 return name.to_string();
             }
         }
-        doc.get("default_provider")
-            .and_then(|v| v.as_str())
-            .unwrap_or("custom")
-            .to_string()
+        "custom".to_string()
     }
 
     fn provider_get(doc: &DocumentMut, slug: &str, key: &str) -> String {

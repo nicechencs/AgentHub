@@ -449,7 +449,7 @@ fn kimi_api_key_credentials_map(key: &str, config_text: &str) -> Map<String, Val
     map
 }
 
-fn apply_kimi_api_key_credentials(path: &Path, credentials: &Value) -> Result<()> {
+pub(crate) fn apply_kimi_api_key_credentials(path: &Path, credentials: &Value) -> Result<()> {
     let key = credentials
         .get("api_key")
         .and_then(|v| v.as_str())
@@ -463,7 +463,18 @@ fn apply_kimi_api_key_credentials(path: &Path, credentials: &Value) -> Result<()
     if !path.exists() && !snapshot.trim().is_empty() {
         atomic_write(path, snapshot.as_bytes())?;
     }
-    write_kimi_api_key(path, key)?;
+    let preferred_slug = credentials
+        .get("providerSlug")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|slug| !slug.is_empty())
+        .map(str::to_owned);
+    let base_url = credentials
+        .get("base_url")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|url| !url.is_empty());
+    write_kimi_api_key(path, key, preferred_slug.as_deref(), base_url)?;
     let live = std::fs::read_to_string(path)?;
     let mut doc = live
         .parse::<toml_edit::DocumentMut>()
@@ -610,7 +621,12 @@ fn kimi_config_has_api_key_field(path: &Path) -> bool {
     found
 }
 
-pub(crate) fn write_kimi_api_key(path: &Path, key: &str) -> Result<()> {
+pub(crate) fn write_kimi_api_key(
+    path: &Path,
+    key: &str,
+    provider_slug: Option<&str>,
+    base_url: Option<&str>,
+) -> Result<()> {
     let live = match std::fs::read_to_string(path) {
         Ok(content) => content,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
@@ -624,10 +640,19 @@ pub(crate) fn write_kimi_api_key(path: &Path, key: &str) -> Result<()> {
         })?
     };
 
-    let provider_name = doc
-        .get("default_provider")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+    let explicit_slug = provider_slug
+        .map(str::trim)
+        .filter(|slug| !slug.is_empty())
+        .map(str::to_string);
+    let provider_name = explicit_slug
+        .clone()
+        .or_else(|| {
+            doc.get("default_provider")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|slug| !slug.is_empty())
+                .map(str::to_string)
+        })
         .or_else(|| {
             doc.get("providers")
                 .and_then(|p| p.as_table())
@@ -635,16 +660,20 @@ pub(crate) fn write_kimi_api_key(path: &Path, key: &str) -> Result<()> {
         })
         .unwrap_or_else(|| "moonshot".into());
 
-    if doc
-        .get("default_provider")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .is_none()
+    if explicit_slug.is_some()
+        || doc
+            .get("default_provider")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .is_none()
     {
         doc["default_provider"] = toml_edit::value(provider_name.as_str());
     }
     ensure_kimi_provider_entry(&mut doc, provider_name.as_str())?;
+    if let Some(url) = base_url.map(str::trim).filter(|url| !url.is_empty()) {
+        doc["providers"][provider_name.as_str()]["base_url"] = toml_edit::value(url);
+    }
     fill_missing_kimi_provider_type(&mut doc, provider_name.as_str())?;
     let stored = doc
         .get("default_model")

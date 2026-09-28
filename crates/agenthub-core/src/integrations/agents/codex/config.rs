@@ -137,22 +137,12 @@ impl CodexConfigProjector {
 
     fn active_provider_slug(doc: &DocumentMut) -> Option<String> {
         let top = Self::doc_str(doc, "model_provider");
-        if !top.trim().is_empty() {
-            return Some(top);
-        }
-
-        let providers = doc.get("model_providers")?.as_table()?;
-        let mut entries = providers.iter();
-        let (name, _) = entries.next()?;
-        if entries.next().is_none() {
-            Some(name.to_string())
-        } else {
-            None
-        }
+        (!top.trim().is_empty()).then_some(top)
     }
 
     fn extract(doc: &DocumentMut, api_key: Option<&str>) -> BTreeMap<String, Value> {
-        let slug = Self::active_provider_slug(doc).unwrap_or_else(|| "custom".into());
+        let slug = Self::active_provider_slug(doc);
+        let slug_ref = slug.as_deref().unwrap_or("");
         let mut values = BTreeMap::new();
         values.insert(
             "model".into(),
@@ -160,19 +150,31 @@ impl CodexConfigProjector {
         );
         values.insert(
             "baseUrl".into(),
-            string_val(Some(&Self::provider_table_str(doc, &slug, "base_url"))),
+            string_val(Some(&Self::provider_table_str(doc, slug_ref, "base_url"))),
         );
         values.insert("apiKey".into(), string_val(api_key));
         values.insert(
             "reasoningEffort".into(),
             string_val(Some(&Self::doc_str(doc, "model_reasoning_effort"))),
         );
-        let wire = Self::provider_table_str(doc, &slug, "wire_api");
+        // No provider pointer means the built-in OpenAI provider. Do not invent
+        // `custom` or a default wire_api; that pointer selects another provider.
+        let wire = if slug_ref.is_empty() {
+            String::new()
+        } else {
+            Self::provider_table_str(doc, slug_ref, "wire_api")
+        };
         values.insert(
             "wireApi".into(),
-            string_val(Some(if wire.is_empty() { "responses" } else { &wire })),
+            string_val(Some(if slug_ref.is_empty() {
+                ""
+            } else if wire.is_empty() {
+                "responses"
+            } else {
+                wire.as_str()
+            })),
         );
-        values.insert("providerSlug".into(), string_val(Some(&slug)));
+        values.insert("providerSlug".into(), string_val(Some(slug_ref)));
         values
     }
 
@@ -206,21 +208,28 @@ impl CodexConfigProjector {
         Ok(())
     }
 
+    fn nonempty_map_str(values: &BTreeMap<String, Value>, key: &str) -> Option<String> {
+        get_str_map(values, key)
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    }
+
     fn merge_toml(
         mut doc: DocumentMut,
         current: &BTreeMap<String, Value>,
         desired: &BTreeMap<String, Value>,
     ) -> Result<DocumentMut> {
-        let slug = get_str_map(desired, "providerSlug")
-            .or_else(|| get_str_map(current, "providerSlug"))
-            .unwrap_or_else(|| "custom".into());
-        let slug = {
-            let t = slug.trim();
-            if t.is_empty() {
-                "custom".to_string()
-            } else {
-                t.to_string()
-            }
+        // An explicit empty slug is official: do not invent `custom`.
+        // A missing slug keeps the current provider. A base URL with no slug
+        // still needs a table, and that one case uses `custom`.
+        let slug = if desired.contains_key("providerSlug") {
+            Self::nonempty_map_str(desired, "providerSlug").or_else(|| {
+                Self::nonempty_map_str(desired, "baseUrl").map(|_| "custom".to_string())
+            })
+        } else {
+            Self::nonempty_map_str(current, "providerSlug").or_else(|| {
+                Self::nonempty_map_str(desired, "baseUrl").map(|_| "custom".to_string())
+            })
         };
 
         if let Some(model) = get_str_map(desired, "model") {
@@ -231,7 +240,11 @@ impl CodexConfigProjector {
                 doc["model"] = toml_edit::value(t);
             }
         }
-        doc["model_provider"] = toml_edit::value(slug.as_str());
+        if let Some(slug) = slug.as_deref() {
+            doc["model_provider"] = toml_edit::value(slug);
+        } else {
+            doc.remove("model_provider");
+        }
 
         if let Some(effort) = get_str_map(desired, "reasoningEffort") {
             let t = effort.trim();
@@ -242,6 +255,9 @@ impl CodexConfigProjector {
             }
         }
 
+        let Some(slug) = slug else {
+            return Ok(doc);
+        };
         Self::ensure_provider(&mut doc, &slug)?;
         {
             let providers = doc["model_providers"].as_table_mut().unwrap();
