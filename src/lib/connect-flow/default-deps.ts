@@ -94,7 +94,7 @@ async function bindViaTicket(request: AdapterApplyRequest): Promise<AdapterApply
       && row.targetAgentId === request.targetAgentId
     ));
   if (!profile) {
-    throw new Error('已接上，但找不到对应的本机路由记录');
+    throw new Error('已接上，但找不到对应的路由记录');
   }
   const providers = await providerApi.listProviders(request.targetAgentId);
   const provider = profile.generatedProviderId

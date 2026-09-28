@@ -41,7 +41,7 @@ export interface AgentCardBadgeInput {
   binding?: { ticketLabel: string; routeLabel: string } | null;
 }
 
-const LOCAL_ROUTE_MARKERS = ['本机路由', 'Local route'] as const;
+const LOCAL_ROUTE_MARKERS = ['本机路由', 'Local route', '本机转发', 'Local forwarding'] as const;
 
 /** 总览只展示授权本身；落盘里的「本机路由 · …」前缀去掉。 */
 export function dashboardConnectionLabel(raw: string, t?: TranslateFn): string {

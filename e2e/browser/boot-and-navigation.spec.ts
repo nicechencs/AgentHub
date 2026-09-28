@@ -20,7 +20,7 @@ test('app boots on mock and primary navigation works', async ({ page }) => {
   await expect(page).toHaveURL(/#\/projects/);
   await expect(page.getByRole('heading', { name: '历史' })).toBeVisible();
 
-  await goNav(page, '工作区');
+  await goNav(page, '对话');
   await expect(page).toHaveURL(/#\/chat/);
   await expect(
     page.getByRole('textbox', { name: '消息输入' }).or(page.getByText('还没有可对话的 Agent')),
@@ -133,7 +133,7 @@ test('page title sits in the top bar; Chat has neither title nor in-app notifica
 
   await goNav(page, '连接');
   await expect(page.getByRole('heading', { name: '连接' })).toBeVisible();
-  const addLogin = page.getByRole('button', { name: '添加授权' });
+  const addLogin = page.getByRole('button', { name: '添加登录' });
   const agentTabs = page.getByRole('tablist', { name: '按 Agent 筛选登录' });
   await expect(addLogin).toBeVisible();
   await expect(agentTabs).toBeVisible();
@@ -160,7 +160,7 @@ test('page title sits in the top bar; Chat has neither title nor in-app notifica
   const addOauth = page.getByRole('button', { name: '官方登录' });
   const addApi = page.getByRole('button', { name: '添加 API Key' });
   const routesLead = page.getByText('官方登录和 API Key', { exact: true }).or(
-    page.getByText('孤立本机路由', { exact: true }),
+    page.getByText('孤立路由', { exact: true }),
   );
   await expect(addOauth).toBeVisible();
   await expect(addApi).toBeVisible();
@@ -172,7 +172,7 @@ test('page title sits in the top bar; Chat has neither title nor in-app notifica
   expect(Math.abs(createBox!.y + createBox!.height / 2 - (leadBox!.y + leadBox!.height / 2))).toBeLessThanOrEqual(8);
   expect(Math.abs(leadBox!.y - connectionsTop)).toBeLessThanOrEqual(12);
 
-  await goNav(page, '工作区');
+  await goNav(page, '对话');
   await expect(page).toHaveURL(/#\/chat/);
   await expect(page.getByRole('button', { name: '通知' })).toHaveCount(0);
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(0);

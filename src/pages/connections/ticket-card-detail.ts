@@ -502,10 +502,10 @@ function formatTokenRemainingLabel(sec: number | undefined, t?: TranslateFn): st
 export function ticketBindingStatus(binding: BindingView, t?: TranslateFn): string {
   if (binding.route === 'bridge') {
     if (binding.bridge?.running) {
-      return t ? t('connections.list.bridgeRunning') : '本机路由运行中';
+      return t ? t('connections.list.bridgeRunning') : '本机转发运行中';
     }
     if (binding.bridge && !binding.bridge.running) {
-      return t ? t('connections.list.bridgeStopped') : '本机路由已停止';
+      return t ? t('connections.list.bridgeStopped') : '本机转发已停止';
     }
   }
   if (binding.active) return t ? t('connections.list.currentlyUsed') : '当前使用';
@@ -784,7 +784,7 @@ export function buildTicketDetailFields(
   const agentSurface = localRouteSurface(bindings);
   if (agentSurface) {
     advanced.push({
-      label: t ? t('kind.route.localRoute') : '本机路由',
+      label: t ? t('kind.route.localRoute') : '本机转发',
       value: agentSurface,
       mono: true,
     });

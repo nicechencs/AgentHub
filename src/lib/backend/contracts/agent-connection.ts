@@ -113,7 +113,7 @@ export function isInternalGeneratedProvider(
 }
 
 export function formatLocalRouteLabel(sourceLabel?: string, t?: TranslateFn): string {
-  const base = t ? t('kind.route.localRoute') : '本机路由';
+  const base = t ? t('kind.route.localRoute') : '本机转发';
   const src = sourceLabel?.trim() ?? '';
   if (!src || isInternalGeneratedName(src) || /:\d{2,5}\b/.test(src)) return base;
   return `${base} · ${src}`;

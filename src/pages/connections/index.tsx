@@ -71,6 +71,7 @@ import { useConnectionPageActions } from './use-connection-page-actions';
 import { usePiDefaultModel } from './use-pi-default-model';
 import {
   deleteConnectionDialogDescription,
+  deleteCurrentSwitchTargets,
   liveAuthCoexistenceNotice,
   liveAuthImportGate,
   liveApiKeyImportGate,
@@ -805,6 +806,17 @@ export default function ConnectionsPage() {
     );
   }
 
+
+  const deleteIsCurrent = deleteTicket
+    ? extrasForTicket(deleteTicket)?.isCurrent === true
+    : false;
+  const deleteSwitchTargets = deleteTicket && deleteIsCurrent && wallet
+    ? deleteCurrentSwitchTargets(
+      deleteTicket,
+      wallet.tickets,
+      (ticket) => extrasForTicket(ticket)?.isCurrent === true,
+    )
+    : [];
   return (
     <>
     <WorkbenchSplitPage
@@ -848,6 +860,7 @@ export default function ConnectionsPage() {
             onImportLogin={(id) => openTicketAdd('import-login', id)}
             onOauth={(id) => openTicketAdd('oauth', id)}
             onAddKey={(id) => openTicketAdd('api-key', id)}
+            importDetectedAgentId={discoveryKind ? discoveryAgentId : null}
           />
         </div>
       </div>
@@ -969,7 +982,15 @@ export default function ConnectionsPage() {
             <Notice tone="warning">{activeImportGate.reason}</Notice>
           ) : null}
           {importCoexistenceNotice ? (
-            <Notice tone="warning">{importCoexistenceNotice}</Notice>
+            <Notice tone="warning">
+              <details>
+                <summary className="cursor-pointer">
+                  {t('connections.list.coexistSummary')}{' '}
+                  <span className="text-muted">{t('connections.list.coexistDetails')}</span>
+                </summary>
+                <p className="mt-1">{importCoexistenceNotice}</p>
+              </details>
+            </Notice>
           ) : null}
           <DialogFooter>
             <Button
@@ -1049,11 +1070,30 @@ export default function ConnectionsPage() {
             <DialogDescription>
               {deleteTicket
                 ? `${deleteTicket.label} · ${deleteConnectionDialogDescription({
-                    isCurrent: extrasForTicket(deleteTicket)?.isCurrent === true,
+                    isCurrent: deleteIsCurrent,
+                    agentName: agentDisplayName(deleteTicket.agentId),
                   }, t)}`
                 : ''}
             </DialogDescription>
           </DialogHeader>
+          {deleteSwitchTargets.length > 0 ? (
+            <div className="space-y-1.5">
+              <p className="text-meta text-secondary">{t('connections.delete.switchFirst')}</p>
+              <div className="flex flex-wrap gap-2">
+                {deleteSwitchTargets.map((target) => (
+                  <Button
+                    key={target.id}
+                    size="sm"
+                    variant="outline"
+                    disabled={deleteBusy || switchingTicketId != null}
+                    onClick={() => void handleSwitchTicket(target)}
+                  >
+                    {t('connections.delete.switchTo', { label: target.label })}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <DialogFooter>
             <Button variant="secondary" disabled={deleteBusy} onClick={() => setDeleteTicket(null)}>
               {t('common.cancel')}

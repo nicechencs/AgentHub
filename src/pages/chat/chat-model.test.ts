@@ -645,6 +645,17 @@ describe('newConversationDefaults', () => {
     });
   });
 
+  it('uses the last folder from any conversation when the active one has none', () => {
+    const active = conv({ id: 'a', agentIds: ['claude'], cwd: null });
+    const list = [
+      active,
+      conv({ id: 'old', agentIds: ['claude'], cwd: '/tmp/old', updatedAt: '2026-08-01T00:00:00.000Z' }),
+      conv({ id: 'new', agentIds: ['claude'], cwd: '/tmp/new', updatedAt: '2026-08-02T00:00:00.000Z' }),
+    ];
+    expect(newConversationDefaults(active, agents, undefined, list).cwd).toBe('/tmp/new');
+    expect(newConversationDefaults(null, agents, undefined, list).cwd).toBe('/tmp/new');
+  });
+
   it('keeps an agent when live auth is unknown rather than missing', () => {
     const unknown = status('pi', true, false, {
       authStatus: 'none',
@@ -949,8 +960,8 @@ describe('blockerCopy', () => {
       primaryAction: '去连接页',
     });
     expect(blockerCopy(t, { kind: 'noCwd' })).toEqual({
-      text: '未设置工作目录 — Agent 需要在指定目录内工作',
-      primaryAction: '设置工作目录',
+      text: '先选一个文件夹，Agent 会在里面干活',
+      primaryAction: '选择文件夹',
     });
   });
 });
@@ -1881,7 +1892,7 @@ describe('chatConnectionOptions', () => {
     ]);
     expect(options[0]).toMatchObject({
       title: 'Kimi 会员',
-      subtitle: '本机路由',
+      subtitle: '本机转发',
       isCurrent: true,
       action: { type: 'bind', ticketId: 'provider:kimi-1' },
     });

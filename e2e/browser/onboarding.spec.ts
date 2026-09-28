@@ -12,7 +12,7 @@ async function openFirstLaunch(page: Page) {
 
 test('first launch can skip the guide and keeps default sidebar pages', async ({ page }) => {
   const dialog = await openFirstLaunch(page);
-  await expect(dialog.getByRole('checkbox', { name: '本地路由' })).toBeVisible();
+  await expect(dialog.getByRole('checkbox', { name: '路由', exact: true })).toBeVisible();
   await expect(dialog.getByRole('checkbox', { name: 'Sub2API 站点' })).toBeVisible();
   await expect(dialog.getByRole('button', { name: '继续' })).toBeDisabled();
   await dialog.getByRole('button', { name: '跳过引导' }).click();
@@ -45,7 +45,7 @@ test('choosing only Sub2API hides Routes; Settings can show Routes again', async
 
 test('choosing local routing only hides Sub2API; Settings can show it again', async ({ page }) => {
   const dialog = await openFirstLaunch(page);
-  await dialog.getByRole('checkbox', { name: '本地路由' }).click();
+  await dialog.getByRole('checkbox', { name: '路由', exact: true }).click();
   await dialog.getByRole('button', { name: '跳过引导' }).click();
   await expect(dialog).toBeHidden();
 

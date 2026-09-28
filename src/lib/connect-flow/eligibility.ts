@@ -44,14 +44,14 @@ export function providerSwitchBlockedFallback(t?: TranslateFn): string {
 
 const ROUTE_SUMMARY: Record<AdapterRoute, string> = {
   native_endpoint: '',
-  local_bridge: '本机路由',
+  local_bridge: '本机转发',
   config_sync: '',
   unsupported: '当前不支持',
 };
 const REUSE_PATH_SUMMARY: Record<AdapterReusePath, string> = {
   api_endpoint: '',
   native_subscription: '用这份登录',
-  local_bridge: '本机路由',
+  local_bridge: '本机转发',
   none: '当前不支持',
 };
 
