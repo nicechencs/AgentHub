@@ -1,14 +1,16 @@
 ---
 title: 读模型 owner 与兼容策略
-type: proposal
-status: proposed
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-08-26
+updated: 2026-09-29
 ---
 
 # 读模型 owner 与兼容策略
 
-> 提案，不是现行契约。本系列不改 wire DTO、不拆公开类型、不改 `plan` / `bind` / `unbind` / `switch` / `activate_*`。日常合入 GitHub `dev`。
+> **落地核对（2026-09-29）：** PR1–PR3 均已落地：`src/lib/backend/contracts/agent-status-view.ts`（`sliceAgentStatus`）、`account-map.ts` 的 `mapCoreAccountView` / `savedAuthOf` / `liveAuthOf`（`tauri/account.ts`、`tauri/trash.ts` 已携带）、`contracts/ticket.ts` 的 `adapterRouteToBinding`（mock 已改调，`bindingRouteLabel` 已删除）、`crates/agenthub-core/src/models/account.rs` 已知键访问器与 `models/account/tests.rs`。本页保留为设计记录，不是现行契约；现行事实以源码和 [架构总览](../architecture/overview.md) 为准。
+
+> 提案，不是现行契约。本系列不改 wire DTO、不拆公开类型、不改 `plan` / `bind` / `unbind` / `switch` / `activate_*`。
 
 针对审查 [O-15–O-19](../archive/objectization-encapsulation-audit.md)：宽对象继续承载旧 wire；每个**角色**一个 owner。第一刀只加 mapper 和锁步测试，不删字段、不迁页面。
 
@@ -276,8 +278,8 @@ pnpm exec vitest run src/lib/backend/contracts/account-map.test.ts src/lib/backe
 ## References
 
 - [对象化与封装审查 O-15–O-19](../archive/objectization-encapsulation-audit.md)
-- [Core 与 Runtime](core-runtime.md)
-- [前端与 Backend Adapter 边界](frontend-backend.md)
+- [Core 与 Runtime](../architecture/core-runtime.md)
+- [前端与 Backend Adapter 边界](../architecture/frontend-backend.md)
 - [Connections、Routes 与绑定](../concepts/connections-and-routing.md)
 - [模块化与边界收紧](../proposals/modularity.md)（D2 稳定 wire 是另一项；本提案 **不** 改 wire）
 - [产品边界](../decisions/product-boundaries.md)

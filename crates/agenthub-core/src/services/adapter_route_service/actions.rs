@@ -1148,8 +1148,8 @@ pub(super) fn deepseek_dsh_evidence() -> AdapterEvidence {
 
 pub(super) fn adapter_compatibility_evidence() -> AdapterEvidence {
     AdapterEvidence {
-        label: "AgentHub：厂商、API 与 OAuth 适配规则".into(),
-        url: format!("{GITHUB_REPOSITORY_URL}/blob/release/docs/provider-api-oauth-adaptation.md"),
+        label: "AgentHub：路由兼容性参考".into(),
+        url: format!("{GITHUB_REPOSITORY_URL}/blob/release/docs/reference/route-compatibility.md"),
         verified_at: VERIFIED_AT.into(),
     }
 }

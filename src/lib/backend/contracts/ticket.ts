@@ -1,5 +1,5 @@
 /**
- * Ticket / Binding read model + bind/unbind write (docs/connection-binding-model.md §2 / §4).
+ * Ticket / Binding read model + bind/unbind write (docs/concepts/connections-and-routing.md).
  * Wire shapes match Tauri `list_ticket_wallet` / `plan_ticket` / `bind_ticket` / `unbind_ticket`.
  */
 import type { TranslateFn } from '@/lib/i18n';

@@ -25,7 +25,7 @@ scope: dev；工作区文档变更及当前项目健康抽样；HEAD 06b893c4471
 
 ### 审查对象与权限
 
-- 本机日期：2026-09-07；Windows x64；仓库 `D:/demo_chen/2026/AgentHub`。
+- 本机日期：2026-09-07；Windows x64；仓库 `D:/demo_user/2026/AgentHub`。
 - 分支：`dev`；HEAD：`06b893c4471b92e03246573bee935007bace8c27`。
 - 比较基线：本机 `origin/dev` 与 HEAD 相同；未 fetch，不能证明线上远程最新状态。
 - 初始工作区：`docs/README.md` 修改 1 行；未跟踪 `docs/guides/project-review-handoff.md`；暂存区为空。用户改动仅增加审查提示词及入口，主 Agent 已查看该 diff 和提示词全文。
@@ -196,7 +196,7 @@ Goal Mission：`653f4321-ab14-420e-bc9b-93e666caab00`；声明预算 180000 toke
 
 反方承认调用链事实，但认为 best-effort/Early 是设计取舍，并把截断问题侧重描述为测试缺口。主 Agent 根据用户影响和源码裁决保留两项 P1；不同切片 reviewer 的局部 verdict 不构成互相否定。P2 测试分离问题由主 Agent 直接确认，未为简单规则检查额外启动强模型。
 
-审查输出位于本机会话 artifact 的 `review/map.md`、`boundaries.md`、`runtime.md`、`challenge.md`。可由 workflow receipt 恢复：`本机临时路径`。最终可交付事实已汇入本报告，不依赖临时输出长期保留。
+审查输出位于本机会话 artifact 的 `review/map.md`、`boundaries.md`、`runtime.md`、`challenge.md`。这些临时文件只在当时的本机存在。最终可交付事实已汇入本报告，不依赖临时输出长期保留。
 
 ## 9. 待验证与残余风险
 

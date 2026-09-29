@@ -4,7 +4,7 @@ description: 当前来源、目标、路由、规则和适用门禁的可核对�
 type: reference
 status: current
 owner: maintainers
-updated: 2026-08-29
+updated: 2026-09-29
 ---
 
 # Route 兼容性参考
@@ -14,7 +14,7 @@ updated: 2026-08-29
 ## 真源与判定规则
 
 - 生成真源是 `crates/agenthub-core/src/domain/protocol_graph/adapter_capability_matrix.rs`；LocalBridge 的 `rule_id`、来源、目标、传输、协议和默认模型由 `adapter_capability_matrix/local_bridge_edges.rs` 单一声明派生。
-- 本页快照更新时间为 **2026-08-29**。矩阵常量为 `MATRIX_VERSION = "1"`、默认 `VERIFIED_AT = "2026-08-12"`；表中单元格的 `verified_at` 以各行源码为准。2026-08-29 的 Responses 本机令牌改动没有新增或删除矩阵 cell，只把 Codex/Grok Responses 格式绑到路由本身。动态状态变更后，以源码、`agenthub agent capabilities` 以及下列测试重新核对，不以本页文字作为第二份真源。
+- 本页快照按 2026-09-29 的源码核对。矩阵常量 `MATRIX_VERSION = "1"`、默认 `VERIFIED_AT = "2026-08-12"`；各行 `verified_at` 以源码为准。状态变化后以源码和下列测试重新核对，不把本页当第二份真源。
 - 建议核对命令：`cargo test -p agenthub-core --locked adapter_capability_matrix`。该测试覆盖规则 ID、路线、`can_apply`、成熟度、门禁和 LocalBridge 清单。
 - `can_apply` 是矩阵层的写入/启动标志。实际 plan 还要满足来源凭据、目标 writer 和 plan 的 private `write_gate`；源码定义为“矩阵 `can_apply` 与 plan `write_gate` 的交集”。因此表中的 `true` 不承诺当前每个账户都能直接应用。
 - 七项 gate 为 `official_contract`、`terms_reviewed`、`endpoint_stable`、`auth_refresh`、`protocol_conversion`、`isolation_verified`、`e2e_verified`。`all_open` 表示七项为 `true`；`all_closed` 表示七项均为 `false`。
@@ -37,6 +37,9 @@ updated: 2026-08-29
 | `OpenaiApi / ApiKey → Codex` | `openai-api-to-codex-v1` | `local_bridge` | Experimental | `true / all_open` | 2026-08-21 | `OPENAI_CODEX_LIMITS` |
 | `OpenaiApi / ApiKey → Claude` | `openai-api-to-claude-v1` | `local_bridge` | Experimental | `true / all_open` | 2026-08-23 | `OPENAI_CLAUDE_LIMITS` |
 | `OpenaiApi / ApiKey → Grok` | `openai-api-to-grok-bridge-v1` | `local_bridge` | Experimental | `true / all_open` | 2026-08-23 | `OPENAI_GROK_BRIDGE_LIMITS` |
+| `OPENAI_CHAT_BRIDGE_LIMITS` | 本机转发，下游与上游都是 OpenAI Chat Completions；目标 Kimi / DSH 指向本机端点，Hub 需在托盘运行，端口冲突会重分配并回写。 |
+| `OpenaiApi / ApiKey → Kimi` | `openai-api-to-kimi-bridge-v1` | `local_bridge` | Experimental | `true / all_open` | 2026-09-04 | `OPENAI_CHAT_BRIDGE_LIMITS` |
+| `OpenaiApi / ApiKey → Dsh` | `openai-api-to-dsh-bridge-v1` | `local_bridge` | Experimental | `true / all_open` | 2026-09-04 | `OPENAI_CHAT_BRIDGE_LIMITS` |
 | `XaiApi / ApiKey → Pi` | `xai-api-to-pi-v1` | `config_sync` | Stable | `true / all_open` | 2026-08-12 | `XAI_PI_LIMITS` |
 | `GlmCodingPlan / ApiKey → Pi` | `glm-coding-plan-to-pi-v1` | `config_sync` | Experimental | `true / all_open` | 2026-08-15 | `GLM_PI_LIMITS` |
 | `DeepseekApi / ApiKey → Pi` | `deepseek-api-to-pi-v1` | `config_sync` | Experimental | `true / all_open` | 2026-08-15 | `DEEPSEEK_PI_LIMITS` |
@@ -63,6 +66,13 @@ updated: 2026-08-29
 | `CodexChatGptSubscription / OauthAuthJson → Dsh` | `codex-subscription-to-dsh-v1` | `local_bridge` | Experimental | `true / all_open` | 2026-08-20 | `CODEX_CHAT_LIMITS` |
 | `CodexChatGptSubscription / OauthOther → Dsh` | `codex-subscription-to-dsh-v1` | `local_bridge` | Experimental | `true / all_open` | 2026-08-20 | `CODEX_CHAT_LIMITS` |
 | `ClaudeSubscription / OauthOther → Codex` | `claude-subscription-to-codex-v1` | `local_bridge` | Preview | `false / all_closed` | 2026-08-22 | `CLAUDE_CODEX_LIMITS` |
+| `KIRO_BRIDGE_LIMITS` | 目标 Agent 指向本机，上游 Kiro 登录不写入对方；上游是 Kiro 一轮文本回复，不在对方工作目录执行工具；Hub 需在托盘运行；登录过期需重新同步，Hub 不自动刷新。 |
+| `Kiro / ApiKey → Claude` | `kiro-to-claude-v1` | `local_bridge` | Experimental | `true / all_open` | 2026-09-08 | `KIRO_BRIDGE_LIMITS` |
+| `Kiro / OauthOther → Claude` | `kiro-to-claude-v1` | `local_bridge` | Experimental | `true / all_open` | 2026-09-08 | `KIRO_BRIDGE_LIMITS` |
+| `Kiro / ApiKey → Codex` | `kiro-to-codex-v1` | `local_bridge` | Experimental | `true / all_open` | 2026-09-08 | `KIRO_BRIDGE_LIMITS` |
+| `Kiro / OauthOther → Codex` | `kiro-to-codex-v1` | `local_bridge` | Experimental | `true / all_open` | 2026-09-08 | `KIRO_BRIDGE_LIMITS` |
+| `Kiro / ApiKey → Grok` | `kiro-to-grok-v1` | `local_bridge` | Experimental | `true / all_open` | 2026-09-08 | `KIRO_BRIDGE_LIMITS` |
+| `Kiro / OauthOther → Grok` | `kiro-to-grok-v1` | `local_bridge` | Experimental | `true / all_open` | 2026-09-08 | `KIRO_BRIDGE_LIMITS` |
 
 ## 限制组
 

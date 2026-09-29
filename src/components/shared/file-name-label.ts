@@ -26,7 +26,7 @@ export function splitFileLabel(path: string, name = ''): {
 /**
  * Tail-first path label for narrow chrome: keep the last `keep` segments and
  * mark the dropped head with `…`.
- * `D:\demo\chen\2026\AgentHub` → `…\2026\AgentHub`; a path that short stays whole.
+ * `D:\demo\user\2026\AgentHub` → `…\2026\AgentHub`; a path that short stays whole.
  */
 export function pathTailLabel(path: string, keep = 2): string {
   const raw = path.trim();

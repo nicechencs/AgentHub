@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
-/** 错误态:错误摘要 + 重试(主按钮) + 复制诊断信息(docs/ui-design.md §6) */
+/** 错误态:错误摘要 + 重试(主按钮) + 复制诊断信息(docs/ui/design-system.md §6) */
 export function ErrorState({
   error,
   onRetry,

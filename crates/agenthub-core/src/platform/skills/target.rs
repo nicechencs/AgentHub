@@ -1,4 +1,4 @@
-//! Agent skill projection targets (P12 / P1-3).
+//! Agent skill projection targets.
 //!
 //! An [`AgentSkillTarget`] describes where a skill may be projected for one
 //! agent. Production builtins register [`StaticSkillTarget`] from path roots

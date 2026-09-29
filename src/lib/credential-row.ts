@@ -1,5 +1,5 @@
 /**
- * Shared credential-row read model (P2-7).
+ * Shared credential-row read model.
  * Connections / ConnectFlow / ticket wallet project from this axis.
  * Do not import this from a page module into contracts; pages consume via lib façades.
  */

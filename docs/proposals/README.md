@@ -3,7 +3,7 @@ title: Future Proposals
 type: navigation
 status: current
 owner: maintainers
-updated: 2026-09-15
+updated: 2026-09-29
 ---
 
 # Proposals
@@ -16,31 +16,25 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 
 - The user-facing runtime page is **Routes / 路由** at `/routes`.
 - `local_bridge` currently runs in the Tauri process through the in-process control host. The current control contract is useful independently of any process move.
-- The current tray behavior and module boundaries are the baseline. A proposal must preserve them until a replacement is implemented and verified.
+- The current tray behavior (window policy in `src-tauri/src/window_policy.rs`) and module boundaries are the baseline. A proposal must preserve them until a replacement is implemented and verified.
 - Product writes remain `plan` / `bind` / `unbind`; credentials, accounts, providers, and live configuration are not moved into a speculative runtime process.
 - Default local-bridge pools share one loopback port and one Hub token per Agent/surface. Mixed-provider composite routes and Codex↔Grok pair adapters remain experimental flags, default off. The shipped pool contract lives in [Connections and routing](../concepts/connections-and-routing.md) and [the local route API](../reference/local-route-api.md); the design record is archived at [unified-loopback-pool.md](../archive/unified-loopback-pool.md).
 
 ## Candidates
 
-| Proposal | Status | Question it explores |
+| Proposal | 落地情况 | 要回答的问题 |
 |---|---|---|
-| [Chat 统一体验与跨环境开发](chat-unified-experience.md) | proposed | 如何共用聊天交互、逐家接入 Agent，并在换电脑或换开发 Agent 后复现和验收？用户标准见 [Chat 体验标杆](../ui/chat-experience-bar.md)。 |
-| [Chat 宿主加深与多 Agent 兼容](chat-host-depth.md) | proposed（A–I 已合入 `dev`） | 切片已在 `dev`。本页仍是提案：真窗未宣称对方斜杠命令；F 取消；不拆 enable 白名单。Claude 确认不在本页。现行以 [STATUS](../STATUS.md) 为准。 |
-| [可选本机命令护栏](chat-tool-guard.md) | proposed | 占位。本波不实现。 |
-| [adapter-sidecar.md](adapter-sidecar.md) | proposed | Could a user-level process own the long-lived local route runtime while GUI and CLI remain clients? |
-| [tray-background-modes.md](tray-background-modes.md) | proposed | Could closing the window reduce WebView memory without changing route ownership or exit semantics? |
-| [modularity.md](modularity.md) | proposed | Which single-source and use-case boundaries should be tightened before any larger process change? |
-| [Service 内部 owner 拆分](../architecture/service-internal-owners.md) | proposed | Concrete internal owner split for O-11 ProviderService, O-12 AccountService, O-13 BackupService, and O-14/O-66 local-route persist — façades and switch semantics stay |
-| [接入 Kiro（kiro-cli）](agent-kiro.md) | proposed（半面已落地） | 检测/安装/登录与 ACP 新对话已落地；剩余边界见正文进度表。现行以 [STATUS](../STATUS.md) 为准。 |
-| [Kiro HTTP / 本机转发](agent-kiro-http.md) | proposed（切片已落地） | HTTP 多轮与本机路由已接线；本机路由 SSE 按上游 event-stream 帧转发（单测；真窗 TTFT 未验）。剩余：企业 IdC/`profileArn`、Chat 打印收齐、官方 REST。 |
-| [国内自动更新镜像（R2）](update-mirror-r2.md) | proposed（0.4.9 已发） | App 镜像优先、GitHub 回退已在正式包；CF 资源仍由运维配置，见提案实施进度。 |
-| [plugin-management.md](plugin-management.md) | proposed（半面已落地） | `/plugins` 列表与 Claude/Grok 启停、安装/卸载已落地；更新与 Codex/Pi 写入仍提案。现行以 [STATUS](../STATUS.md) 为准。 |
-| [read-model-owners.md](../architecture/read-model-owners.md) | proposed | Could O-15–O-19 be narrowed with unique mapper owners without changing wire DTO or splitting public types? |
-| [runtime-context-owners.md](../architecture/runtime-context-owners.md) | proposed | Could store reset/invalidation live in one runtime context (O-07) without changing plan/bind/switch? |
-| [form-sidebar-owners.md](../architecture/form-sidebar-owners.md) | proposed | Could GenericConfigForm and Sidebar split schema/nav/stats owners (O-23) without restyling chrome? |
-| [startup-gateway-owners.md](../architecture/startup-gateway-owners.md) | proposed | Concrete owners for AgentHub bootstrap, registry vs catalog, transport, Gateway, and protocol vs vendor policy (O-26–O-30) |
-| [usage-owners.md](../architecture/usage-owners.md) | proposed | Usage filter/normalizer/model-switch owners (O-31–O-34) without changing totals or reasoning_tokens |
-| [test-fixture-owners.md](../architecture/test-fixture-owners.md) | proposed | Connect-flow fixtures, mock ticket resolver width, and OAuth device test store scope (O-41/O-42/O-44) |
+| [Chat 统一体验与跨环境开发](chat-unified-experience.md) | 部分落地 | 如何共用聊天交互、逐家接入 Agent，并在换电脑或换开发 Agent 后复现和验收？用户标准见 [Chat 体验标杆](../ui/chat-experience-bar.md)。 |
+| [可选本机命令护栏](chat-tool-guard.md) | 未落地 | 占位，暂不实现。 |
+| [adapter-sidecar.md](adapter-sidecar.md) | 未落地 | 能否由一个用户级进程托管长期运行的本机路由，GUI 和 CLI 只做客户端？ |
+| [tray-background-modes.md](tray-background-modes.md) | 部分落地 | 关窗后能否释放 WebView 内存，而不改变路由归属和退出语义？关窗策略已抽到 `src-tauri/src/window_policy.rs`。 |
+| [modularity.md](modularity.md) | 部分落地 | 在更大的进程拆分之前，先收紧哪些单一来源和用例边界？ |
+| [接入 Kiro（kiro-cli）](agent-kiro.md) | 大部分落地 | 剩 Skills / MCP。现行以 [STATUS](../STATUS.md) 为准。 |
+| [Kiro HTTP / 本机转发](agent-kiro-http.md) | 大部分落地 | 剩企业 IdC / `profileArn` 验收、打印路径流式、主机迁移。 |
+| [国内自动更新镜像（R2）](update-mirror-r2.md) | 代码已落地 | 剩云端运维配置和国内真机验收。 |
+| [plugin-management.md](plugin-management.md) | 部分落地 | 插件更新与 Codex / Pi 写入仍是提案。现行以 [STATUS](../STATUS.md) 为准。 |
+
+已全部落地的提案（Chat 宿主加深、7 份 `*-owners` 拆分）和 2026-09-07 UI 审查已移到 [归档](../archive/README.md)。
 
 ## Proposal rules
 

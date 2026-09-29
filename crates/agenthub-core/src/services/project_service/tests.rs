@@ -730,8 +730,8 @@ fn list_codex_groups_by_payload_cwd_session_meta() {
     write_session(
         &session,
         &[
-            r#"{"timestamp":"2026-08-03T03:12:01.558Z","type":"session_meta","payload":{"session_id":"abc","cwd":"d:\\demo_chen\\2026\\AgentHub","originator":"codex_vscode"}}"#,
-            r#"{"timestamp":"2026-08-03T03:12:03.326Z","type":"turn_context","payload":{"cwd":"D:\\demo_chen\\2026\\AgentHub","model":"gpt-5.6-sol"}}"#,
+            r#"{"timestamp":"2026-08-03T03:12:01.558Z","type":"session_meta","payload":{"session_id":"abc","cwd":"d:\\demo_user\\2026\\AgentHub","originator":"codex_vscode"}}"#,
+            r#"{"timestamp":"2026-08-03T03:12:03.326Z","type":"turn_context","payload":{"cwd":"D:\\demo_user\\2026\\AgentHub","model":"gpt-5.6-sol"}}"#,
             r#"{"timestamp":"2026-08-03T03:12:04.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"fix project grouping"}]}}"#,
         ],
     );
@@ -742,16 +742,16 @@ fn list_codex_groups_by_payload_cwd_session_meta() {
     // Drive letter normalized to uppercase in storage key.
     assert_eq!(
         sessions[0].project_id,
-        "codex:proj:cwd/D:/demo_chen/2026/AgentHub"
+        "codex:proj:cwd/D:/demo_user/2026/AgentHub"
     );
     assert!(
         sessions[0]
             .cwd
             .as_deref()
-            .map(|c| c.eq_ignore_ascii_case(r"d:\demo_chen\2026\AgentHub")
-                || c.eq_ignore_ascii_case("d:/demo_chen/2026/AgentHub")
-                || c.eq_ignore_ascii_case(r"D:\demo_chen\2026\AgentHub")
-                || c.eq_ignore_ascii_case("D:/demo_chen/2026/AgentHub"))
+            .map(|c| c.eq_ignore_ascii_case(r"d:\demo_user\2026\AgentHub")
+                || c.eq_ignore_ascii_case("d:/demo_user/2026/AgentHub")
+                || c.eq_ignore_ascii_case(r"D:\demo_user\2026\AgentHub")
+                || c.eq_ignore_ascii_case("D:/demo_user/2026/AgentHub"))
             .unwrap_or(false),
         "cwd={:?}",
         sessions[0].cwd
@@ -779,7 +779,7 @@ fn list_codex_groups_by_payload_cwd_session_meta() {
         .join("rollout-other.jsonl");
     write_session(
         &session2,
-        &[r#"{"type":"session_meta","payload":{"cwd":"D:\\demo_chen\\2026\\AgentHub"}}"#],
+        &[r#"{"type":"session_meta","payload":{"cwd":"D:\\demo_user\\2026\\AgentHub"}}"#],
     );
     let projects2 = list_projects_for_agent_home(AgentId::Codex, &home, None).unwrap();
     assert_eq!(projects2.len(), 1);
@@ -1201,7 +1201,7 @@ fn list_kimi_uses_workspaces_and_one_row_per_session() {
           "version": 1,
           "workspaces": {
             "wd_agenthub_ae03ebf85cb0": {
-              "root": "D:/demo_chen/2026/AgentHub",
+              "root": "D:/demo_user/2026/AgentHub",
               "name": "AgentHub",
               "created_at": "2026-07-26T02:45:04.635Z"
             }
@@ -1224,7 +1224,7 @@ fn list_kimi_uses_workspaces_and_one_row_per_session() {
         &sess.join("agents").join("main").join("wire.jsonl"),
         &[
             r#"{"type":"metadata","protocol_version":"1.4"}"#,
-            r#"{"type":"config.update","cwd":"D:/demo_chen/2026/AgentHub","modelAlias":"kimi-code/k3"}"#,
+            r#"{"type":"config.update","cwd":"D:/demo_user/2026/AgentHub","modelAlias":"kimi-code/k3"}"#,
             r#"{"type":"turn.prompt","input":[{"type":"text","text":"实现 projects 列表"}]}"#,
         ],
     );
@@ -1251,7 +1251,7 @@ fn list_kimi_uses_workspaces_and_one_row_per_session() {
         .expect("agent-0 wire");
     assert_eq!(
         parent.project_id,
-        "kimi:proj:cwd/D:/demo_chen/2026/AgentHub"
+        "kimi:proj:cwd/D:/demo_user/2026/AgentHub"
     );
     assert_eq!(child.project_id, parent.project_id);
     assert!(
@@ -1268,7 +1268,7 @@ fn list_kimi_uses_workspaces_and_one_row_per_session() {
     );
     assert_eq!(
         parent.cwd.as_deref().map(|c| c.replace('\\', "/")),
-        Some("D:/demo_chen/2026/AgentHub".into())
+        Some("D:/demo_user/2026/AgentHub".into())
     );
     assert_eq!(
         child.session_id.as_deref(),
@@ -1948,7 +1948,7 @@ fn kimi_excerpt_skips_wire_noise_to_reach_later_turns() {
           "version": 1,
           "workspaces": {
             "wd_excerpt_noise": {
-              "root": "D:/demo_chen/2026/AgentHub",
+              "root": "D:/demo_user/2026/AgentHub",
               "name": "AgentHub",
               "created_at": "2026-07-26T02:45:04.635Z"
             }
@@ -2038,7 +2038,7 @@ fn kimi_excerpt_strips_git_context_from_user_turn() {
           "version": 1,
           "workspaces": {
             "wd_git_context": {
-              "root": "D:/demo_chen/2026/AgentHub",
+              "root": "D:/demo_user/2026/AgentHub",
               "name": "AgentHub",
               "created_at": "2026-07-26T02:45:04.635Z"
             }

@@ -11,14 +11,14 @@ import {
 
 describe('normalizeOpenPath', () => {
   it('accepts Windows backslash paths', () => {
-    expect(normalizeOpenPath('D:\\demo_chen\\2026\\AgentHub')).toBe(
-      'D:\\demo_chen\\2026\\AgentHub',
+    expect(normalizeOpenPath('D:\\demo_user\\2026\\AgentHub')).toBe(
+      'D:\\demo_user\\2026\\AgentHub',
     );
   });
 
   it('normalizes Windows forward-slash paths', () => {
-    expect(normalizeOpenPath('D:/demo_chen/2026/AgentHub')).toBe(
-      'D:\\demo_chen\\2026\\AgentHub',
+    expect(normalizeOpenPath('D:/demo_user/2026/AgentHub')).toBe(
+      'D:\\demo_user\\2026\\AgentHub',
     );
   });
 

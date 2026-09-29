@@ -17,7 +17,7 @@ export default {
     },
     extend: {
       colors: {
-        // 设计 token 真源：src/styles/tokens.ts → CSS 变量（docs/ui-design.md §2）
+        // 设计 token 真源：src/styles/tokens.ts → CSS 变量（docs/ui/design-system.md）
         // 命名避开 Tailwind font-size 的 base,否则 text-base 会被同时解析成文字颜色
         canvas: 'var(--bg-canvas)',
         panel: 'var(--bg-panel)',

@@ -30,8 +30,8 @@ import {
 export const CONNECTION_SECRET_MARKER = '$AGENTHUB_CONNECTION_SECRET$';
 
 const COMPAT_EVIDENCE = evidence(
-  'AgentHub：厂商、API 与 OAuth 适配规则',
-  'https://github.com/nicechencs/AgentHub/blob/release/docs/provider-api-oauth-adaptation.md',
+  'AgentHub：路由兼容性参考',
+  'https://github.com/nicechencs/AgentHub/blob/release/docs/reference/route-compatibility.md',
 );
 
 const UNKNOWN_REASON =

@@ -31,7 +31,7 @@ export async function analyzeAdapter(request: AdapterRouteRequest): Promise<Adap
   return getBackend().adapter.analyze(request);
 }
 
-/** Read-only Phase 0 config/service preview; it never returns a credential. */
+/** Read-only config/service preview; it never returns a credential. */
 export async function planAdapter(request: AdapterRouteRequest): Promise<AdapterApplyPlan> {
   return getBackend().adapter.plan(request);
 }

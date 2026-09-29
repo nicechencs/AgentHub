@@ -29,7 +29,7 @@ use super::{elapsed_ms, log_skill_write_result, SkillService};
 
 impl SkillService {
     // -----------------------------------------------------------------------
-    // Install / uninstall / update / project (Phase B)
+    // Install / uninstall / update / project
     // -----------------------------------------------------------------------
 
     /// Install a skill into the shared source root from a local path, zip, or git URL.

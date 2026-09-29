@@ -5,43 +5,46 @@ status: current
 owner: maintainers
 audience: chat and core contributors
 source-of-truth: ProcessStep, ChatEvent, RuntimeSnapshot
-updated: 2026-09-20
+updated: 2026-09-29
 ---
 
 # Chat 过程事件
 
-对话页过程面板读的是已经规范化的步骤，不是对方原始协议全文。本页固定**最小枚举**和**不要画进过程**的项。不引入公网订阅总线，也不一次换掉约 80ms 快照。
+对话页的过程面板显示的是已经整理好的步骤，不是对方原始协议全文。本页固定**最小步骤种类**和**不能画成过程的内容**。
 
-## 现行投递
+## 怎样送到页面
 
-持续聊天：活动会话约 80ms 读 `RuntimeSnapshot`（正文 `currentMessage`、过程步骤、待确认、可选 `catalogEpoch` / `plan` / 宿主命令卡片）。旧发送路径是内存过程视图，刷新后不保证回放。有序号的运行时事件可落在 `chat_runtime_events`。
+- **持续通道**：活动会话约每 80ms 读一次 `RuntimeSnapshot`，里面有正文 `currentMessage`、过程步骤、待确认请求，以及可选的 `catalogEpoch`、`plan`、`hostTerminals`（宿主命令卡片）。带序号的事件落在 SQLite 表 `chat_runtime_events`。
+- **原发送方式**：过程只在内存里，刷新后不保证回放。
 
-## 最小种类（`ProcessStep`）
+## 步骤种类（`ProcessStep`）
 
-| 种类 | 用户能看见 | 脱敏 |
+类型定义在 `crates/agenthub-core/src/models/chat.rs`（`ProcessStep` / `ChatEvent`）。
+
+| 种类 | 用户看到什么 | 打码要求 |
 | --- | --- | --- |
-| 状态 | 运行详情里的阶段，不冒充工具 | 不要写密钥、完整 token |
-| 思考 | 右侧栏思考正文 | 按对方已给出的文本；不要从屏幕猜 |
-| 工具 | 主列「正在读取 / 正在修改 / 正在执行」；细节里名称与折叠 JSON | 输入/结果里的密钥只留末四位或整段去掉；路径可保留 |
-| 文本 / 原始行 | 过程或降级展示 | 坏行写成「有一行输出没法展示」，不要把密钥打进气泡 |
-| 错误 | 失败信息 | 同上 |
-| 用量 | 本轮结束后小字输入 / 输出；过程面板末行同样只画协议数字；`scope=context` 才表示窗口用量 | 只画协议里的数字，不估算费用 |
+| 状态 `Status` | 运行详情里的阶段，不冒充工具 | 不写 Key、完整 token |
+| 思考 `Thinking` | 右侧栏思考正文 | 只用对方给出的文本，不从屏幕猜 |
+| 工具 `Tool` | 主列「正在读取 / 正在修改 / 正在执行」；细节里是名称和折叠的 JSON | 输入/结果里的 Key 只留末四位或整段去掉；路径可保留 |
+| 文本 / 原始行 `Text` / `Raw` | 过程或降级展示 | 坏行写成「有一行输出没法展示」，不把 Key 打进气泡 |
+| 错误 `Error` | 失败信息 | 同上 |
+| 用量 `Usage` | 本轮结束后小字写输入 / 输出；`scope=context` 才表示上下文窗口用量 | 只画协议里的数字，不估算费用 |
 
-对应 wire：`ProcessStep` / `ChatEvent`（`crates/agenthub-core/src/models/chat.rs`）。前端摘要见过程面板。允许 / 拒绝按钮在待确认卡片上；过程面板只写「等待允许或拒绝」，不造假按钮。你说了什么挂在同一面板首行，来自这一轮已有的用户消息，不另开事件种类。
+允许 / 拒绝按钮在待确认卡片上，过程面板只写「等待允许或拒绝」。面板首行“你说了什么”来自这一轮已有的用户消息，不另开步骤种类。
 
-## 不要当过程行
+## 不能当过程行
 
-下列进 Options 或专用条，**禁止**推进过程时间线冒充「对方做了一步」：
+以下内容进会话 Options 或专用条，**不能**推进过程时间线冒充“对方做了一步”：
 
-- 斜杠命令目录（`available_commands` / Kiro `_kiro.dev/commands/available` / `nativeCommands`）
-- ACP `config_option_update`（模型 / 思考目录）
-- 世代号 `catalogEpoch`（只用来重拉 Options）
+- 斜杠命令目录（ACP `available_commands_update`、Kiro `_kiro.dev/commands/available`、`nativeCommands`）；
+- ACP `config_option_update`（模型 / 思考目录）；
+- `catalogEpoch`（只用来提示页面重拉 Options）；
+- `plan`：进当前轮的计划条，换轮丢掉。来源是 Grok / Kiro 的 ACP `sessionUpdate: plan`，以及新空 Claude 会话的 TodoWrite / TaskCreate / TaskUpdate / TaskList；
+- 宿主 `terminal/*`：进命令卡片，不是对话终端。
 
-`plan` 走当前轮计划条，换轮丢掉。Grok / Kiro 的 ACP `sessionUpdate: plan`，以及 Claude 新对话的 TodoWrite / TaskCreate / TaskUpdate / TaskList，都进这条，不进过程时间线。宿主 `terminal/*` 走命令卡片，不是对话 TTY。
+## 边界
 
-## 本波边界
+- 新步骤挂在现有过程面板上，不新开第二套轨迹 DTO，也不换掉约 80ms 的快照读取，不做公网推送。
+- 调试导出时读已有快照或 `chat_runtime_events`。
 
-- 最小事件挂现有过程面板：你说了什么、工具、等待确认、用量、错误。不新开第二套 trajectory DTO，也不换掉约 80ms 快照。
-- 导出调试：需要时读已有快照或 `chat_runtime_events`，不要先做公网推送。
-
-面板现行事实见 [STATUS](../STATUS.md) 与 [Chat 与 Agent](chat-and-agents.md)。
+当前面板行为见 [STATUS](../STATUS.md) 与 [Chat 与 Agent 运行](chat-and-agents.md)。
