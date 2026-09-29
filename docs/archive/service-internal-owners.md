@@ -1,16 +1,16 @@
 ---
 title: Service 内部 owner 拆分
-type: proposal
-status: proposed
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-08-26
+updated: 2026-09-29
 ---
 
 # Service 内部 owner 拆分
 
-> 状态：提案（Draft）。作者：maintainers。日期：2026-08-26。
->
-> 本文是 [模块化与边界收紧](../proposals/modularity.md) D3 的落地设计：只拆 O-11 `ProviderService`、O-12 `AccountService`、O-13 `BackupService`、O-14/O-66 本机转发事务的**内部 owner**。不是现行契约，不得按已实施理解。日常 PR 合入 GitHub `dev`。
+> **落地核对（2026-09-29）：** PR1、PR2、PR4 已落地：`services/backup_service/{catalog,snapshot,restore,path_safety,inspect}.rs`、`services/provider_service/{pool,live,switch_saga,lock,compensate}.rs`、`services/adapter_bridge_service/persist_saga.rs`（桌面 `adapter_bridge_controller.rs` 已改调）。PR3（Account 文件头 owner 注释，可选）未做；`account_service` 的 `pool_crud` 已变成目录。本页保留为设计记录，不是现行契约；现行事实以源码和 [架构总览](../architecture/overview.md) 为准。
+
+> 本文是 [模块化与边界收紧](../proposals/modularity.md) D3 的落地设计：只拆 O-11 `ProviderService`、O-12 `AccountService`、O-13 `BackupService`、O-14/O-66 本机转发事务的**内部 owner**。不是现行契约，不得按已实施理解。
 
 ## Overview
 
@@ -209,7 +209,7 @@ snapshot_inner(agent, kind, note)
 | 决定 | 理由 |
 | --- | --- |
 | 公开门面类型和方法名冻结；`pub` 与 `pub(crate)` 分开记 | CLI/桌面按 `pub` 接线；`update_pool_with_guard` 仍要留给 apply saga。 |
-| `ConnectionService` 唯一拥有 current（含 `*_conn` / `*_if_revision`） | 与 [core-runtime.md](core-runtime.md)、modularity D3 一致。 |
+| `ConnectionService` 唯一拥有 current（含 `*_conn` / `*_if_revision`） | 与 [core-runtime.md](../architecture/core-runtime.md)、modularity D3 一致。 |
 | 不改 switch / undo / 补偿顺序 / 锁获取顺序 | 本系列是文件边界，不是行为迁移。 |
 | 本机写锁是进程内 `held_lock_paths`，不是跨进程协议 | 以 `agent_lock.rs` 为准；锁文件只做诊断与同路径身份。 |
 | `snapshot_with_guard` = validate + `snapshot_inner` | 现网合同；嵌套 saga 靠 `as_live_write_guard()`。 |
@@ -324,6 +324,6 @@ cargo test -p agenthub-gui --locked adapter_bridge_controller
 - [对象化与封装审查](../archive/objectization-encapsulation-audit.md) — O-11、O-12、O-13、O-14
 - [对象化与封装审查：CLI、Tauri 与工具链](../archive/objectization-encapsulation-audit-cli-tauri.md) — O-66
 - [模块化与边界收紧](../proposals/modularity.md) — D3
-- [Core 与 Runtime](core-runtime.md)
-- [架构总览](overview.md)（本提案不改其当前态表述）
+- [Core 与 Runtime](../architecture/core-runtime.md)
+- [架构总览](../architecture/overview.md)（本提案不改其当前态表述）
 - 源码：`provider_service.rs`、`account_service/`、`backup_service.rs`、`connection_service/`、`live_write_authority.rs`、`utils/agent_lock.rs`、`adapter_control/`、`adapter_bridge_service/`、`adapter_apply_service/saga.rs`、`src-tauri/src/adapter_bridge_controller.rs`、`src-tauri/src/commands/{provider,account,backup}.rs`、`crates/agenthub-cli/src/commands/{provider,account,backup}.rs`

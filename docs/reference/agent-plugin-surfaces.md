@@ -1,33 +1,31 @@
 ---
 title: Agent 插件表面
-description: 各内置 Agent 的 MCP、厂商 Plugin 与技能目录、安装/卸载/更新方式。这是厂商表面对照，不是 AgentHub 已接线的管理 API。
+description: 各内置 Agent 在厂商侧的 MCP、Plugin 包与技能目录，以及安装/卸载/更新方式。
 type: reference
 audience: contributor
 status: current
-updated: 2026-09-17
+updated: 2026-09-29
 ---
 
 # Agent 插件表面
 
-本页对照十个内置 Agent 在**厂商侧**的两类扩展：`plugin` / `extension` **包**，以及单独配置的 **MCP server**。AgentHub 计划中的「插件」页只对前者；`/mcp` 只读页只对后者。来源是各家公开文档、本机路径和 adapter。能力等级以 [能力参考](capabilities.md) 为准。
+本页对照十个内置 Agent 在**厂商侧**的两类扩展：可安装的 plugin / extension **包**，以及单独配置的 **MCP server**。AgentHub 的 `/plugins` 页只管前者，`/mcp` 页只管后者（见 [插件、MCP 与技能](../concepts/plugins-and-mcp.md)）。来源是各家公开文档、本机路径和 adapter；能力等级以 [能力参考](capabilities.md) 为准。
 
-术语：
+- **插件包**：可安装的发行单元，常含 skills、commands、agents、hooks，**有时附带** MCP。
+- **MCP server**：Agent 作为客户端去连的外部工具进程或 URL。
+- **技能同步**：AgentHub 把 `~/.agents/skills/<id>` 链接或复制到 Agent 自己的 skills 目录。
 
-- **插件包（plugin / extension）**：可安装的发行单元，常含 skills、commands、agents、hooks，**有时附带** MCP。
-- **MCP server**：Agent 作为客户端连接的外部工具进程或 URL；不是插件页的主键。
-- **技能投影**：AgentHub 把 `~/.agents/skills/<id>` 链到或复制到 Agent 自己的 skills 目录。
-
-未验证的单元格写「未验证」。不要据此把 `Capability::Mcp` 改成 Full，也不要在实现前新增未接线的插件能力 Full。Goose 将 MCP 称为 extension，那不是本表的「插件包」。
+没验证过的写「未验证」。不要据此改 `Capability::Mcp`，也不要为没接线的插件能力写 Full。
 
 ## 厂商插件系统（plugin / extension 包）
 
-「支持」指该 Agent **自己**是否有可安装的 plugin/extension 包系统。AgentHub 对 Claude / Grok / Pi 只读 list；Claude / Grok 可安装/卸载/启用/停用。更新和其他 Agent 仍未接线。
+「厂商插件系统」指该 Agent **自己**有没有可安装的包系统。最后一列是 AgentHub 当前做到的程度（`services/plugin_inventory.rs` / `plugin_apply.rs`）。
 
 | Agent | 厂商插件系统 | 判定依据 | AgentHub |
 |---|---|---|---|
 | Claude | **有** | `/plugin`、`claude plugin`；`~/.claude/plugins/`；`enabledPlugins` | 列表 + 安装/卸载/启用/停用 |
 | Grok | **有** | `grok plugin`；`~/.grok/plugins/`；启用与 trust 分开 | 列表 + 安装/卸载/启用/停用 |
-| Codex | **有** | `/plugins`、`codex plugin`；`~/.codex/plugins/cache/` | 未接线 |
+| Codex | **有** | `/plugins`、`codex plugin`；`~/.codex/plugins/cache/` | 未接线（Planned） |
 | Pi | **有**（叫 package / extension） | `pi install` / `pi remove` / `pi update --extensions` | 只读 list |
 | DSH | **另一套**（Cordis） | `cordis.patch.yml` 插件树，不是 `name@marketplace` 包 | 关闭，不硬转 |
 | Cursor | **无** | AgentHub 管 `cursor-agent` CLI；VS Code/Cursor IDE 扩展市场不算 | 不支持 |
@@ -36,22 +34,22 @@ updated: 2026-09-17
 | ZCode | **未验证** | 无稳定 plugin CLI | 不支持 |
 | Kiro | **未验证** | 第一波只认 `kiro-cli`；无已验证 plugin CLI | 不支持 |
 
-实现顺序见 [插件管理提案](../proposals/plugin-management.md) §6：Claude、Grok → Codex、Pi → DSH 保持关闭 → Cursor / Kimi / WorkBuddy / ZCode / Kiro 明确不支持。
+后续（更新、Codex / Pi 写入）见 [插件管理提案](../proposals/plugin-management.md)。
 
 ## 总览
 
-| Agent | MCP 配置（用户级） | MCP 管理命令 | Plugin 包 | 技能目录（AgentHub 投影） | `Capability::Mcp` | `Capability::Skills` |
+| Agent | MCP 配置（用户级） | MCP 管理命令 | Plugin 包 | 技能目录（AgentHub 同步到） | `Capability::Mcp` | `Capability::Skills` |
 |---|---|---|---|---|---|---|
-| Claude | `~/.claude.json` 的 `mcpServers`；`<claude-home>/settings.json` | `claude mcp add/list`；会话 `/mcp` | `/plugin` 市场；`enabledPlugins`；数据 `~/.claude/plugins/` | `~/.claude/skills` | Planned | Full |
-| Codex | `~/.codex/config.toml` 的 `[mcp_servers.<name>]` | `codex mcp add/list`；TUI `/mcp` | `/plugins` 与 `codex plugin`；缓存 `~/.codex/plugins/cache/` | `~/.codex/skills` | Planned | Full |
+| Claude | `~/.claude.json` 的 `mcpServers`；`<claude-home>/settings.json` | `claude mcp add/list`；会话 `/mcp` | `/plugin` 市场；`enabledPlugins`；数据 `~/.claude/plugins/` | `~/.claude/skills` | Partial | Full |
+| Codex | `~/.codex/config.toml` 的 `[mcp_servers.<name>]` | `codex mcp add/list`；TUI `/mcp` | `/plugins` 与 `codex plugin`；缓存 `~/.codex/plugins/cache/` | `~/.codex/skills` | Partial | Full |
 | Grok | `~/.grok/config.toml` 的 `[mcp_servers.<name>]` | `grok mcp add/list/remove/doctor` | `grok plugin` / marketplace；`~/.grok/plugins/` | `~/.grok/skills` | Partial | Full |
-| Cursor | `~/.cursor/mcp.json` 的 `mcpServers` | IDE MCP 设置；改 JSON 后重载 | CLI **无**插件包系统；IDE 扩展市场不是 cursor-agent | `~/.cursor/skills-cursor` | Planned | Full |
+| Cursor | `~/.cursor/mcp.json` 的 `mcpServers` | IDE MCP 设置；改 JSON 后重载 | CLI **无**插件包系统；IDE 扩展市场不是 cursor-agent | `~/.cursor/skills-cursor` | Partial | Full |
 | Pi | `~/.pi/agent/mcp.json`（或 `$PI_CODING_AGENT_DIR`） | 扩展/适配器读取该文件；热更因发行而异 | `pi install` 装的是 Pi 扩展，不是 MCP server | `~/.pi/agent/skills` | Planned | Full |
-| WorkBuddy | `<config>/.mcp.json` | 未验证稳定 CLI | 未验证 | `<config>/skills` | Planned | Full |
-| Kimi | 无已验证契约；inventory 只探 `mcp.json` | 未验证 | 未验证 | 不投影（Kimi 自己读共享库 `~/.agents/skills/` 与 `$KIMI_CODE_HOME/skills`） | Planned | Partial |
+| WorkBuddy | `<config>/.mcp.json` | 未验证稳定 CLI | 未验证 | `<config>/skills` | Partial | Full |
+| Kimi | 无已验证契约；inventory 只探 `mcp.json` | 未验证 | 未验证 | 不同步（Kimi 自己读共享库 `~/.agents/skills/` 与 `$KIMI_CODE_HOME/skills`） | Planned | Partial |
 | DSH | 无已验证 MCP 契约；inventory 只探 JSON | 未验证 | Cordis 插件树，**不是** Claude 式 plugin 包，也不是 MCP | `~/.dsh/skills` | Planned | Full |
 | ZCode | inventory 只探 home 下 JSON；桌面契约未验证 | 未验证 | 未验证 | `~/.zcode/skills` | Planned | Full |
-| Kiro | inventory 只探 home 下 JSON；路径未核实 | 未验证 | 未验证 | 不投影（待路径核实） | Planned | Planned |
+| Kiro | inventory 只探 `~/.kiro` 下 JSON；契约未验证 | 未验证 | 未验证 | 不同步（待路径核实） | Planned | Planned |
 
 ## Claude Code
 
@@ -74,7 +72,7 @@ updated: 2026-09-17
 
 **技能**
 
-- 投影根：`<claude-home>/skills`。AgentHub 用户技能共享源仍是 `~/.agents/skills/`；项目技能写在工作区 `.agents/skills/`，列表也会看到 `.claude/skills/`。
+- 同步目录：`<claude-home>/skills`。AgentHub 用户技能共享源仍是 `~/.agents/skills/`；项目技能写在工作区 `.agents/skills/`，列表也会看到 `.claude/skills/`。
 
 ## Codex
 
@@ -96,7 +94,7 @@ updated: 2026-09-17
 
 **技能**
 
-- 投影根：`~/.codex/skills`。
+- 同步目录：`~/.codex/skills`。
 
 ## Grok Build
 
@@ -119,7 +117,7 @@ updated: 2026-09-17
 
 **技能**
 
-- 投影根：`~/.grok/skills`。也可由 plugin 附带 skills。
+- 同步目录：`~/.grok/skills`。也可由 plugin 附带 skills。
 
 ## Cursor Agent
 
@@ -139,7 +137,7 @@ updated: 2026-09-17
 
 **技能**
 
-- 投影根：`~/.cursor/skills-cursor`（目录名不是 `skills`）。
+- 同步目录：`~/.cursor/skills-cursor`（目录名不是 `skills`）。
 
 ## Pi
 
@@ -160,7 +158,7 @@ updated: 2026-09-17
 
 **技能**
 
-- 投影根：`~/.pi/agent/skills`。
+- 同步目录：`~/.pi/agent/skills`。
 
 ## WorkBuddy
 
@@ -175,7 +173,7 @@ updated: 2026-09-17
 
 **技能**
 
-- 投影根：`<config>/skills`。
+- 同步目录：`<config>/skills`。
 
 ## ZCode
 
@@ -190,7 +188,7 @@ updated: 2026-09-17
 
 **技能**
 
-- 投影根：`<zcode-home>/skills`。
+- 同步目录：`<zcode-home>/skills`。
 
 ## Kimi
 
@@ -214,12 +212,12 @@ updated: 2026-09-17
 
 ## AgentHub 技能管理（对照）
 
-Skills 已有完整写入面。插件管理应抄它的**纪律**（staging、备份、失败不半写入），不要抄它的**共享真源**模型：技能在 `~/.agents/skills/`；插件包属于各 Agent 的 cache / enabled 列表。MCP live 文件同样属于各 Agent，且是另一页。
+Skills 已有完整写入面。插件管理应抄它的**纪律**（staging、备份、失败不半写入），不要抄它的**共享库**模型：技能在 `~/.agents/skills/`；插件包属于各 Agent 的 cache / enabled 列表。MCP live 文件同样属于各 Agent，且是另一页。
 
 | 动作 | Skills 今天怎么做 |
 |---|---|
-| 安装 | 本地路径 / zip / git → staging → 校验 `SKILL.md` → 提交到 `~/.agents/skills/<id>` → reconcile 投影 |
-| 卸载 | 先拆各 Agent 投影，再删共享源和 lock |
+| 安装 | 本地路径 / zip / git → staging → 校验 `SKILL.md` → 提交到 `~/.agents/skills/<id>` → 同步到各 Agent 目录 |
+| 卸载 | 先撤掉各 Agent 目录里的同步，再删共享源和 lock |
 | 更新 | git 源 clone 到 staging，禁止对 live 树 `git pull`，校验后原子替换 |
 | 市场 | `skillMarketSource`：auto / skills.sh / skillhub.cn；与 Claude/Codex/Grok plugin marketplace 不是同一套 |
 | 锁 | `.skill-lock.json` + per-skill / root lock |
@@ -245,4 +243,3 @@ AgentHub 若做检测，应先分清「配置变更 / 进程可达 / 包版本�
 - [MCP inventory](mcp-inventory.md)
 - [插件管理提案](../proposals/plugin-management.md)
 - [能力参考](capabilities.md)
----

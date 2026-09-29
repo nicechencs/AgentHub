@@ -25,7 +25,7 @@ scope: dev；跨 HEAD 续审，最终目标 c726bd2aa1ff8ea0aaf206c6755f6cdcfbb6
 
 ## 范围与运行信息
 
-- 仓库：`D:/demo_chen/2026/AgentHub`；Windows x64。
+- 仓库：`D:/demo_user/2026/AgentHub`；Windows x64。
 - 最终分支/HEAD：`dev` / `c726bd2aa1ff8ea0aaf206c6755f6cdcfbb6303c`。
 - 本机 `origin/dev` 与 HEAD 一致；未 fetch，远程引用可能陈旧。
 - `v0.4.10^{}` 指向 HEAD；该提交在 `dev` 与本机 `origin/release` 可达，本机 `release` 分支较旧。

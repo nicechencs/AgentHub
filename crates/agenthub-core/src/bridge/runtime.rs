@@ -109,7 +109,6 @@ impl std::fmt::Debug for ResolvedAuth {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BridgeUpstreamProtocol {
     /// OpenAI-compatible Chat Completions upstream (Kimi Code membership, OpenAI API, and similar).
-    /// Formerly `KimiChatCompletions`; this enum is not serde, so no persisted schema change.
     OpenAiChatCompletions,
     /// Anthropic API Key → Codex: Messages + `x-api-key` / `anthropic-version`.
     AnthropicMessages,

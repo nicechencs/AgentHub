@@ -71,11 +71,11 @@ describe('composer invite and queue-only hint', () => {
   it('builds a quiet connection tooltip from the full label', () => {
     expect(
       composerConnectionTooltip({
-        label: 'cunsen.chen@example.com',
+        label: 'alice@example.com',
         subtitle: '/tmp/demo',
         caption: null,
       }),
-    ).toBe('cunsen.chen@example.com · /tmp/demo');
+    ).toBe('alice@example.com · /tmp/demo');
     expect(
       composerConnectionTooltip({
         label: '本机',

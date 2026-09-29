@@ -3,87 +3,67 @@ title: Local Route Sidecar
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-08-25
+updated: 2026-09-29
 ---
 
 # Local Route Sidecar
 
-> Status: proposed
-> 
-> This is a future architecture candidate. It is not an implementation commitment and must not be read as evidence that a sidecar binary exists.
+> Status: proposed. A future architecture candidate, not a commitment. No sidecar binary exists.
 
 ## 1. Current baseline
 
-`local_bridge` is currently hosted inside the Tauri process. `adapter_control` and `DesktopAdapterControl` provide a Tauri-neutral control contract and an in-process host, but there is no `agenthub-adapterd`, IPC client, schema lease implementation, or sidecar lifecycle in the product.
-
-The current Routes page must continue to represent the in-process host accurately. If the host is unavailable, the UI reports `host_unavailable`; it does not silently invent a running status or fall back to browser mock data.
+- `local_bridge` runs inside the Tauri process. `DesktopAdapterControl` (`src-tauri/src/adapter_control_host.rs`) is the in-process control host.
+- There is no `agenthub-adapterd`, IPC client, schema lease, or sidecar lifecycle.
+- When the host is unavailable, status is `host_unavailable` (`crates/agenthub-core/src/models/adapter_state_model.rs`). The UI never invents a running state or falls back to mock data.
 
 ## 2. Candidate goal
 
-Evaluate a same-package, current-user process that can own the long-lived `local_bridge` runtime while the desktop UI and CLI act as control clients. The candidate would address GUI reload, crash, update, and window-close behavior without making the route listener a system service or a remote API.
+A same-package, current-user process owns the long-lived route runtime; the desktop UI and CLI become control clients. It would survive GUI reload, crash, update, and window close. It is not a system service or remote API.
 
-## 3. Proposed boundary
-
-Only long-lived route runtime responsibilities are candidates for the process boundary:
+Moves into the process (candidate):
 
 - loopback listener and protocol data plane;
-- route lifecycle, health, drain, recovery, and process admission;
-- durable operation journal for start/stop/apply/remove recovery;
-- a versioned control IPC for status and mutations.
+- route lifecycle, health, drain, recovery;
+- operation journal for start/stop/apply/remove;
+- versioned control IPC.
 
-These remain outside the candidate process:
+Stays outside:
 
-- accounts, providers, Connections, Tickets, Bindings, and credential ownership;
-- live configuration writes and generated-provider lifecycle;
-- SQLite migration and arbitrary table writes;
-- general configuration routes and native endpoints that do not need a long-lived runtime;
-- public network listeners, LAN service behavior, or a multi-user daemon.
+- accounts, providers, Connections, Tickets, Bindings, credentials;
+- live configuration writes and generated providers;
+- SQLite migrations and table writes;
+- public or LAN listeners, multi-user daemons.
 
-The sidecar must call a Tauri-neutral core application contract for domain mutations. It must not write target Agent files, credential files, or domain tables directly.
+The sidecar calls a Tauri-neutral core contract for domain changes. It never writes Agent files, credential files, or domain tables itself.
 
-## 4. Compatibility invariants
+## 3. Invariants
 
-1. The data plane stays loopback-only (`127.0.0.1` and `::1`).
-2. GUI exit does not implicitly stop a healthy candidate runtime; explicit stop-and-exit remains a separate command.
-3. A runtime mutation is idempotent by request ID and canonical payload hash.
-4. Status is observed from the runtime process. A durable profile without a reachable process is `host_unavailable`, never `running`.
-5. Handshake checks protocol, application-contract, and schema compatibility before any mutation.
-6. Instance identity and epoch protect clients from stale responses after a restart.
-7. Update and rollback require a drain/prepare protocol. A process with an incompatible schema must fail closed.
-8. Secrets do not travel in argv or ordinary control messages. The candidate does not create a new credential store.
+1. Loopback only (`127.0.0.1`, `::1`).
+2. GUI exit does not stop a healthy runtime; stop-and-exit is a separate command.
+3. Mutations are idempotent by request ID and payload hash.
+4. Status comes from the live process. A stored profile with no reachable process is `host_unavailable`.
+5. Handshake checks protocol, contract, and schema versions before any mutation.
+6. Instance identity and epoch reject stale responses after restart.
+7. Update and rollback use drain/prepare; schema mismatch fails closed.
+8. No secrets in argv or ordinary control messages; no new credential store.
 
-## 5. Candidate slices
+## 4. Evaluation slices
 
-These are evaluation slices, not a committed schedule:
+- **A. Contract hardening:** keep the in-process host; test status, lifecycle, idempotency, stale instance, failure.
+- **B. Read-only prototype:** spawn a process for a status handshake only.
+- **C. Runtime ownership:** after B is accepted, move the listener and journal behind IPC, with fault injection (crash, update, stale lock, schema mismatch).
+- **D. Client parity:** GUI and CLI share one control client.
 
-### Slice A: contract hardening
+## 5. Gates
 
-Keep the in-process host as the only runtime and prove the Tauri-neutral control contract with status, lifecycle, idempotency, stale-instance, and failure tests.
+- Deterministic start/stop/restart under crash and update.
+- No domain-table or live-file writes from the runtime process.
+- Schema lease with a recoverable failure path.
+- GUI and CLI see identical status and errors.
+- Routes list/detail stays usable when the runtime is down.
+- Security review of loopback exposure, instance lock, secret handling.
+- Focused Rust, frontend contract, and end-to-end smoke tests green.
 
-### Slice B: read-only process prototype
+## 6. Non-goals
 
-Spawn a same-package process for a read-only status handshake. Compare lifecycle, data directory, logging, and update behavior without moving writes or the listener.
-
-### Slice C: controlled runtime ownership
-
-Only after Slice B is accepted, move listener ownership and journal recovery behind the IPC. Preserve the same control contract and add fault injection for process crash, update, stale lock, and schema mismatch.
-
-### Slice D: client parity
-
-Make GUI and CLI use the same control client. Keep browser mock behavior in the mock adapter and make non-Tauri production pages explicitly unavailable.
-
-## 6. Decision gates
-
-Do not promote the candidate unless all of the following are demonstrated:
-
-- deterministic start/stop/restart behavior under crash and update;
-- no direct domain-table or live-file writes from the runtime process;
-- schema lease and migration compatibility with a recoverable failure path;
-- GUI and CLI observe identical status and error contracts;
-- Routes list/detail remains usable when the runtime is unavailable;
-- loopback exposure, instance locking, and secret handling have security review;
-- focused Rust, frontend contract, and end-to-end smoke tests are green.
-
-## 7. Explicit exclusions
-
-This proposal does not include credential-at-rest encryption, domestic OAuth adapters, OAuth-to-API conversion, a public service, or moving Connections/Accounts/Providers into another process. Those topics are outside the product scope and must not be added as sidecar milestones.
+Credential encryption, domestic OAuth adapters, OAuth-to-API conversion, a public service, or moving Connections/Accounts/Providers out of the app.

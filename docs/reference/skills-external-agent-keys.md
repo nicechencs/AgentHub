@@ -1,34 +1,33 @@
 ---
 title: Skills 外部 Agent 命名
-description: Hub 投影 key 与外部生态名的 fail-closed 映射纪律。
+description: Hub 技能同步目标 key 与外部生态名的 fail-closed 映射规则。
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-15
+updated: 2026-09-29
 ---
 
 # Skills 外部 Agent 命名
 
-## Hub 内部（现行）
+## AgentHub 内部
 
-- 投影目标键 = `AgentKey`，对内建 Agent 与 `AgentId` 字符串一致（如 `claude`、`codex`）。  
-- 注册：`integrations/agents/<key>/` 经 `register_skills_from_home` / `register_skills_from_config_dir`。  
-- **Kimi**：不注册 Hub 投影目标（对方读 `~/.agents/skills`）。  
-- **Kiro**：`Capability::Skills` 为 Planned，无 skills 目标。  
-- **Cursor**：子目录名 `skills-cursor`（仍是独立 `AgentId::Cursor`）。
+- 技能同步的目标键是 `AgentKey`；内置 Agent 的 `AgentKey` 与 `AgentId` 字符串相同（如 `claude`、`codex`）。
+- 注册在 `crates/agenthub-core/src/integrations/agents/<key>/mod.rs`，通过 `register_skills_from_home` / `register_skills_from_config_dir`。
+- **Kimi**：不注册同步目标，它直接读 `~/.agents/skills`。
+- **Kiro**：`Capability::Skills` 为 Planned，没有同步目标。
+- **Cursor**：子目录名是 `skills-cursor`（仍是独立的 `AgentId::Cursor`）。
 
-启用到各工具走 `platform/skills` 的 link/copy 投影与 ownership；冲突 fail-closed。详见 [插件、MCP 与技能](../concepts/plugins-and-mcp.md)。
+启用到各工具走 `platform/skills` 的链接/复制与归属检查，冲突时 fail closed。见 [插件、MCP 与技能](../concepts/plugins-and-mcp.md)。
 
-## 外部生态名（fail-closed）
+## 外部生态名
 
-社区 skills CLI 等使用**另一套** `--agent` 命名（例如 Orca 对照里 `claude` → `claude-code`，不确定则 `null`）。  
-AgentHub 若桥接这类外部名：
+社区 skills CLI 等使用**另一套** `--agent` 名称（例如 `claude-code`）。AgentHub 桥接这类名称时：
 
-1. 查表；**没有把握 → `None`，丢弃，不猜测。**  
-2. 键形状必须像 agent 名（字母数字与 `.-`）；**禁止**以 `-` 开头的值（避免被当成旗标、静默清空目标列表）。  
-3. 实现：`crates/agenthub-core/src/platform/skills/external_agent_keys.rs`（`skills_cli_agent_key` / `agent_id_for_skills_cli_key` / `is_usable_external_agent_key`）。  
-4. **本波不改变**对内建 `AgentId` 的投影主路径；模块供桥接与纪律钉住。外部名（如 `claude-code`）**不是** Hub 投影用的 `AgentKey`（Hub 仍是 `claude`）。
+1. 查表；**没把握就返回 `None` 并丢弃，不猜。**
+2. 键必须像 Agent 名（字母、数字、`.`、`-`），**不能**以 `-` 开头（避免被当成命令行参数、悄悄清空目标列表）。
+3. 实现在 `crates/agenthub-core/src/platform/skills/external_agent_keys.rs`（`skills_cli_agent_key` / `agent_id_for_skills_cli_key` / `is_usable_external_agent_key`）。
+4. 外部名（如 `claude-code`）**不是** AgentHub 的 `AgentKey`（仍是 `claude`）；这个模块不改变内置 Agent 的同步主路径。
 
-禁止：自动同步未审核的社区 path 表；把外部名直接当 `AgentId` 写入产品身份。
+禁止：自动同步未审核的社区路径表；把外部名直接当 `AgentId` 写进产品身份。
 
-相关：[多 Agent 扩家硬约束](../guides/multi-agent-support-rules.md)、能力矩阵 Skills 行。
+相关：[多 Agent 扩家硬约束](../guides/multi-agent-support-rules.md)、[能力参考](capabilities.md) 的 Skills 行。

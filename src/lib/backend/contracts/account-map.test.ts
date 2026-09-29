@@ -99,15 +99,15 @@ describe('mapCoreAccount', () => {
         label: 'codex-oauth',
         credentials: { format: 'auth_json', body: { tokens: {} } },
         extra: {
-          email: '41375197@qq.com',
+          email: 'qq-user@example.com',
           identityLabel: 'fcf2a4f8-bbff-4598-910d-067e947e229c',
           subscription: 'prolite',
         },
       }),
     );
-    expect(mapped.label).toBe('41375197@qq.com');
-    expect(mapped.email).toBe('41375197@qq.com');
-    expect(mapped.identityLabel).toBe('41375197@qq.com');
+    expect(mapped.label).toBe('qq-user@example.com');
+    expect(mapped.email).toBe('qq-user@example.com');
+    expect(mapped.identityLabel).toBe('qq-user@example.com');
     expect(mapped.subscription).toBe('prolite');
   });
 

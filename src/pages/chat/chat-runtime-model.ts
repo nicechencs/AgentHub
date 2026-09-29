@@ -32,7 +32,7 @@ export function shouldRefreshRuntimeCatalog(previousEpoch: number, nextEpoch: nu
   return nextEpoch > previousEpoch;
 }
 
-/** Slice C will list native commands only when the session catalog is ready. */
+/** Show the native command menu only when the session is ready and lists commands. */
 export function nativeCommandMenuEnabled(input: {
   sessionReady?: boolean;
   nativeCommands?: ReadonlyArray<{ name: string }> | null;

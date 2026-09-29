@@ -4,78 +4,78 @@ type: architecture
 status: current
 owner: maintainers
 audience: adapter, mock, and route contributors
-source-of-truth: crates/agenthub-core AdapterRouteService, src/dev/mocks/adapter, and adapter-capability-contract.json
-updated: 2026-08-31
+source-of-truth: crates/agenthub-core/src/services/adapter_route_service, src/dev/mocks/adapter, and src/dev/mocks/fixtures/adapter-capability-contract.json
+updated: 2026-09-29
 ---
 
 # Adapter 路线内核与查表投影
 
-`AdapterRouteService::plan()` 是 Adapter / route 产品规则的唯一决策者。Tauri 传输内核结果；`adapter-capability-contract.json` 是对冻结入参的只读投影，携带内核生成的路线决策结果；browser mock 按来源特征查表，并按 `ruleId` 在 `project.ts` 里维护演示所需的内存投影。页面不重新决定路线。
+本页说明「一份登录能不能接到某个 Agent、走哪条路线」由谁决定，以及浏览器 mock 怎样复用这个结果。
+
+一句话：`AdapterRouteService::plan()`（`crates/agenthub-core/src/services/adapter_route_service/plan.rs`）是唯一决策者。Tauri 只传输它的结果；mock 只查它生成的快照；页面不重新决定路线。
 
 ## 唯一内核
 
-`plan()` 的输出才是真源：`route`、`support`、`ruleId`、`gateKind`、`canApply`、`reason`、reuse path 和 apply path。矩阵格子上的 `can_apply` 不够：Account 等被私有 write gate 挡住的边，演示里也必须显示不可写。
+`plan()` 返回 `AdapterApplyPlan`，其中这些字段是真源：
 
-冻结入参使用已有的 preset、accountKind、extra 等种子形状，不写入真实密钥。Rust 测试要求工作区 JSON 等于刚跑出来的 `plan()` 结果；内核变化或手改 expect 都会失败。更新快照只允许：
+- `analysis` 里的 `route`、`support`、`ruleId`、`gateKind`、`reason`、`actions`；
+- 外层的 `canApply`、`maturity`、`reusePath`、`serviceImpact`、`changes`。
+
+只看路线矩阵格子上的 `can_apply` 不够：被私有写入门挡住的边（例如某些 Account 来源），演示里也必须显示不可写。
+
+## 快照（golden）
+
+`src/dev/mocks/fixtures/adapter-capability-contract.json` 是 `plan()` 对一组冻结入参的输出快照（下称 golden）。冻结入参用 preset、accountKind、extra 等种子形状，不含真实密钥。
+
+Rust 测试 `shared_capability_contract_is_kernel_plan_projection` 要求 JSON 等于当场跑出的 `plan()` 结果；内核变了或手改 JSON 都会失败。更新快照只能用：
 
 ```text
 UPDATE_ADAPTER_CAPABILITY_CONTRACT=1 cargo test -p agenthub-core --locked shared_capability_contract_is_kernel_plan_projection
 ```
 
-不得把 JSON 当成规则真源，也不得引入 WASM、napi 或类型生成框架来“再跑一遍 planner”。mock 与前端不得复制 classifier fallback 或第二套路由选择器。`ruleId` 会随 golden.expect 进入 mock；`project.ts` 仍按 `ruleId` 生成演示用的 materialization、actions、changes、maturity、serviceImpact。这不是第二套路由决策，也不等于完整 plan 已经没有任何 TypeScript 投影。
+不得把 JSON 当规则真源，也不得引入 WASM、napi 或类型生成框架在前端「再跑一遍 planner」。
 
 ## mock 只查表
 
-`pnpm dev:mock` 和 Vitest 需要可演示的状态和可编排的内存写入，不需要 classifier fallback 或第二套路由选择器。
+`pnpm dev:mock` 和 Vitest 需要可演示的状态和内存写入，但不需要第二套路线选择器。实现在 `src/dev/mocks/adapter/`：
 
-- 种子账号/供应商继续带 preset 或等价特征。
-- 查表键是 `(来源 kind, ticket 特征, target, 凭据是否可用)`。
-- 凭据可用性必须精确匹配：只参与打分不够，候选唯一也不能忽略不匹配。
-- 未命中 fail-closed 为 `unsupported`，不得回退启发式 classify。
-- `apply` 只解释 expect：`canApply` 为假则拒绝；为真则按 route / `ruleId` 写入内存 profile 和假 bridge。不重新 classify，不重放 write gate。
+- `golden-lookup.ts` 按 `(来源 kind, 来源特征, 目标 Agent, 是否有可用凭据)` 查 golden。凭据可用性必须精确匹配，不能只参与打分。
+- 未命中一律返回 `unsupported`，不回退启发式分类。
+- `project.ts` 按 `ruleId` 生成演示用的 actions、changes、serviceImpact 等预览细节；`route`、`support`、`reason`、`gateKind`、`canApply` 都直接取自 golden。这不是第二套路线决策。
+- 写入（`src/dev/mocks/adapter.ts` 的 apply 路径，物化在 `adapter/apply.ts`）只照 golden 执行：`canApply` 为假就拒绝；为真则写内存 profile 和假的本机转发状态，不重新分类，也不重放写入门。
 
-live mock Account 可能已经脱敏。凭据是否可用以状态字段为准，优先级如下：
+**凭据是否可用：** mock 里的登录可能已脱敏，所以先看状态字段，再看内容。
 
-1. `tokenValid === false` 或负面 `authHealth` / `liveAuthHealth`（`needs_login`、`missing`）→ 无可用凭据
-2. `tokenValid === true` 或正面 `authHealth` / `liveAuthHealth`（`verified`、`renewable`、`configured`）→ 有可用凭据
-3. 状态未知时才检查 credentials 内容
-4. `credentials: {}` 且状态未知 → 无可用凭据
-5. 明确存在有效 API Key 或 access token → 有可用凭据
-6. 明确存在空 token slot → 无可用凭据
+1. `tokenValid === false`，或 `liveAuthHealth` / `authHealth` 为 `needs_login`、`missing` → 不可用。
+2. `tokenValid === true`，或上述字段为 `verified`、`renewable`、`configured` → 可用。
+3. 状态未知时才看 `credentials`：空对象为不可用；API Key 或 access token 非空为可用。
 
-冻结/测试行没有 `tokenValid` / `authHealth`，golden 索引只看 credentials 内容。需要“路线可预览但不可写”时，补充由 `plan()` 生成的无凭据 golden 行，不在 TypeScript 手写规则。
+golden 行本身没有状态字段，只按 `credentials` 内容建索引。需要「能预览但不能写」的场景时，补一行由 `plan()` 生成的无凭据 golden，不在 TypeScript 手写规则。
 
-页面测试只断言“给定一份 plan，界面是否听从”。路线本身对不对只在 Rust 测试。已知演示种子必须命中，且 plan / apply 不泄漏凭据占位值。
+测试分工：页面测试只断言「给定一份 plan，界面是否照做」；路线本身对不对只在 Rust 测试里判定。已知演示种子必须命中 golden，plan / apply 不得泄漏凭据占位值。
 
 ## 传输层
 
-Tauri command 的 wire 使用 core 的 serde 形状。`src/lib/backend/contracts` 描述该形状并映射 unavailable / 错误码。与 Rust 平行的前端结构体只保留 UI 格式化。`src/lib/api` 兼容层停止加厚，允许旧调用方继续工作。
+Tauri command 的数据形状沿用 core 的 serde 结构。`src/lib/backend/contracts` 描述该形状并映射 unavailable 与错误码；前端与 Rust 平行的结构只保留界面格式化。`src/lib/api` 是过渡层，不再加厚。生产构建不加载 mock，边界见 [前端与 Backend 边界](frontend-backend.md)。
 
-生产构建不加载 mock。非 Tauri 的生产页面必须明确 unavailable，禁止静默回退。
+## 验证范围
 
-## 验证跟爆炸半径走
-
-风险分级以 [AGENTS.md](../../AGENTS.md) 为准；分层命令见 [测试与验证](../guides/testing-and-validation.md)。不要另造命令表。
+风险分级以 [AGENTS.md](../../AGENTS.md) 为准，命令见 [测试与验证](../guides/testing-and-validation.md)。按改动选内环：
 
 | 改了什么 | 内环 | 不要默认升级为 |
 |---|---|---|
 | 页面或页面 model | 对应 `vitest run <file>`，必要时 `pnpm typecheck` | 整个 `agenthub-core` 的 `cargo test`、`pnpm test:pr` |
-| matrix / planner | `cargo test -p agenthub-core --locked <filter>`，以及 golden 是否过期 | 再手写一套 mock classify |
-| wire DTO / port | 该契约测试 + 相应 typecheck | 为了安心编 GUI crate |
-| 提交与 CI | 现有 PR CI 全量 | 把 CI 全量搬进每一次本地改动 |
+| 路线矩阵 / planner | `cargo test -p agenthub-core --locked <filter>`，并确认 golden 未过期 | 在 mock 里再写一套分类 |
+| 数据形状 / port | 对应契约测试 + typecheck | 为了安心编译 GUI crate |
 
-局部改动由主 Agent 在同一回合完成实现和过滤测试。跨层 contract、Rust 核心规则和持久化才升级到独立审查。全量 `pnpm test`、完整 Rust crate 矩阵和生产 `pnpm build` 默认留给提交前或 CI。
+页面抽 model / hook 的时机：不抽就写不了针对性测试，或两处已在复制同一判断。文件大只是调查信号，不是拆分理由。
 
-页面抽取 model / hook：仅当不抽就写不了针对性测试，或两处已在复制同一判断时进行。文件大只是调查信号，不是拆分理由。
-
-## 编译与 crate 边界
-
-`agenthub-core` 保持单一 crate。不落地 sccache 仓库配置，也不按目录或 DDD 名称拆包。Windows 上多个 worktree 不得共享同一份 `target/`。历史测量与否决过程见 [单一内核提案归档](../archive/single-kernel-projections.md)。
+`agenthub-core` 保持单一 crate，不按目录拆包，也不启用 sccache。否决过程见 [单一内核提案归档](../archive/single-kernel-projections.md)。
 
 ## 相关页面
 
 - [前端与 Backend 边界](frontend-backend.md)
-- [Core 与运行时](core-runtime.md)
-- [Adapter 与本机路由](../concepts/adapters-and-bridges.md)
+- [Core 与 Runtime](core-runtime.md)
+- [Adapters 与本机 Bridge](../concepts/adapters-and-bridges.md)
 - [测试与验证](../guides/testing-and-validation.md)
 - [当前实现状态](../STATUS.md)

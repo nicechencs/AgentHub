@@ -1,4 +1,4 @@
-// Connections：全局票钱包（docs/connection-binding-model.md §5.2）
+// Connections：全局票钱包（docs/concepts/connections-and-routing.md）
 // AgentTabStrip 筛选；?agent= 高亮并把 Tab 落到该 Agent。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';

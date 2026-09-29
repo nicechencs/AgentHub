@@ -1859,8 +1859,8 @@ describe('chatConnectionOptions', () => {
     const options = chatConnectionOptions(t, {
       agentId: 'codex',
       wallet: wallet([
-        ticket({ id: 'account:codex-live-1', label: '41375197@qq.com' }),
-        ticket({ id: 'account:codex-live-2', label: '41375197@qq.com' }),
+        ticket({ id: 'account:codex-live-1', label: 'qq-user@example.com' }),
+        ticket({ id: 'account:codex-live-2', label: 'qq-user@example.com' }),
       ]),
     });
     expect(options).toHaveLength(2);
@@ -1936,7 +1936,7 @@ describe('chatConnectionOptions', () => {
     const options = chatConnectionOptions(t, {
       agentId: 'codex',
       wallet: wallet(
-        [ticket({ id: 'account:codex-live-1', label: '41375197@qq.com' })],
+        [ticket({ id: 'account:codex-live-1', label: 'qq-user@example.com' })],
         [
           binding({
             ticketId: 'account:codex-live-1',
@@ -1948,7 +1948,7 @@ describe('chatConnectionOptions', () => {
       ),
     });
     expect(options[0]).toMatchObject({
-      title: '41375197@qq.com',
+      title: 'qq-user@example.com',
       subtitle: '官方登录',
       isCurrent: true,
     });
@@ -1961,7 +1961,7 @@ describe('chatConnectionOptions', () => {
       currentProviderName: 'agenthub_codex_bridge',
       activeLogin: { title: options[0].title, subtitle: options[0].subtitle },
     });
-    expect(chip.label).toBe('41375197@qq.com');
+    expect(chip.label).toBe('qq-user@example.com');
     expect(chip.label).not.toContain('本机路由');
     expect(chip.currentLoginTitle).toBeNull();
   });

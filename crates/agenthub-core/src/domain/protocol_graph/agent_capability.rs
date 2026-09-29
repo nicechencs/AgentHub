@@ -3,7 +3,7 @@
 //! Compile-time table `AgentId → { accepts, writer }` used by the planner to
 //! explain why a bind is infeasible. **This table never opens `can_apply`.**
 //! Writable routes still come only from an explicit matrix cell ∩ plan
-//! `write_gate`. See [connection-binding-model.md] §2.2 / §6.2.
+//! `write_gate`. See `docs/concepts/connections-and-routing.md`.
 
 use serde::{Deserialize, Serialize};
 

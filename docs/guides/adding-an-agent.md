@@ -4,14 +4,14 @@ description: 按稀疏端口、能力声明和目录注册把一个 Agent 接入
 type: guide
 audience: contributor
 status: current
-updated: 2026-09-15
+updated: 2026-09-29
 ---
 
 # 添加 Agent
 
 本指南适用于新增一个由 AgentHub 管理的第三方 Agent。目标是让差异停留在 adapter 和 `integrations/agents/<key>/`，平台 service、页面和通用工具不新增具体 Agent 名称分支。
 
-扩家前先扫读：[多 Agent 扩家硬约束](multi-agent-support-rules.md)、[Chat 支持深度矩阵](../reference/chat-support-depth.md)、[启动与探测清单](../reference/agent-launch-inventory.md)。目录里有 ≠ Chat 一样深；启动 argv 不要另起第二套真源。
+开始前先读 [多 Agent 扩家硬约束](multi-agent-support-rules.md)。
 
 ## 1. 先确认身份和范围
 
@@ -76,23 +76,22 @@ updated: 2026-09-15
 2. 配置页使用 `getAgentConfigSchema` 和 `GenericConfigForm`，有 projector 才开放写入。
 3. 任何 Tauri 调用放在 `src/lib/backend/tauri/`；页面通过 backend contract 或 `lib/api` façade。
 4. mock fixture 只为 `pnpm dev:mock` 和测试准备，不进入生产 build。
-5. UI 说「登录」和「路由/Routes」；内部实现可使用 Ticket、Binding、bridge 等名称，但不要把内部名直接当用户文案。
+5. 界面文案按 [术语表](../reference/terminology.md) 的「用户界面术语」列写（登录、路由、本机转发），不把 Ticket、Binding、bridge 等内部名写进界面。
 6. 方标：按 [agent-logos README](../../src/assets/agent-logos/README.md) 改编一枚正方形图（符号或整图），在 `AGENT_DISPLAY` 登记 `logoSvgSrc` / `logoFit` / `logoBackground`。界面只通过 `AgentLogo` 展示，列表 24px、头像 32px。不要直接使用网上原图，也不要给每家写缩放系数。
 
+## 5a. 页面触点
 
-## 5a. 页面触点（UI awareness）
-
-接入新 Agent 时，先读 [页面模式](../ui/page-patterns.md) 里各页的 **Agent touchpoints**，再决定要不要改 catalog / 前端装饰：
+先读 [页面模式](../ui/page-patterns.md) 里各页的 **Agent touchpoints**，再决定要改哪些页面：
 
 | 典型需要感知的页面 | 何时 |
 |---|---|
 | Agents | catalog / install / detect / 隐藏 |
-| Dashboard | Usage 解析器、ConnectFlow 直连/本机路由 |
+| Dashboard | Usage 解析器；连接弹窗（直连 / 用这份登录 / 本机转发） |
 | Connections | 导入、官方登录、API Key 写入与占用方式 |
-| Routes（board/pool/tokens/activity） | `plan`/`bind`、入池、本机令牌写回 |
+| Routes（看板 / 连接池 / 入口 Key / 监控） | `plan` / `bind`、入池、入口 Key 写回 |
 | Skills / Projects / Plugins / MCP | Skills 矩阵、ProjectHistory/Delete、插件列表或只读 MCP 路径 |
 | Chat | StructuredStream / DangerousMode / SessionResume；持续深度见 [Chat 支持深度矩阵](../reference/chat-support-depth.md) |
-| Settings → 备份 | LiveBackup 快照身份 |
+| 设置 → 备份 | LiveBackup 快照身份 |
 | Sub2API | 仅当要从站点导入 Key 到该 Agent |
 
 不要在页面里写死新的 `match AgentId` 分支；列表仍以 runtime catalog 为准。功能落地后的文档映射见 [STYLE.md](../STYLE.md#功能完成后的文档更新映射)。
@@ -108,14 +107,14 @@ updated: 2026-09-15
 - usage/project parser 的脱敏 fixture；
 - `AgentId::ALL`、catalog 和 CLI capability 输出的一致性。
 
-本地可先跑：
+本地先跑：
 
 ```text
 cargo test -p agenthub-core --locked <filter>
-pnpm test -- --run <test-file>
+pnpm test <test-file>
 ```
 
-若只验证开放扩展路径，可参考 test-only `demo-agent`；它不得进入生产 registry、migration 或 UI。
+只验证开放扩展路径时，可参考仅测试用的 `integrations/agents/demo_agent/`；它不得进入生产 registry、migration 或 UI。
 
 ## 7. 完成标准
 
@@ -123,8 +122,8 @@ pnpm test -- --run <test-file>
 - 能力声明诚实，所有非 Full 有原因；
 - 端口注册后平台 service 无新增具体 Agent 分支；
 - doctor、Agents 页和 CLI 对安装失败明确报告，不静默成功；
-- 相关 Rust、Vitest、typecheck 和生产 build 通过。
+- 相关 Rust、Vitest、typecheck 和生产 build 通过；
 - 方标与现有 Agent 在 24px / 32px 并排时大小接近，且一眼能认出是谁。
 
-不要把凭据落盘加密、keyring、主密码迁移或国产 OAuth 适配列为本任务的一部分；它们不在当前项目范围内。
+凭据落盘加密和国产 OAuth 适配不在本任务范围内（见 [AGENTS.md 红线](../../AGENTS.md#红线)）。
 

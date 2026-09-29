@@ -3,22 +3,19 @@ title: UI 设计系统
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-10
+updated: 2026-09-29
 ---
 
 # UI Design System
 
-> Status: current contract
-> 
-> This document defines the visual language, component choices, interaction states, and accessibility rules for the current AgentHub UI. It is the source of truth for reusable UI decisions. Product behavior and page composition live in [page-patterns.md](page-patterns.md).
+This page is the source of truth for reusable visual rules: tokens, components, interaction states, and accessibility. Navigation and per-page behavior live in [page-patterns.md](page-patterns.md).
 
 ## 1. Product language
 
-- The user-facing navigation label is **Routes** in English and **路由** in Chinese. The canonical path is `/routes`.
-- **本机路由** describes the loopback forwarding method in explanatory copy. It is not an alternative navigation label.
-- The product surface says **登录**. Internal names such as Ticket, Binding, Adapter, and `local_bridge` may remain in implementation and diagnostic references, but do not leak into ordinary UI copy.
-- Navigation keeps stable product names in English: Dashboard, Chat, Agents, Skills, MCP, Projects, Plugins, Connections, Routes, and Settings. Page content is Chinese-first with the English name available through the locale dictionary.
-- The UI never describes a generated provider as a second account or a second wallet. Explain the user outcome: direct connection, using this login, or local routing.
+- UI words come from the 「用户界面术语」 column of [terminology.md](../reference/terminology.md) and the replacement list in [AGENTS.md「对用户说话」](../../AGENTS.md#对用户说话). Common ones: 登录, 连接, 连接池, 路由, 本机转发, 入口 Key, 供应商, 会话.
+- Navigation labels come from the locale dictionary (`src/lib/i18n/locales/`); the zh labels are listed in [page-patterns.md §1](page-patterns.md#1-navigation). The current Routes path is `/routes`.
+- Internal names (Ticket, Binding, Adapter, bridge, `local_bridge`) stay in code and diagnostics, never in ordinary UI copy.
+- A generated provider is never described as a second account or wallet. Describe the outcome instead: 直连, 用这份登录, or 本机转发.
 
 ## 2. Design principles
 
@@ -65,7 +62,7 @@ Use semantic surface roles:
 
 Dark theme is a first-class scheme in `THEME.dark`, not a page-level override. Secondary, muted, and disabled stay three steps. Selected pills use `bg-raised` so they lift off the track (in dark, `bg-panel` is darker than `bg-hover` and must not be the selected fill). Filled danger actions use `danger-foreground` on `danger`. Light-only page tints (`html[data-canvas]`) must not override `--bg-canvas` / `--bg-subtle` when `.dark` is on.
 
-The product accent is `--accent` (`bg-accent` / `text-accent` / `ring-accent`). Default is blue. A stored choice in `agenthub:accent` wins on update, including indigo. Settings exposes a small palette (purple / blue / teal / rose / orange) that writes `html[data-accent]` and only changes `--accent`. Use it for focus, links, checked switches, the in-app mark, and the one primary action. Do not hardcode an accent hex, do not use an Agent color as a page background, and do not substitute an Agent color for semantic status colors. The running window (taskbar button), tray icon, and Windows Desktop / Start-menu shortcuts that already point at this app follow the same mark. The installer package icon stays the bundled default asset.
+The product accent is `--accent` (`bg-accent` / `text-accent` / `ring-accent`). Default is `blue`; a stored choice in `agenthub:accent` wins. 设置 → 偏好 offers five accents (`ACCENT_IDS`: indigo 紫色, blue 蓝色, teal 青色, rose 玫红, amber 橙色) that write `html[data-accent]` and only change `--accent`. Use it for focus, links, checked switches, the in-app mark, and the one primary action. Do not hardcode an accent hex, do not use an Agent color as a page background, and do not substitute an Agent color for semantic status colors. The running window (taskbar button), tray icon, and Windows Desktop / Start-menu shortcuts that already point at this app follow the same mark. The installer package icon stays the bundled default asset.
 
 Status colors are semantic: `success`, `warning`, `danger`, and `info`. A status must also have text or an icon; color alone is insufficient.
 
@@ -79,17 +76,20 @@ Status colors are semantic: `success`, `warning`, `danger`, and `info`. A status
 
 ### 3.4 Content widths
 
-There are three content systems:
+There are four content systems:
 
 | System | Token/pattern | Use |
 |---|---|---|
-| Reading column | `pageRhythm.readingColumn` (`mx-auto w-full max-w-5xl`) | Chat transcript/composer, long-form reading |
+| Chat content column | `ah-chat-content-column` (`src/styles/globals.css`, `use-chat-content-width`) | Chat transcript and composer. Adaptive width, draggable from its edge, remembered in `agenthub:chat-content-width` |
+| Reading column | `pageRhythm.readingColumn` (`mx-auto w-full max-w-5xl`) | Non-chat long-form reading |
 | Overview column | `pageRhythm.overviewColumn` (`mx-auto w-full max-w-6xl`) | Dashboard, Routes board, and Settings form (except backups split) |
-| Edge column | `pageRhythm.pageShell` / `workbenchX` from `pageEdge.inset` (currently 12px) | Tables, lists, split workbenches, Routes. Change `pageEdge.inset` in `src/components/layout/page-rhythm.ts` to retune every page edge. When a split pane is open, the list uses `workbenchXSplit` (12px left pad, 12px right margin) and the inspect pane uses the same 12px on the splitter side so the 1px rule stays centered. |
+| Edge column | `pageRhythm.pageShell` / `workbenchX` from `pageEdge.inset` (currently 12px) | Tables, lists, split workbenches, Routes. Retune every page edge by changing `pageEdge.inset` in `src/components/layout/page-rhythm.ts` |
 
-Do not introduce page-private `max-w-*` values or a second left-aligned reading width. `fullBleed` describes height and scrolling behavior, not a width system. The application canvas gutter is 12px. Chat session header and conversation stage use `chatChromeX`, currently the same 12px as `workbenchX`; do not add another horizontal inset inside the transcript.
-
-Two adjacent **cards** on the canvas are separated by the 8px sash alone (`pageRhythm.sash`) — the nav rail next to the main card, and in Chat the history rail, transcript card, and inspect pane. Workbench lists are not cards: they keep the `workbenchXSplit` content inset (12px left pad, 12px right margin) and the inspect pane keeps 12px on the splitter side. Chat is on the canvas without a page card, so it passes `SIDE_SPLIT_FRAME_PAD_X_FLUSH` (`src/components/layout/side-split-model.ts`) to drop the frame pad; the inspect pane then lines up with the canvas gutter instead of doubling it.
+- Do not add page-private `max-w-*` values or another reading width. `fullBleed` is about height and scrolling, not width.
+- Chat header and conversation stage use `chatChromeX` (same 12px as `workbenchX`); do not add another horizontal inset inside the transcript.
+- Two adjacent **cards** on the canvas are separated only by the 8px sash (`pageRhythm.sash`): the nav rail and main card, and in Chat the history rail, transcript, and inspect pane.
+- Workbench lists are not cards. With a split open, the list uses `workbenchXSplit` (12px left pad, 12px right margin) and the inspect pane keeps 12px on the splitter side, so the 1px rule stays centered.
+- Chat sits on the canvas without a page card, so it passes `SIDE_SPLIT_FRAME_PAD_X_FLUSH` (`src/components/layout/side-split-model.ts`) to drop the frame pad and align the inspect pane with the canvas gutter.
 
 ### 3.5 Agent identity marks
 
@@ -134,7 +134,7 @@ Use lucide icons for familiar icon-only actions. Sizes are three steps only (`IC
 | Chrome | 16px (`h-4`) | 1.75 | Top bar, send, icon-only tools, `Button` default / lg / icon |
 | Inline | 14px (`h-3.5`) | 1.75 | Chevrons, row actions, status, `Button` sm |
 
-Do not mix a fourth pixel size. Every `size="icon"` Button must have `aria-label` or `aria-labelledby`; `title` / `Hint` is the hover label, not the accessible name. Icon-only is for familiar tools: page help, feedback, notifications, overflow (more), overlay copy, open folder in a toolbar, close/collapse, chat send, show/hide (row or secret), session settings, in-row edit/delete in a dense table, and the Agents upgrade control. A labeled button is required when the command itself is the thing the user must scan, such as “添加登录” or “重试”. New chrome icon buttons use `Button size="icon" variant="ghost"` on a 28px target.
+Do not mix a fourth pixel size. Every `size="icon"` Button must have `aria-label` or `aria-labelledby`; `title` / `Hint` is the hover label, not the accessible name. Icon-only is for familiar tools: page help, feedback, overflow (more), overlay copy, open folder in a toolbar, close/collapse, chat send, show/hide (row or secret), session settings, in-row edit/delete in a dense table, and the Agents upgrade control. A labeled button is required when the command itself is the thing the user must scan, such as “添加登录” or “重试”. New chrome icon buttons use `Button size="icon" variant="ghost"` on a 28px target.
 
 ### 4.2 Surfaces and selection
 
@@ -142,7 +142,7 @@ Do not mix a fourth pixel size. Every `size="icon"` Button must have `aria-label
 - A management list row may have a card edge. A workbench rail or transcript row uses a page-owned active background and does not become a card.
 - Active preview and checkbox selection are separate states. Preview uses `bg-active`; batch selection uses the checkbox and toolbar. Never paint a whole selected table row with accent.
 - Tabs, segmented controls, and AgentTabStrip share the same gray track and raised active item (`bg-raised`). Keep their roles distinct from rail navigation.
-- Primary sidebar (expanded or icon rail) and the Routes secondary rail share one chrome: `navItemClass` / `NavRailHeader` in `src/components/layout/nav-chrome.ts`. Selected rail items use `bg-accent-subtle` plus a left accent bar only when the label is visible. Settings five tabs stay a page pill bar; they are not a collapsing rail.
+- The primary sidebar and the Routes secondary rail share `navItemClass` (`src/components/layout/nav-chrome.ts`) and `NavRailHeader`. Selected rail items use `bg-accent-subtle`, plus a left accent bar only when the label is visible. Settings tabs stay a pill bar, not a rail.
 
 ### 4.3 Action hierarchy
 
@@ -208,7 +208,7 @@ L3 must not occupy the default main column on a dense management page. L4 must n
 - `Button title` is routed through `Hint`; do not use native browser `title` as teaching copy in pages, layout, or shared components.
 - Use `Tip` for truncated text and complete paths. Use a `Notice` for a page-level condition that needs an action. Use `Toast` for a short result, with a title of six Chinese characters or fewer where practical.
 - Do not put stack traces, full paths, or implementation terminology in a toast title. A copy-diagnostics action may expose them in a dedicated surface.
-- Use the product terms “登录”, “连接池”, “分享至连接池”, “路由”, and “本机路由” consistently. Avoid “票”, “钱包”, and implementation phase numbers in ordinary user copy.
+- Use the product terms from §1 consistently. Avoid “票”, “钱包”, “凭据”, and implementation phase numbers in ordinary user copy.
 
 ### 5.3 Confirmation content
 
@@ -237,15 +237,11 @@ Additional rules:
 
 ## 7. Implementation boundaries
 
-- Pages call `lib/api` or the backend façade. Only `lib/backend/tauri/` may call `invoke`; UI components do not select mock versus Tauri at runtime.
-- Browser mock data is for `dev:mock` and tests. A non-Tauri production surface reports unavailable rather than silently substituting mock data.
-- Production writes use the product `plan`/`bind`/`unbind` flow. Runtime control for local routing remains behind the backend/control contract.
-- Tests live beside the relevant module as `*.test.ts(x)`; production files do not carry test-only reset helpers.
-- This design-system document is not a roadmap. Historical visual comparisons and completed Phase records belong in the archive.
+Backend access, mock, write-flow, and test-file rules are in [AGENTS.md「前端 backend 分层」「测试」](../../AGENTS.md#前端-backend-分层). UI components never choose between mock and Tauri at runtime. This page is not a roadmap; historical visual comparisons belong in the archive.
 
 ## 8. Review checklist
 
-- Is the page using `/routes`, Routes, and 路由 in current-facing copy?
+- Does visible copy use the §1 terms and the current `/routes` path?
 - Is there at most one accent primary action, and did repeating rows avoid `default`?
 - Did a dense field table open inspect from `ListNameButton` rather than whole-row `onOpen`?
 - Is there at most one open-detail control per object (no extra 详情 button beside `onOpen`)?

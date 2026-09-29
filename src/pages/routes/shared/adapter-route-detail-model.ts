@@ -68,7 +68,7 @@ function isUsableUrl(url: string | null | undefined): boolean {
   return Boolean(url?.trim());
 }
 
-/** Detect Anthropic Messages vs OpenAI Chat from URL (local-route-endpoints.md). */
+/** Detect Anthropic Messages vs OpenAI Chat from URL (docs/reference/local-route-api.md). */
 export function detectUpstreamChannelFromUrl(url: string): UpstreamChannel {
   const normalized = url.trim().toLowerCase();
   if (!normalized) return 'unknown';

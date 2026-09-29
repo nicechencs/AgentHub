@@ -1,7 +1,9 @@
-//! Durable Codex app-server chat runtime.
+//! Continuous Chat runtime for Codex (app-server), Claude (stream-json) and
+//! ACP agents (Grok / Kiro).
 //!
-//! A runtime owns one Codex app-server process per conversation.  All commands
-//! for that process are serialized through its worker queue, so a late answer
+//! Each conversation has one worker that owns its Agent process; Codex keeps
+//! one app-server across turns.  All commands for that process are serialized
+//! through the worker queue, so a late answer
 //! cannot race a stop or be delivered to a newer turn.  The worker commits
 //! normalized events to SQLite before a snapshot can expose them.
 
@@ -89,14 +91,14 @@ enum RuntimeCommand {
     },
 }
 
+/// One serialized owner per conversation.  The map itself is only a routing
+/// table; process state is never mutated from command callers.
 #[derive(Clone)]
 struct ActorHandle {
     tx: SyncSender<RuntimeCommand>,
     abort: Arc<AtomicBool>,
 }
 
-/// One serialized owner per conversation.  The map itself is only a routing
-/// table; process state is never mutated from command callers.
 #[derive(Default, Clone)]
 struct CatalogCache {
     models: Vec<RuntimeModelOption>,

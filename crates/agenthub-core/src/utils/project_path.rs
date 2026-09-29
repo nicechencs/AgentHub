@@ -50,7 +50,7 @@ pub fn verified_actual_path(encoded: &str) -> Option<String> {
 /// Best-effort decode of Cursor project folder names.
 ///
 /// Cursor replaces both path separators and `_` with `-`, so this split is
-/// lossy (`d-demo-chen-2026-AgentHub` → `D:\\demo\\chen\\2026\\AgentHub`).
+/// lossy (`d-demo-user-2026-AgentHub` → `D:\\demo\\user\\2026\\AgentHub`).
 /// Prefer [`cursor_actual_path`], which walks the disk when the naive path is missing.
 ///
 /// Examples (lossy):
@@ -125,7 +125,7 @@ fn recover_cursor_path(name: &str) -> Option<String> {
 
 /// Reconstruct a path from hyphen-encoded segments by matching real directory names.
 ///
-/// Cursor encodes `demo_chen` and `demo-chen` both as `demo-chen`. At each existing
+/// Cursor encodes `demo_user` and `demo-user` both as `demo-user`. At each existing
 /// prefix, pick the longest child whose encoded name is a prefix of the remainder.
 pub(crate) fn recover_encoded_segments(start: &Path, parts: &[&str]) -> Option<PathBuf> {
     if parts.is_empty() {

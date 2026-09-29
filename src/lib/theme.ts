@@ -26,7 +26,7 @@ export function applyTheme(mode: ThemeMode): void {
   document.documentElement.dataset.theme = mode;
 }
 
-/** 浅色主题迁移标记:旧版默认 dark,本次改为白底主调,仅迁移一次 */
+/** 浅色主题迁移标记:旧版默认 dark,现默认白底,仅迁移一次 */
 const THEME_MIGRATION = 'agenthub:theme-v2-light';
 
 export function loadStoredTheme(): ThemeMode {

@@ -1,7 +1,7 @@
 /**
  * Shared connection list row. Used by Connections and Bridges.
  * Do not import this type from a page module.
- * Core fields come from `toCredentialRow` (P2-7); this type adds UI/list extras.
+ * Core fields come from `toCredentialRow`; this type adds UI/list extras.
  */
 import {
   liveAuthOf,

@@ -1,7 +1,7 @@
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 
-/** 5h/7d 配额窗口进度条 + reset 倒计时(docs/ui-design.md §5 QuotaBar) */
+/** 5h/7d 配额窗口进度条 + reset 倒计时 */
 export function QuotaBar({
   label,
   pct,

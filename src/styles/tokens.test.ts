@@ -149,7 +149,7 @@ describe('design tokens SSOT', () => {
   });
 });
 
-describe('RADIUS (docs/ui-design.md §2)', () => {
+describe('RADIUS (docs/ui/design-system.md)', () => {
   it('keeps three px steps plus the product-mark squircle', () => {
     expect(RADIUS).toEqual({
       sm: '8px',
@@ -160,7 +160,7 @@ describe('RADIUS (docs/ui-design.md §2)', () => {
   });
 });
 
-describe('TYPE_SCALE (docs/ui-design.md §2)', () => {
+describe('TYPE_SCALE (docs/ui/design-system.md)', () => {
   it('keeps four distinct pixel sizes', () => {
     const roles = Object.keys(TYPE_SCALE);
     expect(roles).toEqual(['display', 'title', 'body', 'meta']);
@@ -195,7 +195,7 @@ describe('TYPE_SCALE (docs/ui-design.md §2)', () => {
   });
 });
 
-describe('BUTTON (docs/ui-design.md §2)', () => {
+describe('BUTTON (docs/ui/design-system.md)', () => {
   it('keeps two heights, 4px-ladder padding, and no hover shadow', () => {
     expect(BUTTON.height.default).toBe(28);
     expect(BUTTON.height.lg).toBe(32);

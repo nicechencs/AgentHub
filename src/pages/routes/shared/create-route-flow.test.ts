@@ -515,8 +515,8 @@ describe('importable vs already routed logins', () => {
       title: 'OpenRouter 备选',
       provider: { id: liveSourceId, name: 'OpenRouter 备选', preset: 'openrouter', configText: '{}', configFormat: 'json' as const },
     };
-    const gmail = { source: 'account' as const, id: 'acc-gmail', title: 'cunsen.chen@gmail.com' };
-    const qq = { source: 'account' as const, id: 'acc-qq', title: '41375197@qq.com' };
+    const gmail = { source: 'account' as const, id: 'acc-gmail', title: 'alice@example.com' };
+    const qq = { source: 'account' as const, id: 'acc-qq', title: 'qq-user@example.com' };
     const rows = importableConnectionEntries(
       [leftover, routedLogin, gmail, qq],
       keys,
@@ -583,8 +583,8 @@ describe('importable vs already routed logins', () => {
     const profiles = [
       { id: 'p', name: 'OpenRouter 备选', sourceKind: 'provider' as const, sourceId: liveSourceId, route: 'native_endpoint' },
     ];
-    const gmail = { source: 'account' as const, id: 'acc-gmail', title: 'cunsen.chen@gmail.com' };
-    const qq = { source: 'account' as const, id: 'acc-qq', title: '41375197@qq.com' };
+    const gmail = { source: 'account' as const, id: 'acc-gmail', title: 'alice@example.com' };
+    const qq = { source: 'account' as const, id: 'acc-qq', title: 'qq-user@example.com' };
     expect(importableConnectionEntries([gmail, qq], alreadyRoutedSourceKeys(profiles), profiles).map((row) => row.id))
       .toEqual(['acc-gmail', 'acc-qq']);
   });

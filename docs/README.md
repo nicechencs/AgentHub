@@ -3,7 +3,7 @@ title: AgentHub 文档索引
 type: navigation
 status: current
 owner: maintainers
-updated: 2026-09-15
+updated: 2026-09-29
 ---
 
 # AgentHub 文档
@@ -23,8 +23,8 @@ updated: 2026-09-15
 
 - [添加 Agent](guides/adding-an-agent.md)
 - [多 Agent 扩家硬约束](guides/multi-agent-support-rules.md)
-- [添加 Adapter](guides/adding-an-adapter.md)
-- [Adapter dogfood](guides/adapter-dogfood.md)
+- [添加路由接法](guides/adding-an-adapter.md)
+- [本机路由真机验收](guides/adapter-dogfood.md)
 - [测试与验证](guides/testing-and-validation.md)
 - [Agent 协作指南](guides/agent-workflow.md)
 - [自动化 Agent 短手册](guides/agent-short-handbook.md)
@@ -77,7 +77,7 @@ updated: 2026-09-15
 
 ## 审查与提案
 
-不是现行契约。实现对应条目之前不要当架构说明阅读；完整列表见 [提案索引](proposals/README.md)。已完成的审查、批次记录和启动提示词见 [归档索引](archive/README.md)。
+不是现行契约。实现对应条目之前不要当架构说明阅读；完整列表见 [提案索引](proposals/README.md)。已完成的审查、已落地的提案、批次记录和启动提示词见 [归档索引](archive/README.md)。
 
 - 全项目体检的现行约定见 [Agent 协作指南：审查与验证](guides/agent-workflow.md#审查与验证)
 

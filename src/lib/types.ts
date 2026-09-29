@@ -1,4 +1,4 @@
-// TS 类型 —— 手写同步自 agenthub-core 的 models(见 docs/architecture.md §2 models/)
+// TS 类型 —— 手写同步自 agenthub-core 的 models(crates/agenthub-core/src/models/)
 // Agent 列表与能力以运行时 Catalog 为准（见 platform agent_catalog）；本文件不再封闭 Agent 集合。
 
 /**

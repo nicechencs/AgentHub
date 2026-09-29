@@ -1,20 +1,18 @@
 ---
 title: 启动与 Gateway 内部 owner 拆分
-type: proposal
-status: proposed
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-08-27
+updated: 2026-09-29
 ---
 
 # 启动与 Gateway 内部 owner 拆分
 
-> 状态：提案（Draft）。作者：maintainers。日期：2026-08-27。
->
-> 本文是 [对象化与封装审查](../archive/objectization-encapsulation-audit.md) O-26–O-30 的落地设计：只拆 `AgentHub::open_with_skills_root` 组合根、Registry vs Catalog、`UpstreamChannel` 协议/分派/传输、Gateway/EdgeState 生命周期、以及 Responses 解析器 vs 供应商策略（Kimi `developer -> system`）。不是现行契约，不得按已实施理解。日常 PR 合入 GitHub `dev`。
+> **落地核对（2026-09-29）：** PR1–PR5 均已落地：`bridge/protocol/responses/{parse,kimi,codex}.rs`、`adapters/registry.rs` 与 `platform/agent_catalog/service.rs` 文件头、`UpstreamChannel` 不再实现 `UpstreamTransport`、`crates/agenthub-core/src/startup.rs`、`bridge/host/gateway/{registry,edge}.rs`。下文行号与文件长度均为提案时的旧值。本页保留为设计记录，不是现行契约；现行事实以源码和 [架构总览](../architecture/overview.md) 为准。
+
+> 本文是 [对象化与封装审查](../archive/objectization-encapsulation-audit.md) O-26–O-30 的落地设计：只拆 `AgentHub::open_with_skills_root` 组合根、Registry vs Catalog、`UpstreamChannel` 协议/分派/传输、Gateway/EdgeState 生命周期、以及 Responses 解析器 vs 供应商策略（Kimi `developer -> system`）。不是现行契约，不得按已实施理解。
 >
 > **冻结写入路径：** 不改 `switch` / `switch_with_guard` / `undo_switch`、票夹 `plan` / `bind` / `unbind`、`AdapterRouteService::plan`、补偿顺序、current 指针、锁。本系列是文件与角色边界。**不把 `local_bridge` 迁出进程**；[adapter-sidecar](../proposals/adapter-sidecar.md) 是另一份提案。
-
-审查行号已部分过期。本文以当前源码为准：`lib.rs` 组合约 107–212；`UpstreamChannel` 在 `bridge/host/transport/mod.rs` 107–240；`Gateway` / `EdgeState` 在 `gateway.rs` 96–150 与 365–513；Kimi `developer -> system` 在 `protocol/responses.rs` 1716–1721。
 
 ## Overview
 
@@ -339,7 +337,7 @@ cargo test -p agenthub-core --locked profile_admission_rejects_overload_without_
 - [Service 内部 owner 拆分](service-internal-owners.md) — 同系列写法；本页不重做 O-11–O-14
 - [模块化与边界收紧](../proposals/modularity.md) — D3
 - [Adapter sidecar](../proposals/adapter-sidecar.md) — **另一提案**，本页不实施
-- [Core 与 Runtime](core-runtime.md)
-- [架构总览](overview.md)（本提案不改其当前态表述）
+- [Core 与 Runtime](../architecture/core-runtime.md)
+- [架构总览](../architecture/overview.md)（本提案不改其当前态表述）
 - [产品边界](../decisions/product-boundaries.md)
 - 源码：`crates/agenthub-core/src/lib.rs`、`adapters/registry.rs`、`platform/agent_catalog/service.rs`、`bridge/host/transport/mod.rs`、`bridge/host/dispatch.rs`、`bridge/host/gateway.rs`、`bridge/host/lifecycle.rs`、`bridge/protocol/responses.rs`、`src-tauri/src/state.rs`

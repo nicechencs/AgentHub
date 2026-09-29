@@ -3503,7 +3503,7 @@ fn official_codex_oauth_credentials() -> serde_json::Value {
             },
             "last_refresh": "2026-08-20T00:00:00Z"
         },
-        "email": "41375197@qq.com"
+        "email": "qq-user@example.com"
     })
 }
 
@@ -3541,7 +3541,7 @@ fn leftover_shaped_codex_live_does_not_throw_identity_conflict() {
             id: "codex-official".into(),
             agent_id: AgentId::Codex,
             kind: AccountKind::Oauth,
-            label: "41375197@qq.com".into(),
+            label: "qq-user@example.com".into(),
             credentials: official_codex_oauth_credentials(),
             extra: json!({}),
             status: "active".into(),
@@ -3604,9 +3604,9 @@ base_url = "https://mytokens.cc/v1"
             id: "codex-official".into(),
             agent_id: AgentId::Codex,
             kind: AccountKind::Oauth,
-            label: "41375197@qq.com".into(),
+            label: "qq-user@example.com".into(),
             credentials: official_codex_oauth_credentials(),
-            extra: json!({"email": "41375197@qq.com"}),
+            extra: json!({"email": "qq-user@example.com"}),
             status: "active".into(),
             is_current: false,
             created_at: "2026-01-01 00:00:00.000000".into(),
@@ -3667,9 +3667,9 @@ base_url = "http://127.0.0.1:33923/v1"
             id: "codex-official".into(),
             agent_id: AgentId::Codex,
             kind: AccountKind::Oauth,
-            label: "41375197@qq.com".into(),
+            label: "qq-user@example.com".into(),
             credentials: official_codex_oauth_credentials(),
-            extra: json!({"email": "41375197@qq.com"}),
+            extra: json!({"email": "qq-user@example.com"}),
             status: "active".into(),
             is_current: true,
             created_at: "2026-01-01 00:00:00.000000".into(),
@@ -3712,7 +3712,7 @@ fn switch_official_from_leftover_live_does_not_identity_conflict() {
             id: "codex-official".into(),
             agent_id: AgentId::Codex,
             kind: AccountKind::Oauth,
-            label: "41375197@qq.com".into(),
+            label: "qq-user@example.com".into(),
             credentials: official_codex_oauth_credentials(),
             extra: json!({}),
             status: "active".into(),
@@ -3823,10 +3823,10 @@ base_url = "https://mytokens.cc/v1"
             id: "codex-official".into(),
             agent_id: AgentId::Codex,
             kind: AccountKind::Oauth,
-            label: "41375197@qq.com".into(),
+            label: "qq-user@example.com".into(),
             credentials: official_codex_oauth_credentials(),
             extra: json!({
-                "email": "41375197@qq.com",
+                "email": "qq-user@example.com",
                 "subtitle": "本机路由 127.0.0.1:33923"
             }),
             status: "active".into(),
@@ -3866,7 +3866,7 @@ base_url = "https://mytokens.cc/v1"
     assert!(switched.account.is_current);
     assert_eq!(switched.account.id, official.id);
     assert_eq!(
-        switched.account.extra["email"], "41375197@qq.com",
+        switched.account.extra["email"], "qq-user@example.com",
         "do not overwrite official identity from API-key live"
     );
     assert!(
@@ -3879,7 +3879,7 @@ base_url = "https://mytokens.cc/v1"
     );
     let official_row = listed.iter().find(|row| row.id == official.id).unwrap();
     assert!(official_row.is_current);
-    assert_eq!(official_row.extra["email"], "41375197@qq.com");
+    assert_eq!(official_row.extra["email"], "qq-user@example.com");
     assert_eq!(listed.iter().filter(|row| row.is_current).count(), 1);
 }
 
@@ -4902,7 +4902,7 @@ fn hub_codex_refresh_patches_token_only_auth_json_body() {
         kind: AccountKind::Oauth,
         credentials: json!({
             "format": "auth_json",
-            "email": "41375197@qq.com",
+            "email": "qq-user@example.com",
             "body": {
                 "auth_mode": "chatgpt",
                 "OPENAI_API_KEY": null,
@@ -4930,7 +4930,7 @@ fn hub_codex_refresh_patches_token_only_auth_json_body() {
                 "provider": "codex",
                 "access_token": "at-hub",
                 "refresh_token": "old-refresh",
-                "email": "41375197@qq.com"
+                "email": "qq-user@example.com"
             }),
             extra: json!({ "source": "oauth_pkce" }),
             is_current: false,

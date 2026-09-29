@@ -5,18 +5,18 @@ status: current
 owner: maintainers
 audience: product, design, frontend, and core contributors
 source-of-truth: root AGENTS.md, current planner contracts, and connection/account services
-updated: 2026-09-11
+updated: 2026-09-29
 ---
 
 # 产品边界与术语决策
 
 ## 用户表面
 
-- 页面说“登录”“Connections”“Routes”，不说“票”“钱包”“Binding”。
+- 界面说「登录」「连接」「路由」，不说“票”“钱包”“Binding”。代码和文档里的 Connections / Routes 分别对应界面上的「连接」「路由」。
 - 侧栏与页面标题把 `/projects` 说成「历史」（内部仍叫 Projects）；它列的是各 Agent 的本机会话和工作区，不是产品里的“项目”实体。
 - `Ticket`、`TicketBinding`、`Wallet`、`Binding` 是实现/领域术语，不能外溢到普通 UI 文案。
-- Connections 管通用登录，以及从 Connections 创建或导入的登录。连接页**不提供**「分享至连接池」行入口；入池在 Routes 连接池用「从连接同步」。接到某个工具从 Dashboard「连接/切换」。**API Key 都可以同步入池**（含 WorkBuddy / ZCode / Pi / Cursor 上配置的）；官方 OAuth 仅 Claude / Codex / Grok；**国产官方登录不能分享**。
-- Routes 可以直接新增和管理“仅用于本机路由”的官方登录 / API Key。这类 login 使用 `home=route_pool`，可不出现在 Connections；其新增、编辑、删除生命周期由 Routes 管理。
+- Connections 管通用登录，以及从 Connections 创建或导入的登录。连接页**不提供**「分享至连接池」行入口；入池在 Routes 连接池用「从连接同步」。接到某个工具：在总览点这个工具的卡片，打开「连接」弹窗。**API Key 都可以同步入池**（含 WorkBuddy / ZCode / Pi 上配置的；Cursor 没有 API Key 登录）；官方 OAuth 仅 Claude / Codex / Grok；**国产官方登录不能分享**。
+- Routes 可以直接新增和管理只给本机路由用的官方登录 / API Key。这类 login 使用 `home=route_pool`，可不出现在 Connections；其新增、编辑、删除生命周期由 Routes 管理。
 - 从 Connections 选入连接池的登录，登录本身仍由 Connections 管理；Routes 只管理它在本机路由中的成员关系和运行配置。在连接池里编辑这份官方登录并保存时，会先复制成连接池自己的一份（连接页那份还在），再问要不要把模型写回连接页。连接池页也可以「从连接同步」（所有 API Key 都可同步；国产官方登录不进入候选）。
 - 本机路由仍是登录的一种使用方式；从连接池移除成员不等于删除 Connections 管理的登录。连接页与连接池各有独立回收站；删除和恢复只回到原来那一页。
 - Routes 管理本机转发 runtime：入口、本机令牌、池成员、启停、自动恢复、失败详情和解绑。
@@ -38,7 +38,7 @@ updated: 2026-09-11
 - local bridge 只监听当前用户本机 loopback；不提供公网入口、多人共享或转售。
 - 目标工具得到本地 bearer/引用，上游 credential 留在 AgentHub/bridge host。
 - bridge 生成的 Provider、profile 或 local config 是私有投影，不进入登录列表，不作为下一次 bind 的 source。
-- Routes 直接新增的“仅用于本机路由”官方登录 / API Key 仍是真实登录来源，但使用 `home=route_pool`，可不进入 Connections；它们不是自动生成的本机配置，且由 Routes 管理其生命周期。
+- Routes 直接新增、只给本机路由用的官方登录 / API Key 仍是真实登录来源，但使用 `home=route_pool`，可不进入 Connections；它们不是自动生成的本机配置，且由 Routes 管理其生命周期。
 - Account、Provider、Connection 和 ActiveBinding 由 core service 负责；前端、generated Provider、未来 sidecar 都不能各自维护第二套 current 真相。
 
 ## 明确不做
