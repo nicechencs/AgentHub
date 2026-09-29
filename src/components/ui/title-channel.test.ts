@@ -33,7 +33,7 @@ function toPosixRel(abs: string): string {
 const NATIVE_TITLE_ON_TEXT =
   /<(p|span|div|h[1-6]|li|label|pre|button)\b[^>]*\stitle\s*=/;
 
-describe('tooltip channel (docs/ui-experience-alignment.md §5.2)', () => {
+describe('tooltip channel (docs/ui/design-system.md)', () => {
   it('pages and layout do not put native title on text or raw button nodes', () => {
     const roots = ['pages', 'components/layout', 'components/shared', 'components/ui'].map((rel) =>
       path.join(srcRoot, rel),

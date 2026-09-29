@@ -68,7 +68,7 @@ fn heals_codex_legacy_pkce_bundle_into_auth_json() {
 fn heals_codex_tokens_id_token_email_and_plan() {
     let exp = chrono::Utc::now().timestamp() + 6 * 3600;
     let id_token = make_jwt(json!({
-        "email": "41375197@qq.com",
+        "email": "qq-user@example.com",
         "sub": "google-oauth2|123",
         "exp": exp,
         "https://api.openai.com/auth": {
@@ -100,14 +100,14 @@ fn heals_codex_tokens_id_token_email_and_plan() {
     );
     assert!(needs_identity_heal(&acc));
     assert!(heal_account_identity(&mut acc));
-    assert_eq!(acc.label, "41375197@qq.com");
+    assert_eq!(acc.label, "qq-user@example.com");
     assert_eq!(
         acc.extra.get("email").and_then(|v| v.as_str()),
-        Some("41375197@qq.com")
+        Some("qq-user@example.com")
     );
     assert_eq!(
         acc.extra.get("identityLabel").and_then(|v| v.as_str()),
-        Some("41375197@qq.com")
+        Some("qq-user@example.com")
     );
     assert_eq!(
         acc.extra.get("subscription").and_then(|v| v.as_str()),

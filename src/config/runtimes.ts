@@ -41,7 +41,7 @@ export function runtimesForPlatform(
   return RUNTIMES.filter((r) => r.id !== 'powershell');
 }
 
-/** 共享运行时元数据(docs/agenthub-plan.md §5.7.2) */
+/** 共享运行时元数据 */
 export const RUNTIMES: RuntimeMeta[] = [
   {
     id: 'nodejs',

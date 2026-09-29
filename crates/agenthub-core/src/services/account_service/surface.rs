@@ -185,7 +185,7 @@ pub(super) fn same_live_slot(agent: AgentId, incoming: &Value, existing: &Value)
         .is_some_and(|(incoming, existing)| incoming == existing)
 }
 
-/// 是否为「同一授权票」（非身份）。见 `docs/account-authorization-pool.md`。
+/// 是否为「同一授权票」（非身份）。见 `docs/concepts/accounts-and-authorization.md`。
 pub(super) fn accounts_same_authorization(
     adapter: &dyn AgentAdapter,
     kind: AccountKind,

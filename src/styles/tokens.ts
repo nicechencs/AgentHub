@@ -14,7 +14,7 @@
  * - Agent meta, dots, logos, endpoint paths → `agentCssVar(id)`
  *   (surfaces pick an Agent id; they do not copy hex)
  *
- * Docs: `docs/ui-design.md` §2
+ * Docs: `docs/ui/design-system.md` §3
  */
 
 export type ThemeScheme = 'light' | 'dark';

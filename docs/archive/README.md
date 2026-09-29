@@ -34,7 +34,10 @@
 | [2026-09-07-project-review-c8d792b5.md](2026-09-07-project-review-c8d792b5.md) | 2026-09-07 incremental review | See [fix progress](2026-09-07-review-fix-progress.md) |
 | [2026-09-07-review-fix-progress.md](2026-09-07-review-fix-progress.md) | Fix tracking for the 2026-09-07 reviews | Historical record; issues closed |
 | [naming-convention-audit.md](naming-convention-audit.md) | 2026-09-02 naming audit | Current terms: `docs/reference/terminology.md` |
-| [objectization-encapsulation-audit.md](objectization-encapsulation-audit.md) | Objectization audit plus five volumes | Follow-on designs remain `proposed` in `docs/architecture/*-owners.md` |
+| [objectization-encapsulation-audit.md](objectization-encapsulation-audit.md) | Objectization audit plus five volumes | Follow-on designs are implemented and archived as `*-owners.md` below |
+| [read-model-owners.md](read-model-owners.md)、[runtime-context-owners.md](runtime-context-owners.md)、[form-sidebar-owners.md](form-sidebar-owners.md)、[service-internal-owners.md](service-internal-owners.md)、[startup-gateway-owners.md](startup-gateway-owners.md)、[usage-owners.md](usage-owners.md)、[test-fixture-owners.md](test-fixture-owners.md) | Owner-split proposals, moved from `docs/architecture/` on 2026-09-29 after the splits landed | Current structure: `docs/architecture/overview.md` and `docs/architecture/core-runtime.md` |
+| [chat-host-depth.md](chat-host-depth.md) | Chat host-depth proposal, moved from `docs/proposals/` on 2026-09-29; slices A–E and G–I merged, F cancelled | Current facts: `docs/STATUS.md`; remaining Chat work: `docs/proposals/chat-unified-experience.md` |
+| [ui-audit-2026-09-07/README.md](ui-audit-2026-09-07/README.md) | 2026-09-07 UI audit and implementation notes, moved from `docs/reviews/` on 2026-09-29 | Re-check table inside; current UI rules: `docs/ui/design-system.md` and `docs/ui/page-patterns.md` |
 | [recent-fix-review.md](recent-fix-review.md) | 2026-08-26 fix recap | Current facts: `docs/STATUS.md` |
 
 ## Removed historical bodies

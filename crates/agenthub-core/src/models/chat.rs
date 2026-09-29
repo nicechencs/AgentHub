@@ -355,7 +355,7 @@ pub enum ChatEvent {
         stream: OutputStream,
         text: String,
     },
-    /// Structured process step (tool / thinking / status). Phase 1+.
+    /// Structured process step (tool / thinking / status).
     #[serde(rename_all = "camelCase")]
     AgentProcess {
         turn: i64,

@@ -406,7 +406,7 @@ describe('TicketWalletList details', () => {
           sourceKind: 'account',
           sourceId: 'claude-1',
           agentId: 'claude',
-          label: '41375197@qq.com',
+          label: 'qq-user@example.com',
           surface: 'claude-subscription',
           credentialClass: 'oauth',
           speaks: [],
@@ -417,7 +417,7 @@ describe('TicketWalletList details', () => {
           sourceKind: 'account',
           sourceId: 'grok-1',
           agentId: 'grok',
-          label: 'cunsen.chen@gmail.com',
+          label: 'alice@example.com',
           surface: 'grok-xai-subscription',
           credentialClass: 'oauth',
           speaks: [],
@@ -461,8 +461,8 @@ describe('TicketWalletList details', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(claudeMarkup).toContain('41375197@qq.com');
-    expect(claudeMarkup).not.toContain('cunsen.chen@gmail.com');
+    expect(claudeMarkup).toContain('qq-user@example.com');
+    expect(claudeMarkup).not.toContain('alice@example.com');
     expect(claudeMarkup).toContain('1 份登录');
     expect(claudeMarkup).not.toContain('2 份登录');
 
@@ -475,8 +475,8 @@ describe('TicketWalletList details', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(grokMarkup).toContain('cunsen.chen@gmail.com');
-    expect(grokMarkup).not.toContain('41375197@qq.com');
+    expect(grokMarkup).toContain('alice@example.com');
+    expect(grokMarkup).not.toContain('qq-user@example.com');
     expect(grokMarkup).toContain('1 份登录');
 
     const allMarkup = renderWithTooltip(
@@ -487,8 +487,8 @@ describe('TicketWalletList details', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(allMarkup).toContain('41375197@qq.com');
-    expect(allMarkup).toContain('cunsen.chen@gmail.com');
+    expect(allMarkup).toContain('qq-user@example.com');
+    expect(allMarkup).toContain('alice@example.com');
     expect(allMarkup).toContain('2 份登录');
   });
 

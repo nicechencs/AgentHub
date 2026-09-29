@@ -237,9 +237,9 @@ wire_api = "responses"
                 },
                 "last_refresh": "2026-08-20T00:00:00Z"
             },
-            "email": "41375197@qq.com"
+            "email": "qq-user@example.com"
         }),
-        label_hint: Some("41375197@qq.com".into()),
+        label_hint: Some("qq-user@example.com".into()),
         extra: json!({}),
     };
     let result = CodexAdapter.apply_account(&account);
@@ -289,7 +289,7 @@ wire_api = "responses"
                 }
             }
         }),
-        label_hint: Some("41375197@qq.com".into()),
+        label_hint: Some("qq-user@example.com".into()),
         extra: json!({}),
     };
     let result = CodexAdapter.apply_account(&account);

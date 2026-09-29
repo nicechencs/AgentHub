@@ -437,7 +437,7 @@ export function createTauriSettingsPort(): SettingsPort {
           };
           saveJson(SETTINGS_KEY, mergedLocal);
 
-          // Phase 2: refresh the full snapshot. A refresh failure must not
+          // Then refresh the full snapshot. A refresh failure must not
           // undo a durable write — return the committed patch on top of the
           // last known snapshot so UI rollback does not fire.
           try {

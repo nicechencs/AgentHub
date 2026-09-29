@@ -1,7 +1,7 @@
 /**
- * Chat 过程面板状态机（Phase 0–1）。
+ * Chat 过程面板状态机。
  * 从 ChatEvent 推导 per-(turn, agent) 过程视图（命令 / stderr / 步骤）。
- * 设计见 docs/chat-process-streaming.md。
+ * 设计见 docs/concepts/chat-and-agents.md。
  */
 
 import type { MessageKey, TranslateFn } from '@/lib/i18n';

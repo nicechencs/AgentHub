@@ -5,55 +5,59 @@ status: current
 owner: maintainers
 audience: product, core, and connection UI contributors
 source-of-truth: AccountService, Account/LiveAccount models, adapter authorization hooks, and ConnectionService
-updated: 2026-09-08
+updated: 2026-09-29
 ---
 
 # Accounts 与 Authorization Pool
 
-## 两个不同概念
+本页解释 AgentHub 怎样保存和去重“登录”。登录接到哪个 Agent、走哪条路线，见 [Connections、Routes 与绑定](connections-and-routing.md)；分享规则的原文见 [产品边界](../decisions/product-boundaries.md)。
+
+## 身份与授权是两件事
 
 | 概念 | 含义 | 例子 |
 | --- | --- | --- |
-| Identity | “是谁”的稳定标识 | email、user_id、sub、principal_id |
-| Authorization | 一次登录拿到的凭据集合 | refresh/access token 或一把 API Key |
+| Identity（身份） | “是谁”的稳定标识 | email、user_id、sub、principal_id |
+| Authorization（授权） | 一次登录拿到的登录信息 | refresh/access token，或一把 API Key |
 
-用户界面把二者都呈现为一份“登录”，但去重和刷新必须区分它们。`Account` 是存储授权的一行；`LiveAccount` 是 adapter 在应用 live 文件时使用的临时快照；未脱敏的 credentials 不能返回给 UI 或写日志。
+界面把两者都叫一份“登录”，但去重和刷新必须分开看。代码里：`Account` 是存一份授权的一行；`LiveAccount` 是 adapter（各 Agent 的对接代码）读写本机配置时用的临时快照。未打码的登录信息不能返回给界面，也不能写日志。
 
-## Pool 规则
+## 去重规则
 
-- 同一 Agent + 同一稳定 OAuth identity 只保留一行；重新登录覆盖 credentials/label/updatedAt。
-- 跨 Agent 的同一 identity 各自保留一行，不能跨 `agent_id` 合并。
-- API Key 按密钥指纹分行；不同 Key 不因展示名相同而合并。同一把钥匙、同一地址保存成两张登录时，也不会悄悄把其中一张送进回收站。官方登录与 API Key 永远分行，不会合成一张。
-- WorkBuddy 自定义模型按 `models.json` 一行一份登录；ZCode 按 `~/.zcode/v2/config.json` 的一条供应商分行。桌面套餐登录不导入。
-- Cursor 可以从本机已有登录导入到登录列表，但不能写回 Cursor 本机配置；切换失败给出中文说明。Kimi 切换会写出带模型表的完整 `config.toml`。Kiro 可官方登录（`kiro-cli`）、导入本机 sqlite 登录、再登一份并切换；详情可查看官方积分。
-- identity 不明确时 fail closed，不根据 label、token preview 或猜测合并。
-- Pi 还要按官方 live slot 区分；同一人位于不同 provider 槽仍是不同账号行。
-- 每个 Agent 的 live 生效位最多一条；切换不会删除池内其他授权。
-- `local_bridge` 的默认池按目标 Agent/surface 唯一；本机口和本机令牌更新覆盖。池内可以有多份合格登录。从连接页入池不复制登录，也不把本机令牌当成新的登录；这些登录仍出现在 Connections。在连接池里编辑这份官方登录并保存时，会复制成连接池自己的一份（连接页那份还在），保存后可选择把模型写回连接页。连接池本页添加的登录只给连接池用。两边回收站分开。
+- 同一 Agent + 同一稳定 OAuth 身份只留一行；重新登录覆盖登录信息、名称和更新时间。
+- 同一身份在不同 Agent 上各留一行，不跨 `agent_id` 合并。
+- API Key 按密钥指纹分行；展示名相同不合并。同一把 Key、同一地址存成两份时，不会悄悄把其中一份送进回收站。官方登录与 API Key 永远分行。
+- 身份不明确时 fail closed（拒绝合并），不按名称、token 预览或猜测合并。
+- adapter 的 `authorization_key` 识别“是不是同一份授权”（通常是 token/Key 的哈希）；OAuth 同身份覆盖由 service 按稳定身份字段判断。不要把 email 当 `authorization_key`，也不要拿能力枚举当去重规则。
 
-Adapter 的 `authorization_key` 用于识别同一授权（通常是 token/key hash）；OAuth 同身份覆盖另由 service 使用稳定 identity label/字段判断。不要把 email 当 authorization key，也不要把 capability 枚举当去重规则。
+各家特例：
 
-## Live 与绑定
+- WorkBuddy 自定义模型按 `models.json` 一行一份登录；ZCode 按 `~/.zcode/v2/config.json` 的一条供应商一份。两家的桌面套餐登录都不导入。
+- Pi 按官方登录槽区分；同一人在不同 provider 槽里是不同的行。
+- Cursor 可以把本机已有登录导入列表，但不能写回 Cursor；切换失败时给中文说明。
+- Kimi 切换会写出带模型表的完整 `config.toml`。
+- Kiro 支持官方登录（`kiro-cli`）、导入本机 sqlite 登录、再登一份并切换；详情可看官方积分。
 
-导入 live：以 Agent adapter 能识别的当前 credential family 为准；同时存在 API Key 与官方登录时，报告 `alsoPresent` 供用户确认，但不把两族合成一张登录。切换 live：备份、写入目标 Agent 的官方文件、更新 current/binding，并保留池中其他行。登录记下关键词和整份配置；详情列出相关文件（打码后可复制、打开所在目录），不含明文钥匙。接到某个工具从 Dashboard「连接/切换」，写入仍走 [bind](connections-and-routing.md)。把连接页的登录加入默认连接池，走连接池页的「从连接同步」；连接页没有「分享至连接池」行入口。**API Key 都可以同步**（含 WorkBuddy / ZCode 等上配置的）；**国产官方登录不能分享**。不能把目标的生成配置再导入为新登录。
+## 本机正在用的配置
 
-刷新归属遵循谁拥有登录文件谁续期：目标 CLI-owned OAuth 由目标工具刷新，AgentHub 只重新读取；Hub-owned grant 才由 AgentHub 按 account 行做 single-flight。跨进程或并发写入要依赖 revision/lock，不以最后一次列表刷新覆盖另一份新凭据。
+- **导入**：以 adapter 能识别的当前登录类型为准。同时存在 API Key 与官方登录时，返回 `alsoPresent` 让用户确认，不把两类合成一份。
+- **切换**：先备份，再写目标 Agent 的官方文件，更新“当前使用”，池里其他行保留。每个 Agent 最多一份正在用的登录。
+- **详情**：登录记下关键词和整份配置；“相关文件”列出路径（打码后可复制、可打开所在目录），不含明文 Key。
+- 自动生成给目标 Agent 的配置不能再导入成新登录。
+
+刷新归属：谁拥有登录文件谁续期。目标 CLI 自己的 OAuth 由它自己刷新，AgentHub 只重新读取；只有 AgentHub 自己持有的授权，才由 AgentHub 按行加锁刷新（同一行同时只刷一次）。并发写入依赖 revision/锁，不能用一次列表刷新覆盖别处刚写入的新登录。
+
+## 连接页与连接池
+
+连接页和 Routes 的连接池各自管理自己添加的登录，回收站也分开；从连接页同步到池里的登录不复制，仍出现在连接页。完整规则见 [Connections、Routes 与绑定](connections-and-routing.md#登录列表与-routes)。
 
 ## 数据与安全边界
 
-当前凭据使用项目既有存储方案，**不做额外的凭据落盘加密**。这不是遗漏的实现任务，除非产品决定被明确推翻，否则不引入 keyring、AES、主密码或密文迁移。
-
-服务返回和日志只允许脱敏摘要、指纹、尾部预览或 source/revision 等非 secret 信息。生产前端不把完整 credentials 放入 Ticket/Binding DTO；Adapter profile 和 generated Provider 只保存 Connection 引用。
-
-## 国产 OAuth 边界
-
-中国产 AI 的 OAuth（包括 Kimi CLI 会员 OAuth，以及 GLM、DeepSeek、通义、豆包等）不开放跨 Agent adapter 边，也不转换为 API，也不可分享至连接池或接到其他工具。国产路由只认产品明确支持的官方 API Key；这属于产品边界，不是“稍后补 writer”的 roadmap。
-
-所有 API Key 都可以分享。入池和接到其他工具看的是「这是 API Key」，不是「这份登录挂在哪个 Agent」。WorkBuddy / ZCode 上配置的 Key 与其它工具上的 Key 同一条规则。详见 [产品边界](../decisions/product-boundaries.md)。
+- 登录信息沿用项目现有存储，**不做额外的落盘加密**；这是产品决定，不是遗漏的任务。
+- 服务返回和日志只允许打码摘要、指纹、末几位或 source/revision 等非密钥信息。Ticket/Binding DTO 不带完整登录信息；adapter profile 和自动生成的 Provider 只保存对登录的引用。
+- 所有 API Key 都可以分享；国产官方登录（Kimi 会员 OAuth、GLM、DeepSeek、通义、豆包等）不能分享、不能接到其他工具，也不转成 API。原文见 [产品边界](../decisions/product-boundaries.md#api-key-可分享国产官方登录不可分享)。
 
 ## 相关页面
 
-- [Connections and routing](connections-and-routing.md)
-- [Product boundaries](../decisions/product-boundaries.md)
-- [Legacy document index](../archive/legacy-document-index.md)
-- [Testing reference](../reference/testing.md)
+- [Connections、Routes 与绑定](connections-and-routing.md)
+- [产品边界](../decisions/product-boundaries.md)
+- [测试参考](../reference/testing.md)

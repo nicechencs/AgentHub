@@ -18,9 +18,9 @@ describe('splitFileLabel', () => {
   });
 
   it('keeps the tail of a long folder path and marks the dropped head', () => {
-    expect(pathTailLabel('D:\\demo\\chen\\2026\\AgentHub')).toBe('…\\2026\\AgentHub');
+    expect(pathTailLabel('D:\\demo\\user\\2026\\AgentHub')).toBe('…\\2026\\AgentHub');
     expect(pathTailLabel('/home/user/proj/src/pages/chat')).toBe('…/pages/chat');
-    expect(pathTailLabel('D:/demo/chen/2026/AgentHub')).toBe('…\\2026\\AgentHub');
+    expect(pathTailLabel('D:/demo/user/2026/AgentHub')).toBe('…\\2026\\AgentHub');
   });
 
   it('leaves a short path whole, with or without a drive', () => {
@@ -32,8 +32,8 @@ describe('splitFileLabel', () => {
   });
 
   it('honors a custom tail width and ignores blank paths', () => {
-    expect(pathTailLabel('D:\\demo\\chen\\2026\\AgentHub', 1)).toBe('…\\AgentHub');
-    expect(pathTailLabel('D:\\demo\\chen\\2026\\AgentHub', 3)).toBe('…\\chen\\2026\\AgentHub');
+    expect(pathTailLabel('D:\\demo\\user\\2026\\AgentHub', 1)).toBe('…\\AgentHub');
+    expect(pathTailLabel('D:\\demo\\user\\2026\\AgentHub', 3)).toBe('…\\user\\2026\\AgentHub');
     expect(pathTailLabel('')).toBe('');
     expect(pathTailLabel('   ')).toBe('');
   });
@@ -45,11 +45,11 @@ describe('splitFileLabel', () => {
       directoryLabel: '…/qa-codex-filechange-scratch',
       fullPath: '/workspace/qa-codex-filechange-scratch/probe.txt',
     });
-    expect(previewHeaderParts('D:\\demo\\chen\\2026\\AgentHub\\src\\app.ts', 'app.ts')).toEqual({
+    expect(previewHeaderParts('D:\\demo\\user\\2026\\AgentHub\\src\\app.ts', 'app.ts')).toEqual({
       fileName: 'app.ts',
-      directory: 'D:\\demo\\chen\\2026\\AgentHub\\src\\',
+      directory: 'D:\\demo\\user\\2026\\AgentHub\\src\\',
       directoryLabel: '…\\src',
-      fullPath: 'D:\\demo\\chen\\2026\\AgentHub\\src\\app.ts',
+      fullPath: 'D:\\demo\\user\\2026\\AgentHub\\src\\app.ts',
     });
     expect(previewHeaderParts('README.md')).toEqual({
       fileName: 'README.md',

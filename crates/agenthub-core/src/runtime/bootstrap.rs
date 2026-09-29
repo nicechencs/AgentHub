@@ -1,4 +1,4 @@
-//! Remediation plans for missing runtimes (no auto-install in P0).
+//! Remediation plans for missing runtimes (no auto-install).
 
 use crate::models::{Remediation, RuntimeId};
 

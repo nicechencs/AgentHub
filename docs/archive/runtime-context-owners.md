@@ -1,14 +1,16 @@
 ---
 title: 运行时 context owner 与 store 重置
-type: proposal
-status: proposed
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-08-27
+updated: 2026-09-29
 ---
 
 # 运行时 context owner 与 store 重置
 
-> 提案，不是现行契约。本系列不改 `plan` / `bind` / `unbind` / `switch` / `activate_*` / 补偿 / current / 锁。日常合入 GitHub `dev`。
+> **落地核对（2026-09-29）：** PR1–PR3 均已落地：`src/app/runtime/runtime-context.ts`（`RUNTIME_STORE_RESETS`，含 app-update）；`src/lib/api/adapter.ts`、`trash.ts`、`agent.ts` 改走 `refreshRuntimeReadModels`；`src/app/runtime/index.ts` 不再导出 `reset*Store`。连接池 store 后来改名为 `connection-inventory-store`（读模型名 `connectionInventory`）。本页保留为设计记录，不是现行契约；现行事实以源码和 [架构总览](../architecture/overview.md) 为准。
+
+> 提案，不是现行契约。本系列不改 `plan` / `bind` / `unbind` / `switch` / `activate_*` / 补偿 / current / 锁。
 
 针对审查 [O-07](../archive/objectization-encapsulation-audit.md)：运行时 store 是多个模块级可变单例；`setBackend` / `resetBackend` 手工依次 reset；没有统一 context 承载生命周期和失效。O-08 / O-09（`refreshRuntimeReadModels`、刷新失败留在 snapshot）和 O-51 / O-52（epoch 丢弃过期写回、catalog 随 backend 一起 reset）**已经落地，本系列冻结，不重做**。
 
@@ -276,7 +278,7 @@ pnpm typecheck
 - [对象化与封装审查：前端与运行时 O-51、O-52、O-53](../archive/objectization-encapsulation-audit-frontend.md)
 - [读模型 owner 与兼容策略](read-model-owners.md)（宽 DTO 切片；本提案不改 wire）
 - [Service 内部 owner 拆分](service-internal-owners.md)（Core 门面内部拆分；本提案不改 switch / current / 锁）
-- [前端与 Backend Adapter 边界](frontend-backend.md)
-- [架构总览](overview.md)（本提案不改其当前态表述）
+- [前端与 Backend Adapter 边界](../architecture/frontend-backend.md)
+- [架构总览](../architecture/overview.md)（本提案不改其当前态表述）
 - [产品边界](../decisions/product-boundaries.md)
 - 源码：`src/app/runtime/{backend-runtime,agent-catalog-store,agent-status-store,connection-inventory-store,ticket-wallet-store,app-update-store,mutation-coordinator,AgentCatalogProvider,index}.ts`；`src/lib/api/{account,provider,tickets,adapter,trash,agent}.ts`；`src/test/setup.ts`

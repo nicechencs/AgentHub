@@ -1869,7 +1869,7 @@ wire_api = "responses"
     let mut current = input(
         "codex-oauth-standin",
         AgentId::Codex,
-        "41375197@qq.com",
+        "qq-user@example.com",
         true,
     );
     current.settings_config =

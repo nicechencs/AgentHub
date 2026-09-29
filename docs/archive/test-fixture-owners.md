@@ -1,16 +1,16 @@
 ---
 title: 测试 fixture 与 OAuth store owner
-type: proposal
-status: proposed
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-08-27
+updated: 2026-09-29
 ---
 
 # 测试 fixture 与 OAuth store owner
 
-> 状态：提案（Draft）。作者：maintainers。日期：2026-08-27。
->
-> 本文是 [模块化与边界收紧](../proposals/modularity.md) 在测试辅助层的落地设计：只拆 O-41 连接流程 fixture、O-42 mock Ticket resolver、O-44 设备码测试 store。不是现行契约，不得按已实施理解。日常 PR 合入 GitHub `dev`。合入 dest/`dev` 后仍不改 `plan` / `bind` / `apply` 生产语义。
+> **落地核对（2026-09-29）：** PR1–PR3 均已落地：`src/dev/mocks/connect-flow-fixtures.ts` 改调 `seedAppliedBinding`（`src/dev/mocks/adapter.ts`）；`src/dev/mocks/ticket.ts` 拆出 `MockTicketWalletSources` / `MockTicketAdapter`；`crates/agenthub-core/src/oauth/device/tests.rs` 使用 `DeviceStoreGuard` 作用域清理。本页保留为设计记录，不是现行契约；现行事实以源码和 [架构总览](../architecture/overview.md) 为准。
+
+> 本文是 [模块化与边界收紧](../proposals/modularity.md) 在测试辅助层的落地设计：只拆 O-41 连接流程 fixture、O-42 mock Ticket resolver、O-44 设备码测试 store。不是现行契约，不得按已实施理解。仍不改 `plan` / `bind` / `apply` 生产语义。
 
 ## Overview
 
@@ -252,10 +252,10 @@ Cargo 过滤用模块路径，避免误伤其它 `device` 子串。并发用例�
 - [对象化与封装审查](../archive/objectization-encapsulation-audit.md) — O-40（已处理）、O-41、O-42、O-44
 - [对象化与封装审查：测试、Mock 与 Fixture](../archive/objectization-encapsulation-audit-tests-fixtures.md)
 - [对象化与封装审查：OAuth](../archive/objectization-encapsulation-audit-oauth.md) — O-73 生产 store 注入不在本系列
-- [Adapter 路线内核](adapter-route-kernel.md)
+- [Adapter 路线内核](../architecture/adapter-route-kernel.md)
 - [读模型 owner 与兼容策略](read-model-owners.md) — 不改 bind 回写；`adapterRouteToBinding` 永不 `native`
 - [Service 内部 owner 拆分](service-internal-owners.md) — 同类提案体例
 - [模块化与边界收紧](../proposals/modularity.md)
 - [产品边界](../decisions/product-boundaries.md)
-- [架构总览](overview.md)（本提案不改其当前态表述）
+- [架构总览](../architecture/overview.md)（本提案不改其当前态表述）
 - 源码：`src/dev/mocks/connect-flow-fixtures.ts`、`src/dev/mocks/ticket.ts`、`src/dev/mocks/create-backend.ts`、`src/dev/mocks/adapter/{plan,apply,project,source-product,source-ticket}.ts`、`src/dev/mocks/source-classify.ts`、`src/lib/api/tickets.ts`、`crates/agenthub-core/src/oauth/device.rs`、`crates/agenthub-core/src/oauth/device/tests.rs`

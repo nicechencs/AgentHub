@@ -72,7 +72,7 @@ The destination paths below are the intended organized names. A destination may 
 | `docs/archive/hub-redesign-plan.md` | Historical Hub Phase 1 record; current page behavior belongs in `docs/ui/page-patterns.md` and current product docs |
 | `docs/archive/multi-account-routing-rfc.md` | Historical same-surface multi-account RFC; current runtime facts belong in product/reference docs; the shipped default pool is documented in `docs/concepts/connections-and-routing.md` |
 | `docs/archive/naming-convention-audit.md` | 2026-09-02 naming audit, moved from `docs/reviews/naming-convention-audit.md`; current terms belong in `docs/reference/terminology.md` |
-| `docs/archive/objectization-encapsulation-audit.md` | Objectization audit, moved from `docs/architecture/`; five volumes share this prefix; follow-on designs remain `proposed` in `docs/architecture/*-owners.md` |
+| `docs/archive/objectization-encapsulation-audit.md` | Objectization audit, moved from `docs/architecture/`; five volumes share this prefix; follow-on `*-owners.md` designs are implemented and archived beside it |
 | `docs/archive/objectization-encapsulation-audit-cli-tauri.md` | Objectization audit volume, moved from `docs/architecture/` |
 | `docs/archive/objectization-encapsulation-audit-core.md` | Objectization audit volume, moved from `docs/architecture/` |
 | `docs/archive/objectization-encapsulation-audit-frontend.md` | Objectization audit volume, moved from `docs/architecture/` |

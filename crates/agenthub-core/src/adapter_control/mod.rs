@@ -1,4 +1,4 @@
-//! Tauri-neutral adapter / local_bridge control contract (P2-5 steps 1–3).
+//! Tauri-neutral adapter / local_bridge control contract.
 //!
 //! Desktop (and a future sidecar client) implement [`AdapterControl`]. Shell
 //! commands only parse wire input and delegate. Process-local profile / target

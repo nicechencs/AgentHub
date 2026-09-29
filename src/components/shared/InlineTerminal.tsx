@@ -28,7 +28,7 @@ export function inlineTerminalStatusText(
   return t('agents.terminal.guided');
 }
 
-/** 安装/升级的流式输出面板(docs/ui-design.md §5 InlineTerminal) */
+/** 安装/升级的流式输出面板 */
 export function InlineTerminal({
   lines,
   status,

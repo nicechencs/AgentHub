@@ -1,6 +1,6 @@
 /**
  * ConnectFlow 来源分组、可行性映射与 OAuth 预检（纯函数）。
- * 行标题 / agentId / isCurrent 等稳定字段来自 `toCredentialRow`（P2-7）。
+ * 行标题 / agentId / isCurrent 等稳定字段来自 `toCredentialRow`。
  */
 import { resolveAgentMeta } from '@/config/agents';
 import { authDisplayForAccount } from '@/lib/backend/contracts/auth-state';

@@ -116,7 +116,6 @@ export const pageRhythm = {
   pageShell: `w-full min-w-0 ${pageInsetTw.x} ${pageInsetTw.y}`,
   /**
    * 居中阅读宽（非 Chat）。Chat 消息列用 `ah-chat-content-column`。
-   * 对话记录与输入框曾共用这一档；Chat 现已改为自适应宽度。
    */
   readingColumn: 'mx-auto w-full max-w-5xl',
   /** 总览 / 路由看板 / 设置表单居中列（备份分栏除外），避免宽屏把内容拉成一条细线。 */

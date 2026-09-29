@@ -1184,11 +1184,11 @@ fn unsupported_and_missing_sources_have_no_changes() {
     assert!(unsupported.analysis.reason.contains("api.kimi.com/coding"));
     assert_eq!(
         unsupported.analysis.evidence[0].url,
-        "https://github.com/nicechencs/AgentHub/blob/release/docs/provider-api-oauth-adaptation.md"
+        "https://github.com/nicechencs/AgentHub/blob/release/docs/reference/route-compatibility.md"
     );
     assert_eq!(
         unsupported.analysis.evidence[0].label,
-        "AgentHub：厂商、API 与 OAuth 适配规则"
+        "AgentHub：路由兼容性参考"
     );
 
     let codex_to_claude = service
@@ -1453,7 +1453,7 @@ fn official_codex_oauth_to_codex_is_native_self_bind() {
             id: "codex-live-1".into(),
             agent_id: AgentId::Codex,
             kind: AccountKind::Oauth,
-            label: "41375197@qq.com".into(),
+            label: "qq-user@example.com".into(),
             credentials: serde_json::json!({
                 "format": "auth_json",
                 "body": {
@@ -1608,7 +1608,7 @@ fn stopped_grok_claude_route_does_not_block_codex_official_login_binds() {
             id: "codex-live-1".into(),
             agent_id: AgentId::Codex,
             kind: AccountKind::Oauth,
-            label: "41375197@qq.com".into(),
+            label: "qq-user@example.com".into(),
             credentials: serde_json::json!({
                 "format": "auth_json",
                 "body": {

@@ -1,5 +1,5 @@
 /**
- * Slice C: mock analyze/plan only read golden.expect.
+ * Mock analyze/plan only read golden.expect.
  *
  * Source features join a frozen AdapterRouteService::plan() row. Credential
  * availability is an exact match, not a score. Misses are fail-closed

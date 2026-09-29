@@ -1,6 +1,6 @@
 //! Agent capability matrix — single source of truth for "can this agent do X?".
 //!
-//! See `docs/capability-matrix.md`. Adapters declare via `AgentAdapter::capability`;
+//! See `docs/reference/capabilities.md`. Adapters declare via `AgentAdapter::capability`;
 //! callers gate with `AdapterRegistry::require`. Exhaustive `match` (no `_ =>`)
 //! so new capability variants fail compilation until every adapter answers.
 

@@ -1,4 +1,4 @@
-//! RoutePool / RouteMember domain types for the unified loopback pool (P1).
+//! RoutePool / RouteMember domain types for the unified loopback pool.
 //!
 //! The Hub token lives on the pool, not on each ticket. Upstream credentials
 //! stay on account/provider rows; members only store authorization references.

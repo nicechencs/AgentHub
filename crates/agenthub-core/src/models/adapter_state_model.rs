@@ -8,7 +8,7 @@
 //! - **observed**: in-process or sidecar listener snapshot
 //! - **host derived**: client cannot reach a matching runtime host
 //!
-//! Aligns with `docs/adapter-sidecar-design.md` §8. This module does not talk to
+//! See `docs/proposals/adapter-sidecar.md`. This module does not talk to
 //! SQLite or start listeners.
 
 use super::{AdapterProfile, AdapterProfileStatus, AdapterRoute};

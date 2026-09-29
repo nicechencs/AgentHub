@@ -32,7 +32,7 @@ fn cli_session(cwd: &str, title: &str, session_id: &str, turns: &str) -> String 
 fn groups_cli_and_editor_by_cwd_and_skips_empty_stub() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path();
-    let hub = r"D:\demo_chen\2026\AgentHub";
+    let hub = r"D:\demo_user\2026\AgentHub";
     write(
         &home.join("sessions/cli/aaaa.json"),
         &cli_session(
@@ -51,7 +51,7 @@ fn groups_cli_and_editor_by_cwd_and_skips_empty_stub() {
     write(
         &home.join("sessions/cli/empty.json"),
         &cli_session(
-            &serde_json::to_string(r"C:\Users\chen").unwrap(),
+            &serde_json::to_string(r"C:\Users\alice").unwrap(),
             "",
             "empty",
             "",
@@ -68,7 +68,7 @@ fn groups_cli_and_editor_by_cwd_and_skips_empty_stub() {
         r#"{
   "id": "sess_db5bb099-6dbc-43be-8d22-cff1211025d7",
   "title": "New Session",
-  "workspacePaths": ["D:\\demo_chen\\2026\\AgentHub"],
+  "workspacePaths": ["D:\\demo_user\\2026\\AgentHub"],
   "lastModifiedAt": "2026-09-06T15:26:37.026Z"
 }"#,
     );

@@ -70,7 +70,7 @@ pub trait AgentAdapter: Send + Sync {
     /// Authorization fingerprint: same "ticket" only (for pool dedupe).
     ///
     /// Same person with two different OAuth grants must return **different** keys.
-    /// Same live re-import must return the **same** key. See `docs/account-authorization-pool.md`.
+    /// Same live re-import must return the **same** key. See `docs/concepts/accounts-and-authorization.md`.
     fn authorization_key(
         &self,
         kind: AccountKind,

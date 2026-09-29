@@ -1,7 +1,6 @@
 //! Platform capability modules (modular monolith boundaries).
 //!
-//! New platform services land here as they are extracted from the legacy
-//! adapter/service layout. See `docs/platform-capability-refactor.md`.
+//! See `docs/architecture/core-runtime.md`.
 
 pub mod agent_catalog;
 pub mod config;
