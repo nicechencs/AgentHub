@@ -71,7 +71,12 @@ impl ProviderService {
         let current = self.repo.get_current(agent)?;
         let previous_current_id = current.as_ref().map(|provider| provider.id.clone());
 
-        let live_for_backfill = if live_config_is_empty(&live_before.raw) {
+        // Generated local-token projections stay in the row. A CLI rewrite of
+        // the live file (native Grok, official DSH) must not replace them.
+        let preserve_local_token = current
+            .as_ref()
+            .is_some_and(|provider| self.secret_resolver.keeps_generated_local_token(provider));
+        let live_for_backfill = if preserve_local_token || live_config_is_empty(&live_before.raw) {
             None
         } else if let Some(current) = current.as_ref() {
             let mut scrubbed = self

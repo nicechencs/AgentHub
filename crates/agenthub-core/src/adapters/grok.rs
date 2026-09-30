@@ -1649,9 +1649,9 @@ fn clear_grok_field(path: &Path, key: &str) -> Result<()> {
     Ok(())
 }
 
-/// OAuth must not leave an explicit API key preference behind. Keep the auth
-/// table and every other auth setting intact; Grok's own OAuth default applies
-/// when this one preference is absent.
+/// OAuth must not leave bridge pins behind. Keep the auth table and other
+/// auth/feature settings intact; drop only `preferred_method = api_key` and a
+/// bridge-only `features.campaigns = false`.
 fn clear_grok_api_key_preference(path: &Path) -> Result<()> {
     if !path.exists() {
         return Ok(());
@@ -1663,13 +1663,31 @@ fn clear_grok_api_key_preference(path: &Path) -> Result<()> {
     let mut doc = live
         .parse::<DocumentMut>()
         .map_err(|e| AppError::InvalidArg(format!("existing Grok config.toml is invalid: {e}")))?;
-    let Some(auth) = doc.get_mut("auth").and_then(Item::as_table_mut) else {
-        return Ok(());
+    let mut changed = false;
+    if let Some(auth) = doc.get_mut("auth").and_then(Item::as_table_mut) {
+        if auth.get("preferred_method").and_then(Item::as_str) == Some("api_key") {
+            auth.remove("preferred_method");
+            changed = true;
+        }
+    }
+    let features_empty = {
+        if let Some(features) = doc.get_mut("features").and_then(Item::as_table_mut) {
+            if features.get("campaigns").and_then(Item::as_bool) == Some(false) {
+                features.remove("campaigns");
+                changed = true;
+            }
+            features.is_empty()
+        } else {
+            false
+        }
     };
-    if auth.get("preferred_method").and_then(Item::as_str) != Some("api_key") {
+    if features_empty {
+        doc.remove("features");
+        changed = true;
+    }
+    if !changed {
         return Ok(());
     }
-    auth.remove("preferred_method");
     atomic_write(path, doc.to_string().as_bytes())
 }
 

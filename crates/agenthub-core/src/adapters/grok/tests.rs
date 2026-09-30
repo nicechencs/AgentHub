@@ -1111,6 +1111,10 @@ default = "grok-4.7"
 preferred_method = "api_key"
 keep_this = "yes"
 
+[features]
+campaigns = false
+voice_mode = true
+
 [model_providers.proxy]
 base_url = "https://relay.example/v1"
 
@@ -1156,6 +1160,11 @@ metadata = "keep-sibling"
     );
     assert_eq!(doc["auth"]["keep_this"].as_str(), Some("yes"));
     assert!(doc["auth"].get("preferred_method").is_none());
+    assert!(doc
+        .get("features")
+        .and_then(|item| item.get("campaigns"))
+        .is_none());
+    assert_eq!(doc["features"]["voice_mode"].as_bool(), Some(true));
 }
 
 #[test]

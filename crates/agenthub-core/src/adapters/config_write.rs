@@ -212,6 +212,54 @@ fn merge_grok_auth_preference(live: &mut toml_edit::DocumentMut, desired: &toml_
     auth.insert("preferred_method", toml_edit::value("api_key"));
 }
 
+/// Pin or clear `features.campaigns` without replacing other feature flags.
+///
+/// Bridge projections set `campaigns = false` so bare `grok -p` keeps
+/// `models.default`. Non-bridge writes drop only that pin.
+fn merge_grok_features_campaigns(
+    live: &mut toml_edit::DocumentMut,
+    desired: &toml_edit::DocumentMut,
+) {
+    let desired_campaigns_false = desired
+        .get("features")
+        .and_then(toml_edit::Item::as_table)
+        .and_then(|table| table.get("campaigns"))
+        .and_then(toml_edit::Item::as_bool)
+        == Some(false);
+    if desired_campaigns_false {
+        if live
+            .get("features")
+            .and_then(toml_edit::Item::as_table)
+            .is_none()
+        {
+            live.remove("features");
+            live["features"] = toml_edit::table();
+        }
+        if let Some(features) = live
+            .get_mut("features")
+            .and_then(toml_edit::Item::as_table_mut)
+        {
+            features.insert("campaigns", toml_edit::value(false));
+        }
+        return;
+    }
+    let features_empty = {
+        let Some(features) = live
+            .get_mut("features")
+            .and_then(toml_edit::Item::as_table_mut)
+        else {
+            return;
+        };
+        if features.get("campaigns").and_then(toml_edit::Item::as_bool) == Some(false) {
+            features.remove("campaigns");
+        }
+        features.is_empty()
+    };
+    if features_empty {
+        live.remove("features");
+    }
+}
+
 fn merge_toml_provider_config(expected: AgentId, live: &str, desired: &str) -> Result<String> {
     use toml_edit::DocumentMut;
 
@@ -237,13 +285,14 @@ fn merge_toml_provider_config(expected: AgentId, live: &str, desired: &str) -> R
         live_doc.as_table_mut().remove(key);
     }
     for (key, item) in desired_doc.iter() {
-        if expected == AgentId::Grok && key == "auth" {
+        if expected == AgentId::Grok && (key == "auth" || key == "features") {
             continue;
         }
         live_doc.as_table_mut().insert(key, item.clone());
     }
     if expected == AgentId::Grok {
         merge_grok_auth_preference(&mut live_doc, &desired_doc);
+        merge_grok_features_campaigns(&mut live_doc, &desired_doc);
     }
 
     if expected == AgentId::Kimi {

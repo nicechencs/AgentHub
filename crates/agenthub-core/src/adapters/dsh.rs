@@ -50,7 +50,13 @@ pub const NPM_PACKAGE: &str = "@deepseek-ai/dsh";
 pub const SCOPE_PACKAGE: &str = "@deepseek-ai/dsh-scope";
 pub const HOME_PATCH_FILE: &str = "cordis.patch.yml";
 pub const CREDENTIALS_FILE: &str = ".credentials.yaml";
-pub const LLM_PLUGIN_ID: &str = "@deepseek-ai/dsh-llm-deepseek";
+/// Cordis merges home `cordis.patch.yml` over the bundle by this id.
+/// The bundle row is `llm-deepseek`; the npm package name does not override it.
+pub const LLM_PLUGIN_ID: &str = "llm-deepseek";
+/// Older AgentHub writes used the npm package name, which never overrode the bundle.
+pub const LEGACY_LLM_PLUGIN_ID: &str = "@deepseek-ai/dsh-llm-deepseek";
+/// Profile default model row; must match `llm-deepseek.model` for headless CLI.
+pub const AGENT_DEFAULT_MODEL_PLUGIN_ID: &str = "agent-default-model";
 pub const DEFAULT_API_KEY_ENV: &str = DSH_API_KEY_ENV;
 pub const DEFAULT_PROVIDER: &str = "deepseek-official";
 pub const DEFAULT_MODEL: &str = "deepseek-v4-flash";
@@ -420,6 +426,10 @@ pub(crate) fn write_dsh_config(config: &AgentConfig) -> Result<()> {
     if let Some(n) = raw.get("maxTokens").and_then(Value::as_u64) {
         fields.max_tokens = Some(n);
     }
+    // DSH drops the snapshot when thinking is disabled and effort is not off.
+    if fields.thinking == "disabled" && fields.reasoning_effort != "off" {
+        fields.reasoning_effort = "off".into();
+    }
     let creds = home.join(CREDENTIALS_FILE);
     with_restored_files(&[&patch, &creds], || {
         write_llm_fields(&patch, &fields)?;
@@ -446,7 +456,9 @@ pub(crate) fn read_llm_fields(path: &Path) -> Result<DshLlmFields> {
         return Ok(fields);
     }
     let text = std::fs::read_to_string(path)?;
-    let Some(row) = find_plugin_row(&text, LLM_PLUGIN_ID) else {
+    let Some(row) = find_plugin_row(&text, LLM_PLUGIN_ID)
+        .or_else(|| find_plugin_row(&text, LEGACY_LLM_PLUGIN_ID))
+    else {
         return Ok(fields);
     };
     if let Some(v) = row.get("apiKeyEnv") {
@@ -482,6 +494,7 @@ pub(crate) fn write_llm_fields(path: &Path, fields: &DshLlmFields) -> Result<()>
         String::new()
     };
     let rendered = upsert_llm_row(&existing, fields)?;
+    let rendered = sync_agent_default_model(&rendered, fields)?;
     let mut bytes = rendered.into_bytes();
     if !bytes.ends_with(b"\n") {
         bytes.push(b'\n');
@@ -659,6 +672,28 @@ fn find_plugin_row(
     found
 }
 
+fn sync_agent_default_model(existing: &str, fields: &DshLlmFields) -> Result<String> {
+    let provider = find_plugin_row(existing, AGENT_DEFAULT_MODEL_PLUGIN_ID)
+        .and_then(|row| row.get("provider").cloned())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
+    let new_row = format!(
+        "- id: {id}\n  config:\n    provider: {provider}\n    model: {model}\n",
+        id = yaml_quote(AGENT_DEFAULT_MODEL_PLUGIN_ID),
+        provider = yaml_quote(&provider),
+        model = yaml_quote(&fields.model),
+    );
+    if let Some(replaced) = replace_plugin_row(existing, AGENT_DEFAULT_MODEL_PLUGIN_ID, &new_row) {
+        return Ok(replaced);
+    }
+    let mut out = existing.trim_end().to_string();
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    out.push_str(&new_row);
+    Ok(out)
+}
+
 fn upsert_llm_row(existing: &str, fields: &DshLlmFields) -> Result<String> {
     let mut max_tokens_line = String::new();
     if let Some(n) = fields.max_tokens {
@@ -677,7 +712,7 @@ fn upsert_llm_row(existing: &str, fields: &DshLlmFields) -> Result<String> {
     if existing.trim().is_empty() {
         return Ok(new_row);
     }
-    if existing.contains(LLM_PLUGIN_ID)
+    if (existing.contains(LLM_PLUGIN_ID) || existing.contains(LEGACY_LLM_PLUGIN_ID))
         && (existing.contains("apiKey") && !existing.contains("apiKeyEnv")
             || existing.to_ascii_lowercase().contains("sk-"))
     {
@@ -686,6 +721,9 @@ fn upsert_llm_row(existing: &str, fields: &DshLlmFields) -> Result<String> {
         ));
     }
     if let Some(replaced) = replace_plugin_row(existing, LLM_PLUGIN_ID, &new_row) {
+        return Ok(replaced);
+    }
+    if let Some(replaced) = replace_plugin_row(existing, LEGACY_LLM_PLUGIN_ID, &new_row) {
         return Ok(replaced);
     }
     let mut out = existing.trim_end().to_string();

@@ -126,6 +126,35 @@ fn write_config_can_point_base_url_at_loopback_without_inventing_chatgpt_model()
 }
 
 #[test]
+fn write_config_syncs_agent_default_model_with_catalog_model() {
+    let dir = tempfile::tempdir().unwrap();
+    with_dsh_home(dir.path(), || {
+        let patch = dir.path().join(HOME_PATCH_FILE);
+        std::fs::write(
+            &patch,
+            "- id: agent-default-model\n  config:\n    provider: deepseek-official\n    model: deepseek-v4-flash\n",
+        )
+        .unwrap();
+        write_dsh_config(&AgentConfig {
+            agent: AgentId::Dsh,
+            raw: json!({
+                "baseURL": "http://127.0.0.1:44227",
+                "api_key": "ahb_local",
+                "model": "gpt-5.6-sol"
+            }),
+        })
+        .unwrap();
+        let text = std::fs::read_to_string(&patch).unwrap();
+        assert!(text.contains(LLM_PLUGIN_ID), "{text}");
+        assert!(text.contains("model: gpt-5.6-sol"), "{text}");
+        assert!(text.contains("agent-default-model"), "{text}");
+        assert!(text.contains("provider: deepseek-official"), "{text}");
+        assert_eq!(text.matches("model: gpt-5.6-sol").count(), 2, "{text}");
+        assert!(!text.contains("deepseek-v4-flash"), "{text}");
+    });
+}
+
+#[test]
 fn write_config_merges_llm_row_and_preserves_other_rows() {
     let dir = tempfile::tempdir().unwrap();
     with_dsh_home(dir.path(), || {
@@ -146,10 +175,15 @@ fn write_config_merges_llm_row_and_preserves_other_rows() {
         assert!(text.contains(LLM_PLUGIN_ID));
         assert!(text.contains("deepseek-v4-pro"));
         assert!(text.contains("thinking: disabled"));
+        assert!(text.contains("reasoningEffort: off"));
         assert!(text.contains("maxTokens: 1024"));
+        assert!(text.contains("agent-default-model"));
+        assert!(text.contains("provider: deepseek-official"));
+        assert_eq!(text.matches("model: deepseek-v4-pro").count(), 2);
         let fields = read_llm_fields(&patch).unwrap();
         assert_eq!(fields.model, "deepseek-v4-pro");
         assert_eq!(fields.thinking, "disabled");
+        assert_eq!(fields.reasoning_effort, "off");
         assert_eq!(fields.max_tokens, Some(1024));
     });
 }
@@ -517,8 +551,12 @@ fn write_credential_value_still_creates_flat_file() {
 fn upsert_llm_row_quotes_at_plugin_id_as_yaml_safe() {
     let rendered = upsert_llm_row("", &DshLlmFields::default()).unwrap();
     assert!(
-        rendered.contains("- id: \"@deepseek-ai/dsh-llm-deepseek\""),
-        "plugin id must be YAML-quoted: {rendered}"
+        rendered.contains("- id: llm-deepseek"),
+        "plugin id must be the cordis row id: {rendered}"
+    );
+    assert!(
+        !rendered.contains(LEGACY_LLM_PLUGIN_ID),
+        "npm package name must not be the cordis id: {rendered}"
     );
     let parsed: serde_yml::Value = serde_yml::from_str(&rendered).expect("yaml parse");
     let seq = parsed.as_sequence().expect("top-level sequence");
@@ -540,14 +578,12 @@ fn read_llm_fields_from_text(text: &str) -> DshLlmFields {
 }
 
 #[test]
-fn upsert_replaces_unquoted_legacy_id_row_with_quoted() {
+fn upsert_replaces_legacy_package_id_with_cordis_row_id() {
     let legacy = "- id: @deepseek-ai/dsh-llm-deepseek\n  config:\n    apiKeyEnv: DEEPSEEK_API_KEY\n    model: deepseek-v4-flash\n";
     let rendered = upsert_llm_row(legacy, &DshLlmFields::default()).unwrap();
-    assert!(
-        rendered.contains("- id: \"@deepseek-ai/dsh-llm-deepseek\""),
-        "{rendered}"
-    );
-    assert_eq!(rendered.matches(LLM_PLUGIN_ID).count(), 1);
+    assert!(rendered.contains("- id: llm-deepseek"), "{rendered}");
+    assert!(!rendered.contains(LEGACY_LLM_PLUGIN_ID), "{rendered}");
+    assert_eq!(rendered.matches("- id:").count(), 1);
     let fields = read_llm_fields_from_text(&rendered);
     assert_eq!(fields.api_key_env, DEFAULT_API_KEY_ENV);
     assert_eq!(fields.model, DEFAULT_MODEL);
