@@ -161,6 +161,83 @@ fn flag_off_is_fail_closed() {
 }
 
 #[test]
+fn accepted_bearers_include_default_hub_token_without_named_extras() {
+    let (_dir, _db, service, _) = tmp();
+    let pool = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    assert!(service.list_extra_local_bearers().unwrap().is_empty());
+    let accepted = service.list_accepted_local_bearers().unwrap();
+    assert_eq!(accepted, vec![(pool.hub_token.clone(), pool.id.clone())]);
+}
+
+#[test]
+fn accepted_bearers_include_projected_local_bearer_for_same_pool() {
+    let (_dir, db, service, profiles) = tmp();
+    let mut profile = bridge_profile("codex-dsh-pool", "acc-dsh", AgentId::Codex, true);
+    profile.generated_provider_id = Some("prov-dsh".into());
+    profiles.create(&profile).unwrap();
+    ProviderRepo::new(db)
+        .create(&Provider {
+            id: "prov-dsh".into(),
+            agent_id: AgentId::Codex,
+            name: "Codex DSH projection".into(),
+            settings_config: json!({
+                "format": "toml",
+                "auth": { "OPENAI_API_KEY": "ahb_projected_uYvc" },
+            }),
+            meta: json!({
+                "generatedBy": "adapter",
+                "adapterProfileId": "codex-dsh-pool",
+            }),
+            is_current: true,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let pool = service
+        .create_legacy_pool(&profile, "ahb_hub_F9FE", true)
+        .unwrap();
+    let accepted = service.list_accepted_local_bearers().unwrap();
+    assert!(
+        accepted.contains(&(pool.hub_token.clone(), pool.id.clone())),
+        "{accepted:?}"
+    );
+    assert!(
+        accepted.contains(&("ahb_projected_uYvc".into(), pool.id.clone())),
+        "{accepted:?}"
+    );
+}
+
+#[test]
+fn project_one_reuses_generated_provider_bearer_as_hub_token() {
+    let (_dir, db, service, profiles) = tmp();
+    let mut profile = bridge_profile("codex-kimi-pool", "acc-kimi", AgentId::Codex, true);
+    profile.generated_provider_id = Some("prov-kimi".into());
+    profiles.create(&profile).unwrap();
+    ProviderRepo::new(db)
+        .create(&Provider {
+            id: "prov-kimi".into(),
+            agent_id: AgentId::Codex,
+            name: "Codex Kimi projection".into(),
+            settings_config: json!({
+                "format": "toml",
+                "auth": { "OPENAI_API_KEY": "ahb_projected_Y5RM" },
+            }),
+            meta: json!({
+                "generatedBy": "adapter",
+                "adapterProfileId": "codex-kimi-pool",
+            }),
+            is_current: true,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let pool = service.ensure_legacy_pool(&profile).unwrap().expect("pool");
+    assert_eq!(pool.hub_token, "ahb_projected_Y5RM");
+}
+
+#[test]
 fn lists_and_sets_default_pool_entry_keys() {
     let (_dir, _db, service, _) = tmp();
     let pool = service

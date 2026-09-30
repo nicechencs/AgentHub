@@ -206,6 +206,11 @@ fn text_contains_bridge_slug(text: &str) -> bool {
         .any(leftover::is_agenthub_bridge_slug)
 }
 
+/// Loopback bearer (`ahb_…`) written into a generated provider, if any.
+pub fn projected_local_bearer(settings_config: &Value) -> Option<String> {
+    extract_local_bearer_token(settings_config)
+}
+
 /// Find the unique adapter-generated provider whose loopback URL + local bearer
 /// exactly match live config. Used to heal `is_current` / active binding when
 /// live settings still point at one bridge while the binding stuck on another
