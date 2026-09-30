@@ -2,7 +2,8 @@
 //!
 //! SuperGrok / Grok Build OAuth talks to `cli-chat-proxy.grok.com`, not the
 //! public `api.x.ai` Chat Completions surface. The proxy 426s without these
-//! client headers. Quota probes reuse the same identity pairs.
+//! client headers, and also 426s when `x-grok-client-version` drifts from the
+//! live stable CLI. Quota probes reuse the same identity pairs.
 //!
 //! Session IDs are hashed from a client cache seed; never invent a random UUID
 //! per request (that zeroes prompt cache).
@@ -19,7 +20,9 @@ pub use tools::{
 
 use std::sync::OnceLock;
 
-pub const GROK_CLI_VERSION: &str = "0.2.114";
+/// Must track the stable Grok CLI's `x-grok-client-version` (currently 1.0.44).
+/// cli-chat-proxy returns 426 Upgrade Required when this drifts from the live CLI.
+pub const GROK_CLI_VERSION: &str = "1.0.44";
 pub const GROK_CLI_PROXY_BASE_URL: &str = "https://cli-chat-proxy.grok.com/v1";
 pub const GROK_CLI_DEFAULT_MODEL: &str = "grok-4.5";
 pub const GROK_CLI_TOKEN_AUTH: &str = "xai-grok-cli";

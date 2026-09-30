@@ -2713,6 +2713,34 @@ fn legacy_grok_pre_campaigns_toml_rewrites_and_restore_flags_reprojection() {
         content.contains("preferred_method = \"api_key\""),
         "{content}"
     );
+
+    // Restore realign path: same port + needs_reprojection must rewrite the
+    // *stored* provider row (not only a live-file merge) to the current template.
+    let (restore_input, _was_current) = service
+        .projection_for_restored_port(&profile.id, 43145)
+        .unwrap();
+    ProviderService::new(db.clone())
+        .update(&restore_input)
+        .unwrap();
+    let stored = ProviderRepo::new(db.clone())
+        .get_by_id(profile.generated_provider_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    let stored_content = stored.settings_config["content"]
+        .as_str()
+        .expect("stored provider content");
+    assert!(
+        stored_content.contains("campaigns = false"),
+        "stored L1 must include campaigns pin after restore rewrite: {stored_content}"
+    );
+    assert!(
+        stored_content.contains("[features]"),
+        "stored L1 must include [features] after restore rewrite: {stored_content}"
+    );
+    assert!(
+        stored_content.contains("preferred_method = \"api_key\""),
+        "{stored_content}"
+    );
 }
 
 #[test]
