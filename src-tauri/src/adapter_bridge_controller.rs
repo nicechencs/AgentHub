@@ -1799,7 +1799,7 @@ pub(crate) async fn set_local_gateway_token(
         .await?
     };
     if record.primary {
-        restart_pool_listener_if_running(hub, &host, record.pool_id.clone()).await?;
+        restart_pool_listener_if_running(hub.clone(), &host, record.pool_id.clone()).await?;
     }
     // Primary rotate used to skip this; live extras then still held the old hub.
     sync_extra_local_bearers(hub, &host).await?;
