@@ -335,11 +335,17 @@ impl AdapterBridgeService {
             .routes
             .classify_source_product(source_kind, source_id)?;
         if rule.source == AdapterSourceProduct::OpenaiApi
+            && product == AdapterSourceProduct::DeepseekApi
+        {
+            // Official DSH keeps the key in `.credentials.yaml`. Without that
+            // file, the route index treats the login as unsigned and the
+            // catalog collapses to whatever sibling still has an inline key.
+            self.secrets
+                .resolve_deepseek_provider_auth(source_kind, source_id)
+        } else if rule.source == AdapterSourceProduct::OpenaiApi
             && matches!(
                 product,
-                AdapterSourceProduct::DeepseekApi
-                    | AdapterSourceProduct::GlmCodingPlan
-                    | AdapterSourceProduct::XaiApi
+                AdapterSourceProduct::GlmCodingPlan | AdapterSourceProduct::XaiApi
             )
         {
             self.secrets
