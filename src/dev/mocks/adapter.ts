@@ -477,9 +477,14 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
           primary: true,
         }];
       });
-      const extras = state.extraLocalTokens
-        .filter((row) => state.defaultPools.some((pool) => pool.id === row.poolId))
-        .map((row) => ({ ...row, primary: false }));
+      const extras = state.extraLocalTokens.map((row) => {
+        const onDefault = state.defaultPools.some((pool) => pool.id === row.poolId);
+        return {
+          ...row,
+          primary: false,
+          lifecycle: onDefault ? 'active' as const : 'orphaned' as const,
+        };
+      });
       return [...primaries, ...extras];
     },
     async ensureSourceModelCatalog(_sourceKind, sourceId) {

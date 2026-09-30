@@ -33,6 +33,7 @@ import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { TicketView } from '@/lib/api/tickets';
 import { deleteAccount } from '@/lib/api/account';
 import { recycleRouteMembership, removeRouteAuthorization, setRouteAuthorizationEnabled } from '@/lib/api/adapter';
+import { listConnectionTrash } from '@/lib/api/trash';
 import { deleteProvider } from '@/lib/api/provider';
 import { guiErrorCode, logGuiEvent } from '@/lib/api/settings';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
@@ -61,6 +62,7 @@ import {
 } from '@/pages/routes/shared/route-inspect';
 import {
   collectPoolAuthorizations,
+  trashSourceIdsFromItems,
   directProfilesForRoutePoolV2,
   matchDefaultPoolForProfile,
   poolAuthorizationDeleteSteps,
@@ -113,6 +115,7 @@ export default function RoutesPoolPage() {
   const ticketWallet = useTicketWallet();
   const inspect = useSideSplit<RouteInspect>({ storageKey: ROUTES_INSPECT_WIDTH_KEY });
   const [poolReloadKey, setPoolReloadKey] = useState(0);
+  const [trashSourceIds, setTrashSourceIds] = useState<ReadonlySet<string>>(new Set());
   const [deleteTicket, setDeleteTicket] = useState<TicketView | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [togglingKey, setTogglingKey] = useState<string | null>(null);
@@ -187,14 +190,29 @@ export default function RoutesPoolPage() {
     }
     return counts;
   }, [ticketWallet.wallet]);
+  useEffect(() => {
+    let cancelled = false;
+    void listConnectionTrash()
+      .then((items) => {
+        if (!cancelled) setTrashSourceIds(trashSourceIdsFromItems(items));
+      })
+      .catch(() => {
+        if (!cancelled) setTrashSourceIds(new Set());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [poolReloadKey, loading]);
+
   const authorizations = useMemo(
     () => collectPoolAuthorizations(
       defaultPools,
       entries,
       bindingCounts,
       t('routes.pool.detail.identityUnavailable'),
+      trashSourceIds,
     ),
-    [bindingCounts, defaultPools, entries, t],
+    [bindingCounts, defaultPools, entries, t, trashSourceIds],
   );
   const authorizationItem = inspectTarget?.kind === 'authorization'
     ? authorizations.find((item) => item.key === inspectTarget.key) ?? null

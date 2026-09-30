@@ -21,11 +21,11 @@ use crate::models::{
     set_authorization_route_pool_home, Account, AccountKind, AdapterApplyPlan, AdapterProfile,
     AdapterProfileFilter, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
     AdapterSourceProduct, AgentId, ConnectionTrashKind, DefaultRoutePoolList,
-    DefaultRoutePoolOverview, ForkedConnectionAuthorization, LocalTokenRecord, ModelRouteRule,
-    RouteDownstreamDialect, RouteDownstreamSurface, RouteMember, RouteMemberOverview,
-    RouteMembershipTrashMember, RouteMembershipTrashPayload, RoutePool, RouteSchedulePolicy,
-    SyncConnectionAuthorizationsResult, SyncConnectionSource, TicketProtocol, TicketSurface,
-    FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
+    DefaultRoutePoolOverview, ForkedConnectionAuthorization, LocalTokenLifecycle, LocalTokenRecord,
+    ModelRouteRule, RouteDownstreamDialect, RouteDownstreamSurface, RouteMember,
+    RouteMemberOverview, RouteMembershipTrashMember, RouteMembershipTrashPayload, RoutePool,
+    RouteSchedulePolicy, SyncConnectionAuthorizationsResult, SyncConnectionSource, TicketProtocol,
+    TicketSurface, FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
     FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
     LOCAL_GATEWAY_DESIRED_RUNNING, SHARE_CHAT_COMPLETIONS,
 };
@@ -169,6 +169,10 @@ impl RoutePoolService {
     }
 
     /// Loopback bearers for the tokens page. Empty when the pool flag is off.
+    ///
+    /// Persisted extras for non-default or missing pools stay visible with an
+    /// explicit inactive / orphaned status. Hiding them made the table look
+    /// wiped after a restart even though `local_entry_keys` still had rows.
     pub fn list_local_tokens(&self) -> Result<Vec<LocalTokenRecord>> {
         let stored = self.entry_keys.list()?;
         let mut name_by_pool = HashMap::new();
@@ -180,27 +184,47 @@ impl RoutePoolService {
                 extras.push(row);
             }
         }
-        let default_pools = self.list_default_pools()?;
-        let default_ids: HashSet<String> =
-            default_pools.iter().map(|pool| pool.id.clone()).collect();
+        let all_pools = if self.enabled()? {
+            self.pools.list_pools(None, None)?
+        } else {
+            Vec::new()
+        };
+        let default_ids: HashSet<String> = all_pools
+            .iter()
+            .filter(|pool| pool.is_default)
+            .map(|pool| pool.id.clone())
+            .collect();
         let mut records = Vec::new();
-        for pool in default_pools {
+        for pool in &all_pools {
             let name = name_by_pool.remove(&pool.id).unwrap_or_default();
-            if name == HIDDEN_PRIMARY_ENTRY_NAME {
+            if pool.is_default && name == HIDDEN_PRIMARY_ENTRY_NAME {
                 continue;
             }
-            records.push(LocalTokenRecord {
-                id: pool.id.clone(),
-                pool_id: pool.id.clone(),
-                token: pool.hub_token,
-                name,
-                primary: true,
-            });
+            if !pool.is_default && pool.hub_token.trim().is_empty() {
+                continue;
+            }
+            records.push(with_token_lifecycle(
+                named_primary_record(pool, name),
+                Some(pool),
+                if pool.is_default {
+                    LocalTokenLifecycle::Active
+                } else {
+                    LocalTokenLifecycle::Inactive
+                },
+            ));
         }
         for extra in extras {
-            if default_ids.contains(&extra.pool_id) {
-                records.push(to_extra_record(extra));
-            }
+            let pool = all_pools.iter().find(|pool| pool.id == extra.pool_id);
+            let lifecycle = match pool {
+                None => LocalTokenLifecycle::Orphaned,
+                Some(pool) if default_ids.contains(&pool.id) => LocalTokenLifecycle::Active,
+                Some(_) => LocalTokenLifecycle::Inactive,
+            };
+            records.push(with_token_lifecycle(
+                to_extra_record(extra),
+                pool,
+                lifecycle,
+            ));
         }
         Ok(records)
     }
@@ -2151,6 +2175,9 @@ fn to_extra_record(row: LocalEntryKey) -> LocalTokenRecord {
         token: row.token,
         name: row.name,
         primary: false,
+        lifecycle: LocalTokenLifecycle::Active,
+        target_agent_id: None,
+        surface: None,
     }
 }
 
@@ -2161,7 +2188,27 @@ fn named_primary_record(pool: &RoutePool, name: String) -> LocalTokenRecord {
         token: pool.hub_token.clone(),
         name,
         primary: true,
+        lifecycle: if pool.is_default {
+            LocalTokenLifecycle::Active
+        } else {
+            LocalTokenLifecycle::Inactive
+        },
+        target_agent_id: Some(pool.target_agent_id.as_str().to_owned()),
+        surface: Some(pool.downstream_surface.as_str().to_owned()),
     }
+}
+
+fn with_token_lifecycle(
+    mut record: LocalTokenRecord,
+    pool: Option<&RoutePool>,
+    lifecycle: LocalTokenLifecycle,
+) -> LocalTokenRecord {
+    record.lifecycle = lifecycle;
+    if let Some(pool) = pool {
+        record.target_agent_id = Some(pool.target_agent_id.as_str().to_owned());
+        record.surface = Some(pool.downstream_surface.as_str().to_owned());
+    }
+    record
 }
 
 fn nonempty_json_str(blob: &Value, key: &str) -> Option<String> {

@@ -26,6 +26,12 @@ export type LoginStatusInput = {
   authHealth?: AuthHealth;
   authStatus?: AuthStatus;
   credentialKind: ConnectionKind;
+  /** Empty model list on this login / pool. */
+  catalogEmpty?: boolean;
+  /** Same source is sitting in the trash. */
+  inTrash?: boolean;
+  /** Pool member is enabled but not healthy. */
+  memberUnhealthy?: boolean;
 };
 
 export type LoginPresentation = {

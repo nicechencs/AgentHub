@@ -492,6 +492,9 @@ export type RouteTraceDeleteResult = {
   deleted: number;
 };
 
+/** Whether a listed entry key belongs to a live default pool. */
+export type LocalTokenLifecycle = 'active' | 'inactive' | 'orphaned';
+
 /** Loopback bearer for the tokens page. */
 export type LocalTokenRecord = {
   id: string;
@@ -499,6 +502,10 @@ export type LocalTokenRecord = {
   token: string;
   name: string;
   primary: boolean;
+  /** Missing / unknown wire values mean the key is on a live default pool. */
+  lifecycle?: LocalTokenLifecycle;
+  targetAgentId?: string;
+  surface?: string;
 };
 
 /** Result of a tokens-page model-path probe with an entry key. */

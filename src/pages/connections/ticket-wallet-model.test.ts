@@ -817,7 +817,7 @@ describe('ticket detail fields', () => {
     });
     expect(ticketAuthChip({ authLabel: '已配置', secretTail: '**wxyz' }, tEn)).toEqual({
       label: 'Configured',
-      tone: 'success',
+      tone: 'warning',
     });
   });
 
@@ -829,7 +829,7 @@ describe('ticket detail fields', () => {
     expect(ticketAuthChip({
       authLabel: '已配置',
       secretTail: '**wxyz',
-    })).toEqual({ label: '已配置', tone: 'success' });
+    })).toEqual({ label: '已配置', tone: 'warning' });
     expect(ticketAuthChip({ authLabel: '可续期·未验证' })).toEqual({
       label: '可续期',
       tone: 'success',

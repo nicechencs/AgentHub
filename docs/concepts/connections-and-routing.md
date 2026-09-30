@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: product, frontend, and core contributors
 source-of-truth: Ticket/Connection services, adapter planner contracts, and product boundary decisions
-updated: 2026-09-29
+updated: 2026-09-30
 ---
 
 # Connections、Routes 与绑定
@@ -82,6 +82,7 @@ unbind(binding)        → 停止转发（若有）、恢复上一份本机配�
 
 - Routes 管理本机转发：固定本机入口、入口 Key、默认池成员、模型名单、启停、自动恢复、失败详情和解绑。
 - 接到本机转发后，目标客户端只认一个本机端口和一把入口 Key。每个目标 Agent / 接口一个默认池；往池里增删登录不改客户端配置。
+- `/v1/messages` 默认连接池目前只接 Claude；不会把现有 Claude 池改成多 Agent Messages。
 - Codex 与 Grok 共用 `/v1/responses`，具体格式跟路由一起保存，由入口 Key 选中，不看请求正文猜。写进 Codex / Grok 的具体配置键见 [本机 Routes API](../reference/local-route-api.md#route-surface-和上游协议)。
 - 调度在本机网关里：先解析模型和协议，再在合格成员里按默认 `priority_failover` 选；可改为 `round_robin`，只在同类合格成员间轮询。已知剩余额度只用来打破平局，不覆盖粘性。未声明等价关系时，不会把请求发到另一家供应商。
 - 矩阵里的 `multi_account=false` 不会关掉已入索引的池内多成员。
