@@ -642,13 +642,13 @@ describe('tokens-model', () => {
           id: 'pool-dsh',
           targetAgentId: 'dsh',
           surface: 'chat_completions',
-          dialect: 'openai',
+          dialect: 'dsh',
         }),
         pool({
           id: 'pool-kimi',
           targetAgentId: 'kimi',
           surface: 'chat_completions',
-          dialect: 'openai',
+          dialect: 'kimi',
         }),
       ],
       [
