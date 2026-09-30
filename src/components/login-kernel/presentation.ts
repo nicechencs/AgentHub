@@ -89,6 +89,7 @@ function statusHealth(input: LoginStatusInput): AuthHealth {
 function statusTone(health: AuthHealth): LoginPresentation['status']['tone'] {
   if (health === 'needs_login') return 'danger';
   if (health === 'missing' || health === 'unknown') return 'muted';
+  if (health === 'configured') return 'warning';
   return 'success';
 }
 
@@ -102,6 +103,15 @@ export function presentLoginStatus(
       label: t('chrome.authStatus.expiring'),
       tone: 'warning',
     };
+  }
+  if (input.inTrash) {
+    return { label: t('kind.health.inTrash'), tone: 'warning' };
+  }
+  if (input.memberUnhealthy) {
+    return { label: t('kind.health.memberUnhealthy'), tone: 'warning' };
+  }
+  if (input.catalogEmpty) {
+    return { label: t('kind.health.catalogEmpty'), tone: 'warning' };
   }
   const health = statusHealth(input);
   return {

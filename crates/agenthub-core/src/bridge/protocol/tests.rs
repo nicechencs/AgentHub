@@ -64,7 +64,10 @@ fn responses_request_maps_text_tools_options_and_unicode() {
     assert_eq!(kimi["messages"][1]["content"], "Hello, 世界");
     assert_eq!(kimi["tools"][0]["function"]["name"], "weather");
     assert_eq!(kimi["max_tokens"], 512);
-    assert_eq!(kimi["temperature"], json!(0.2));
+    assert!(
+        kimi.get("temperature").is_none(),
+        "Codex→Kimi must strip temperature: {kimi}"
+    );
     assert!(kimi.get("stream_options").is_none());
 }
 

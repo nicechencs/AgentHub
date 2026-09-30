@@ -330,6 +330,9 @@ describe('route pool v2 view-model', () => {
   it('maps stored auth health to a status chip', () => {
     expect(poolAuthorizationStatusView({ authHealth: 'verified' }).label).toBe('已验证');
     expect(poolAuthorizationStatusView({ authHealth: 'verified' }).tone).toBe('success');
+    expect(poolAuthorizationStatusView({ authHealth: 'configured' }).tone).toBe('warning');
+    expect(poolAuthorizationStatusView({ authHealth: 'configured', catalogEmpty: true }).label)
+      .toBe('已配置 · 没有可用模型');
     expect(poolAuthorizationStatusView({ authStatus: 'expired' }).label).toBe('需要重新登录');
     expect(poolAuthorizationStatusView({ authStatus: 'expired' }).tone).toBe('danger');
     expect(poolAuthorizationStatusView({}).label).toBe('状态未知');

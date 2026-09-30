@@ -3,7 +3,7 @@ title: AgentHub 当前实现状态
 type: status
 status: current
 owner: maintainers
-updated: 2026-09-29
+updated: 2026-09-30
 ---
 
 # 当前实现状态
@@ -109,7 +109,7 @@ updated: 2026-09-29
 ## 连接、路由与用量
 
 - 登录的来源、目标和可做的写入由 `plan` / `bind` / `unbind` 契约表达；代码里仍叫 Ticket / TicketPort。
-- 本机路由在桌面进程内运行，提供 `/v1/messages`、`/v1/responses`、`/v1/chat/completions` 和 `GET /models`。Codex 与 Grok 都走 Responses 口，格式跟路由一起保存、由入口 Key（本机令牌）选中，不按请求正文猜。接到 Codex / Grok 时写入的是本机令牌和 Responses 接口，不是上游官方登录。见 [连接与路由](concepts/connections-and-routing.md)。
+- 本机路由在桌面进程内运行，提供 `/v1/messages`、`/v1/responses`、`/v1/chat/completions` 和 `GET /models`。`/v1/messages` 默认连接池目前只接 Claude，不会把现有 Claude 池改成多 Agent Messages。Codex 与 Grok 都走 Responses 口，格式跟路由一起保存、由入口 Key（本机令牌）选中，不按请求正文猜。接到 Codex / Grok 时写入的是本机令牌和 Responses 接口，不是上游官方登录。见 [连接与路由](concepts/connections-and-routing.md)。
 - Kiro 本机路由按请求的 `stream` 返回 JSON 或 SSE；`stream=true` 时上游帧一完成就转发（真窗首字延迟未验）。使用连接池里当前登录的令牌、区域和 profile，不在路由里刷新令牌。
 - 用量只读本地 Agent 会话或日志；优先用日志里的官方成本，否则用内置价表估算，不联网拉价格，不换算汇率。Grok 把 `grok-4.6` 与 `grok-4.6-build`（及 `[grok]` / `xai/` 前缀）算作同一模型。
 

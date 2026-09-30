@@ -3,9 +3,10 @@ use axum::http::{HeaderValue, StatusCode};
 use std::time::{Duration, SystemTime};
 
 use super::{
-    classify_connect_timeout, classify_connect_unavailable, classify_http, cooldown_for_class,
-    cooldown_from_retry_after, parse_retry_after, FailoverDecision, UpstreamErrorClass,
-    CREDIT_DEFAULT_COOLDOWN, DEFAULT_COOLDOWN, MAX_COOLDOWN, QUOTA_DEFAULT_COOLDOWN,
+    classify_connect_timeout, classify_connect_unavailable, classify_http,
+    classify_http_for_request, cooldown_for_class, cooldown_from_retry_after, parse_retry_after,
+    FailoverDecision, UpstreamErrorClass, CREDIT_DEFAULT_COOLDOWN, DEFAULT_COOLDOWN, MAX_COOLDOWN,
+    QUOTA_DEFAULT_COOLDOWN,
 };
 
 #[test]
@@ -57,6 +58,35 @@ fn not_found_is_entitlement_not_whole_account() {
     assert_eq!(
         classify_http(StatusCode::NOT_FOUND, Some("no such model"), false),
         UpstreamErrorClass::Entitlement
+    );
+}
+
+#[test]
+fn previous_response_id_404_is_request_scoped() {
+    let request = serde_json::json!({
+        "model": "grok-4.5",
+        "previous_response_id": "resp_missing",
+    });
+    assert_eq!(
+        classify_http_for_request(
+            StatusCode::NOT_FOUND,
+            Some("Response not found"),
+            false,
+            Some(&request),
+        ),
+        UpstreamErrorClass::Request
+    );
+    assert_eq!(
+        UpstreamErrorClass::Request.decision(false),
+        FailoverDecision::ReturnToClient
+    );
+    assert_eq!(
+        classify_http(
+            StatusCode::NOT_FOUND,
+            Some("previous_response_id unknown"),
+            false
+        ),
+        UpstreamErrorClass::Request
     );
 }
 

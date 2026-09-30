@@ -161,6 +161,9 @@ export type PoolAuthorizationItem = {
   sourceKind: AdapterSourceKind;
   sourceId: string;
   agentId: AgentKey;
+  catalogEmpty?: boolean;
+  inTrash?: boolean;
+  memberUnhealthy?: boolean;
   title: string;
   /** OAuth displays the authorized account when the provider exposed one. */
   identityLabel?: string;
@@ -273,7 +276,7 @@ function poolAuthorizationItem(
 /** Login-status chip for one authorization row. */
 export function poolAuthorizationStatusView(
   item: Pick<PoolAuthorizationItem, 'authHealth' | 'authStatus'> & Partial<
-    Pick<PoolAuthorizationItem, 'sourceKind' | 'sourceId' | 'agentId' | 'title' | 'kind'>
+    Pick<PoolAuthorizationItem, 'sourceKind' | 'sourceId' | 'agentId' | 'title' | 'kind' | 'catalogEmpty' | 'inTrash' | 'memberUnhealthy'>
   >,
   t?: TranslateFn,
 ): { label: string; tone: 'success' | 'warning' | 'danger' | 'muted' } {
@@ -288,6 +291,9 @@ export function poolAuthorizationStatusView(
     authHealth: item.authHealth,
     authStatus: item.authStatus,
     credentialKind: kind,
+    catalogEmpty: item.catalogEmpty,
+    inTrash: item.inTrash,
+    memberUnhealthy: item.memberUnhealthy,
   }, translate).status;
 }
 
@@ -334,6 +340,7 @@ export function collectPoolAuthorizations(
   entries: readonly ConnectionEntry[],
   bindingCounts: ReadonlyMap<string, number> = new Map(),
   unavailableLabel = '未提供登录',
+  trashSourceIds: ReadonlySet<string> = new Set(),
 ): PoolAuthorizationItem[] {
   const items = new Map<string, PoolAuthorizationItem>();
   const entryBySource = new Map<string, ConnectionEntry>(
@@ -351,7 +358,7 @@ export function collectPoolAuthorizations(
         : member.priority == null
           ? existing.priority
           : Math.min(existing.priority, member.priority);
-      items.set(key, poolAuthorizationItem(
+      const next = poolAuthorizationItem(
         key,
         member.sourceKind,
         member.sourceId,
@@ -370,7 +377,13 @@ export function collectPoolAuthorizations(
           canToggle: true,
           priority,
         },
-      ));
+      );
+      items.set(key, {
+        ...next,
+        catalogEmpty: (existing?.catalogEmpty !== false) && pool.listedModels.length === 0,
+        inTrash: existing?.inTrash === true || trashSourceIds.has(member.sourceId),
+        memberUnhealthy: existing?.memberUnhealthy === true,
+      });
     }
   }
   for (const entry of entries) {

@@ -4,7 +4,7 @@ description: AgentHub 进程内 Gateway 的 loopback HTTP endpoint、鉴权和�
 type: reference
 audience: integrator
 status: current
-updated: 2026-09-29
+updated: 2026-09-30
 ---
 
 # 本机 Routes API
@@ -34,7 +34,7 @@ Authorization: Bearer <local-token>
 | `GET` | `/health` | 返回 listener 状态和最近观察到的上游状态；不会发起新的 provider 探测 |
 | `GET` | `/v1/models`、`/models` | 返回当前默认池可服务的模型并集；由本机 resolver 合成，不代理上游目录 |
 | `POST` | `/v1/responses` | Responses surface；是否可用取决于该 Route 的 downstream surface |
-| `POST` | `/v1/messages` | Anthropic Messages surface |
+| `POST` | `/v1/messages` | Anthropic Messages surface。默认连接池目前只接 Claude，不会把现有 Claude 池改成多 Agent Messages |
 | `POST` | `/v1/chat/completions`、`/chat/completions` | OpenAI Chat Completions surface |
 
 `/models` 与 `/chat/completions` 是兼容别名。其余对话路径使用 `/v1/messages`、`/v1/responses`、`/v1/chat/completions`。对这些对话路径发 `GET`/`PUT` 等非 POST 方法返回 `405` `method_not_allowed`（双语 JSON + `Allow: POST`），不会返回空 body。
@@ -43,7 +43,7 @@ Authorization: Bearer <local-token>
 
 | 目标 | 路径 |
 |---|---|
-| Claude | `/v1/messages` |
+| Claude | `/v1/messages`（目前只接 Claude） |
 | Codex、Grok | `/v1/responses`（配置里按 API Key 方式写入口 Key） |
 | Kimi、DSH | `/v1/chat/completions` |
 

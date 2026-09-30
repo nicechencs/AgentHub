@@ -83,7 +83,15 @@ describe('presentLogin status', () => {
     });
     expect(presentLogin(identity({ authHealth: 'configured' }), t).status).toEqual({
       label: '已配置',
-      tone: 'success',
+      tone: 'warning',
+    });
+    expect(presentLogin(identity({ authHealth: 'configured', catalogEmpty: true }), t).status).toEqual({
+      label: '已配置 · 没有可用模型',
+      tone: 'warning',
+    });
+    expect(presentLogin(identity({ authHealth: 'configured', inTrash: true }), t).status).toEqual({
+      label: '已进回收站',
+      tone: 'warning',
     });
     expect(presentLogin(identity({ authHealth: 'needs_login' }), t).status).toEqual({
       label: '需要重新登录',
