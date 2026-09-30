@@ -68,6 +68,17 @@ impl ProtocolError {
     }
 }
 
+/// True when a completed upstream body reports a real error payload.
+///
+/// OpenAI / xAI Responses objects include `"error": null` on success. Presence
+/// of the key is not a failure; only a non-null value is.
+pub fn is_reported_upstream_error(value: Option<&Value>) -> bool {
+    match value {
+        None | Some(Value::Null) => false,
+        Some(_) => true,
+    }
+}
+
 /// Shown on the local route and in logs when the upstream requires SSE.
 pub const UPSTREAM_STREAM_REQUIRED_ZH: &str =
     "上游要求使用流式请求。本机路由会自动改成流式并拼成完整回复；若仍失败，请点重试。";

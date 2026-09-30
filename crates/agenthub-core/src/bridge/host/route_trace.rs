@@ -1588,26 +1588,58 @@ impl Drop for RouteTraceBuilder {
 }
 
 /// One structured line per finished request so file logs share the monitor's
-/// five stage names + request_id (no secrets / bodies).
+/// five stage names + request_id (no secrets / bodies). Failures also emit
+/// `failure_stage` and key last4 only.
 fn log_route_trace_finalized(trace: &RouteRequestTrace) {
-    tracing::info!(
-        target: "core.adapter.route_trace",
-        request_id = %trace.request_id,
-        profile_id = trace.profile_id.as_deref().unwrap_or(""),
-        method = %trace.method,
-        path = %trace.path,
-        http_status = trace.http_status,
-        ok = trace.ok,
-        latency_ms = trace.latency_ms.unwrap_or(0),
-        local_auth = trace.local_auth.status.as_str(),
-        pool = trace.pool.status.as_str(),
-        conversion = trace.conversion.status.as_str(),
-        upstream_request = trace.upstream_request.status.as_str(),
-        upstream_auth = trace.upstream_auth.status.as_str(),
-        upstream = trace.upstream.status.as_str(),
-        failure_stage = trace.failure_stage.map(RouteTraceStageId::as_str).unwrap_or(""),
-        "route trace finalized"
-    );
+    let failure_stage = trace
+        .failure_stage
+        .map(RouteTraceStageId::as_str)
+        .unwrap_or("");
+    let key_last4 = trace.local_auth.key_last4.as_deref().unwrap_or("");
+    let upstream_key_last4 = trace
+        .pool
+        .selected_member
+        .as_ref()
+        .and_then(|member| member.key_last4.as_deref())
+        .unwrap_or("");
+    if trace.ok {
+        tracing::info!(
+            target: "core.adapter.route_trace",
+            request_id = %trace.request_id,
+            profile_id = trace.profile_id.as_deref().unwrap_or(""),
+            method = %trace.method,
+            path = %trace.path,
+            http_status = trace.http_status,
+            ok = trace.ok,
+            latency_ms = trace.latency_ms.unwrap_or(0),
+            local_auth = trace.local_auth.status.as_str(),
+            pool = trace.pool.status.as_str(),
+            conversion = trace.conversion.status.as_str(),
+            upstream_request = trace.upstream_request.status.as_str(),
+            upstream_auth = trace.upstream_auth.status.as_str(),
+            upstream = trace.upstream.status.as_str(),
+            failure_stage,
+            "route trace finalized"
+        );
+    } else {
+        tracing::warn!(
+            target: "core.adapter.route_trace",
+            request_id = %trace.request_id,
+            profile_id = trace.profile_id.as_deref().unwrap_or(""),
+            method = %trace.method,
+            path = %trace.path,
+            http_status = trace.http_status,
+            ok = trace.ok,
+            latency_ms = trace.latency_ms.unwrap_or(0),
+            local_auth = trace.local_auth.status.as_str(),
+            conversion = trace.conversion.status.as_str(),
+            response_conversion = trace.response_conversion.status.as_str(),
+            failure_stage,
+            key_last4,
+            upstream_key_last4,
+            "route trace failed"
+        );
+    }
 }
 
 pub fn trace_member(member: &PickedMember) -> RouteTraceMember {

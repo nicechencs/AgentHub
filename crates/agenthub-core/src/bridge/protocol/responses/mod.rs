@@ -8,7 +8,8 @@ mod sse_aggregate;
 use serde_json::{json, Map, Value};
 
 use crate::bridge::types::{
-    BridgeEvent, BridgeRequest, IrEvent, ProtocolError, ProtocolResult, StopReason, Usage,
+    is_reported_upstream_error, BridgeEvent, BridgeRequest, IrEvent, ProtocolError, ProtocolResult,
+    StopReason, Usage,
 };
 
 pub use codex::{
@@ -641,7 +642,7 @@ pub fn responses_output_to_ir(value: &Value) -> ProtocolResult<Vec<IrEvent>> {
     let object = value
         .as_object()
         .ok_or_else(|| ProtocolError::invalid_request("Responses body must be a JSON object."))?;
-    if object.get("error").is_some() {
+    if is_reported_upstream_error(object.get("error")) {
         return Ok(vec![IrEvent::Error {
             code: "upstream_error".to_owned(),
             message: "The upstream model provider returned an error.".to_owned(),

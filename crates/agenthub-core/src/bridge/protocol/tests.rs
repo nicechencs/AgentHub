@@ -1,7 +1,8 @@
 use serde_json::{json, Value};
 
 use crate::bridge::types::{
-    BridgeEvent, EmissionState, IrEvent, RetryClass, RetryGate, StopReason, Usage,
+    is_reported_upstream_error, BridgeEvent, EmissionState, IrEvent, RetryClass, RetryGate,
+    StopReason, Usage,
 };
 
 use super::{
@@ -1308,6 +1309,59 @@ fn responses_output_skips_encrypted_reasoning_items() {
     .expect("reasoning items must not fail Messages translation");
     let encoded = encode_anthropic_message(&ir).expect("anthropic");
     assert_eq!(encoded["content"][0]["text"], "hello");
+}
+
+#[test]
+fn reported_upstream_error_ignores_null_and_missing() {
+    assert!(!is_reported_upstream_error(None));
+    assert!(!is_reported_upstream_error(Some(&Value::Null)));
+    assert!(is_reported_upstream_error(Some(&json!({"message": "x"}))));
+    assert!(is_reported_upstream_error(Some(&json!("failed"))));
+}
+
+#[test]
+fn responses_output_null_error_converts_to_anthropic_text() {
+    let mut body = fixture("responses_upstream_text");
+    body["error"] = Value::Null;
+    let ir = responses_output_to_ir(&body).expect("null error is success");
+    let message = encode_anthropic_message(&ir).expect("anthropic");
+    assert_eq!(message["content"][0]["text"], "你好，世界。");
+    assert_eq!(message["type"], "message");
+}
+
+#[test]
+fn responses_output_object_error_stays_generic_upstream_error() {
+    let ir = responses_output_to_ir(&json!({
+        "id": "resp_fail",
+        "status": "failed",
+        "error": { "message": "sk-secret-key private input" },
+        "output": []
+    }))
+    .expect("maps to ir error");
+    let error = encode_anthropic_message(&ir).expect_err("encode fails closed");
+    assert_eq!(error.code, "upstream_error");
+    assert!(!error.message.contains("sk-secret-key"));
+    assert!(!error.message.contains("private input"));
+}
+
+#[test]
+fn chat_null_error_still_translates() {
+    let mut body = fixture("chat_text");
+    body["error"] = Value::Null;
+    let response =
+        translate_chat_response(&body, Some("resp_text")).expect("null error is success");
+    assert_eq!(response["output"][0]["content"][0]["text"], "你好，世界。");
+}
+
+#[test]
+fn anthropic_null_error_still_maps_to_ir() {
+    let mut body = fixture("anthropic_upstream_text");
+    body["error"] = Value::Null;
+    let ir = anthropic_message_to_ir(&body).expect("null error is success");
+    assert!(ir.iter().any(|event| matches!(
+        event,
+        IrEvent::TextDelta { text } if text == "你好，世界。"
+    )));
 }
 
 #[test]

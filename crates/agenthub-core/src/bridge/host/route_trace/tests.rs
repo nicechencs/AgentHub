@@ -241,12 +241,14 @@ fn failure_stage_records_first_failed_node() {
     let log = RouteTraceLog::new();
     let mut builder = RouteTraceBuilder::begin("req-fail", "POST", "/v1/messages");
     builder.local_auth_ok("profile-a", Some(8787));
+    builder.local_auth_key_last4("ahb_local_token_Qs0g");
     builder.pool_failed("pool_exhausted", "No eligible member");
     builder.finalize(503, &log);
     let trace = log.get("req-fail").expect("trace stored");
     assert_eq!(trace.failure_stage, Some(RouteTraceStageId::Pool));
     assert_eq!(trace.pool.status, TraceStageStatus::Failed);
     assert_eq!(trace.conversion.status, TraceStageStatus::Skipped);
+    assert_eq!(trace.local_auth.key_last4.as_deref(), Some("Qs0g"));
 }
 
 #[test]

@@ -1434,6 +1434,8 @@ fn grok_completed_response(text: &str) -> Value {
         "created_at": 1,
         "model": "grok-4.5",
         "status": "completed",
+        "error": null,
+        "incomplete_details": null,
         "output": [{
             "id": "msg_grok",
             "type": "message",
@@ -2388,6 +2390,123 @@ async fn grok_claude_bridge_accepts_messages_and_404s_responses() {
         .expect("responses route request");
     assert_eq!(responses.status(), StatusCode::NOT_FOUND);
     host.stop("grok-messages").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn grok_claude_messages_non_stream_multi_round_keeps_assistant_text() {
+    async fn responses(
+        State(hits): State<Arc<AtomicUsize>>,
+        Json(body): Json<Value>,
+    ) -> Json<Value> {
+        let n = hits.fetch_add(1, Ordering::SeqCst) + 1;
+        assert_eq!(body.get("stream").and_then(Value::as_bool), Some(false));
+        let text = if n == 1 { "OK1" } else { "OK2 OK1" };
+        Json(grok_completed_response(text))
+    }
+    let hits = Arc::new(AtomicUsize::new(0));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind grok multi-round");
+    let port = listener.local_addr().expect("addr").port();
+    let hits_clone = hits.clone();
+    let upstream_task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/v1/responses", post(responses))
+                .with_state(hits_clone),
+        )
+        .await
+        .expect("serve grok multi-round");
+    });
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_claude_spec("grok-messages-ns", 0, port))
+        .await
+        .expect("start");
+    let round1 = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header("x-api-key", "local-test-token")
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "stream": false,
+            "messages": [{ "role": "user", "content": "reply OK1" }]
+        }))
+        .send()
+        .await
+        .expect("round 1");
+    assert_eq!(round1.status(), StatusCode::OK);
+    let body1: Value = round1.json().await.expect("round 1 json");
+    assert_eq!(body1["type"], "message");
+    assert_eq!(body1["content"][0]["text"], "OK1");
+
+    let round2 = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header("x-api-key", "local-test-token")
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "stream": false,
+            "messages": [
+                { "role": "user", "content": "reply OK1" },
+                { "role": "assistant", "content": "OK1" },
+                { "role": "user", "content": "reply OK2 and keep OK1" }
+            ]
+        }))
+        .send()
+        .await
+        .expect("round 2");
+    assert_eq!(round2.status(), StatusCode::OK);
+    let body2: Value = round2.json().await.expect("round 2 json");
+    assert_eq!(body2["content"][0]["text"], "OK2 OK1");
+    assert_eq!(hits.load(Ordering::SeqCst), 2);
+    host.stop("grok-messages-ns").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn grok_claude_messages_stream_true_still_emits_assistant_text() {
+    let (upstream_port, upstream_task) = grok_responses_sse_upstream(vec![
+        br#"data: {"type":"response.created","response":{"id":"resp_stream","model":"grok-4.5","status":"in_progress"}}
+
+"#,
+        br#"data: {"type":"response.output_text.delta","delta":"OK1"}
+
+"#,
+        br#"data: {"type":"response.completed","response":{"id":"resp_stream","model":"grok-4.5","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"OK1"}]}],"usage":{"input_tokens":2,"output_tokens":2}}}
+
+"#,
+    ])
+    .await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_claude_spec("grok-messages-stream", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header("x-api-key", "local-test-token")
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "stream": true,
+            "messages": [{ "role": "user", "content": "reply OK1" }]
+        }))
+        .send()
+        .await
+        .expect("stream request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("sse body");
+    assert!(body.contains("event: content_block_delta"), "{body}");
+    assert!(body.contains("OK1"), "{body}");
+    assert!(body.contains("event: message_stop"), "{body}");
+    host.stop("grok-messages-stream").await.expect("stop");
     upstream_task.abort();
 }
 
