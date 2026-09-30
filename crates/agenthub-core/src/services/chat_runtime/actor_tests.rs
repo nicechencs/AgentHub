@@ -648,15 +648,15 @@ fn grok_host_terminal_fills_snapshot_not_timeline() {
         output_limit: 1024,
     };
     let id = worker.host_terminals.create(spec).unwrap();
-    for _ in 0..50 {
+    // Exit can land before the pipe reader copies stdout; wait for the text.
+    for _ in 0..100 {
         worker.host_terminals.poll_exits();
-        if worker
+        let text = worker
             .host_terminals
             .output(&id)
-            .ok()
-            .and_then(|(_, _, code)| code)
-            .is_some()
-        {
+            .map(|(text, _, _)| text)
+            .unwrap_or_default();
+        if text.to_ascii_lowercase().contains("hello-host") {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(20));

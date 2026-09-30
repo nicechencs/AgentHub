@@ -31,7 +31,7 @@ import { deleteProvider, listProviders } from '@/lib/api/provider';
 import type { ConnectApiKeyDraft } from '@/lib/connect-flow/connect-intent';
 import type { AgentKey } from '@/lib/types';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import { localEndpointKindFromPool, localEndpointPath, type LocalEndpointKind } from '@/lib/route-endpoints';
+import { localEndpointPath, type LocalEndpointKind } from '@/lib/route-endpoints';
 import { ROUTES_POOL_PATH } from '@/lib/routes-path';
 import {
   createLocalToken,
@@ -54,6 +54,7 @@ import { TokenDetailPanel } from './TokenDetailPanel';
 import { TokenList } from './TokenList';
 import {
   buildCreateTokenEndpointCards,
+  buildCreateTokenTargets,
   attachTokenUsage,
   buildLocalTokenRows,
   defaultCreateTokenName,
@@ -182,23 +183,7 @@ export default function RoutesTokensPage() {
     [rows, usageState],
   );
   const createTargets = useMemo(
-    () => defaultPools.flatMap((pool) => {
-      if (pool.members.length === 0) return [];
-      const kind = localEndpointKindFromPool(pool);
-      if (!kind) return [];
-      const primary = (tokenRecords ?? []).find((record) => (
-        record.primary && record.poolId === pool.id
-      ));
-      const anyRecord = primary ?? (tokenRecords ?? []).find((record) => record.poolId === pool.id);
-      const token = anyRecord?.token?.trim() ?? '';
-      return [{
-        id: pool.id,
-        kind,
-        name: primary?.name ?? '',
-        last4: token.slice(-4),
-        targetAgentId: pool.targetAgentId,
-      }];
-    }),
+    () => buildCreateTokenTargets(defaultPools, tokenRecords),
     [defaultPools, tokenRecords],
   );
   const createCards = useMemo(

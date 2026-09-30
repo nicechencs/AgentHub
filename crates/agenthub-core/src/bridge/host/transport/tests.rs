@@ -627,6 +627,36 @@ fn official_codex_chat_prepare_folds_developer_and_forces_store_false() {
 }
 
 #[test]
+fn official_codex_chat_prepare_strips_temperature() {
+    let body = json!({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 32,
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "messages": [
+            { "role": "user", "content": "hello" }
+        ]
+    });
+    let admitted = admitted(
+        BridgeUpstreamProtocol::CodexResponsesOauth,
+        BridgeLocalSurface::ChatCompletions,
+        body,
+    );
+    let prepared = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::CodexResponsesOauth)
+        .transport()
+        .prepare(DownstreamSurface::ChatCompletions, &admitted)
+        .expect("prepare chat");
+    assert!(
+        prepared.body.get("temperature").is_none(),
+        "chat→official Codex must strip temperature: {}",
+        prepared.body
+    );
+    assert_eq!(prepared.body["top_p"], 0.9);
+    assert_eq!(prepared.body["store"], false);
+    assert_eq!(prepared.body["input"][0]["content"][0]["text"], "hello");
+}
+
+#[test]
 fn official_codex_responses_passthrough_strips_system_items() {
     let body = json!({
         "model": "claude-sonnet-4-20250514",
@@ -662,7 +692,11 @@ fn official_codex_responses_passthrough_strips_system_items() {
         "official Codex Responses rejects max_output_tokens: {}",
         prepared.body
     );
-    assert_eq!(prepared.body["temperature"], 0.2);
+    assert!(
+        prepared.body.get("temperature").is_none(),
+        "official Codex Responses rejects temperature: {}",
+        prepared.body
+    );
     assert_eq!(prepared.body["top_p"], 0.9);
     let user_text = prepared.body["input"][0]["content"][0]["text"]
         .as_str()
@@ -698,6 +732,7 @@ fn openai_chat_prepare_passthroughs_chat_surface() {
         "model": "gpt-test",
         "messages": [{"role": "user", "content": "hi"}],
         "stream": true,
+        "temperature": 0.2,
         "response_format": {"type": "json_object"}
     });
     let admitted = admitted(
@@ -713,6 +748,11 @@ fn openai_chat_prepare_passthroughs_chat_surface() {
     assert_eq!(prepared.body["model"], "configured-model");
     assert_eq!(prepared.body["messages"], body["messages"]);
     assert_eq!(prepared.body["response_format"], body["response_format"]);
+    assert!(
+        prepared.body.get("temperature").is_none(),
+        "native chat→Kimi must strip temperature: {}",
+        prepared.body
+    );
     assert!(prepared.stream);
 }
 

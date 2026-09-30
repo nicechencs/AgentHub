@@ -67,8 +67,9 @@ pub fn to_kimi_chat_request(request: &BridgeRequest) -> Value {
 
     // Forward only Chat Completions options with an equivalent Kimi meaning.
     // Codex→Kimi rejects `temperature` (`Unsupported parameter`); strip it here
-    // and keep it on Anthropic / official Codex passthrough. Other unknown
-    // options remain in BridgeRequest::passthrough for a deliberate future policy.
+    // and keep it on Anthropic / Grok Chat. Official Codex Responses strips it
+    // in `prepare_official_codex_request`. Other unknown options remain in
+    // BridgeRequest::passthrough for a deliberate future policy.
     for key in [
         "top_p",
         "presence_penalty",

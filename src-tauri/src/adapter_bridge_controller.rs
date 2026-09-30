@@ -1978,7 +1978,8 @@ pub(crate) async fn stop_local_gateway(
     }
     let status =
         local_gateway_status_from_host(&host, Vec::new(), restarting.load(Ordering::SeqCst))?;
-    write_local_gateway_desired_running(hub, false).await;
+    write_local_gateway_desired_running(hub.clone(), false).await;
+    observe_local_gateway_lifecycle(hub, host.as_ref(), false, &Ok(())).await;
     Ok(status)
 }
 

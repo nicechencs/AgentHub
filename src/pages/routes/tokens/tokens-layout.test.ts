@@ -14,6 +14,7 @@ describe('routes tokens layout wiring', () => {
     const page = source('index.tsx');
     expect(page).toContain('CreateTokenEndpointCards');
     expect(page).toContain('buildCreateTokenEndpointCards');
+    expect(page).toContain('buildCreateTokenTargets');
     expect(page).toContain('firstCreateTokenPoolId');
     expect(page).toContain('resolveCreateTokenPoolId');
     expect(page).toContain('defaultCreateTokenName');
