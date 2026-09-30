@@ -131,6 +131,15 @@ pub(super) fn projected_provider_input(
         });
     }
     if projection_of(rule.target_agent) == BridgeProjection::DshJson {
+        let mut settings_config = json!({
+            "baseURL": format!("http://127.0.0.1:{port}"),
+            "apiKeyEnv": crate::services::adapter_route_constants::DSH_API_KEY_ENV,
+            "api_key": local_bearer,
+        });
+        let served = cli_served_model(&rule, model);
+        if !served.is_empty() {
+            settings_config["model"] = serde_json::Value::String(served);
+        }
         return Ok(ProviderInput {
             id: provider_id.into(),
             agent_id: AgentId::Dsh,
@@ -139,11 +148,7 @@ pub(super) fn projected_provider_input(
                 rule.provider_name,
                 safe_label(&profile.source_id)
             ),
-            settings_config: json!({
-                "baseURL": format!("http://127.0.0.1:{port}"),
-                "apiKeyEnv": crate::services::adapter_route_constants::DSH_API_KEY_ENV,
-                "api_key": local_bearer,
-            }),
+            settings_config,
             meta: generated_provider_meta(profile, &rule),
             is_current: false,
         });
@@ -184,6 +189,18 @@ pub(super) fn generated_provider_meta(profile: &AdapterProfile, rule: &CodexBrid
 
 pub(super) fn codex_bridge_toml(rule: &CodexBridgeRule, port: u16) -> String {
     format!(
+        "model_provider = \"{slug}\"\nmodel = \"{model}\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\npreferred_auth_method = \"apikey\"\n\n[model_providers.{slug}]\nname = \"{name}\"\nbase_url = \"http://127.0.0.1:{port}/v1\"\nwire_api = \"responses\"\nenv_key = \"{env_key}\"\n",
+        slug = rule.provider_slug,
+        model = rule.default_model,
+        name = rule.toml_name,
+        env_key = OPENAI_API_KEY_ENV,
+    )
+}
+
+/// Pre-env_key Codex TOML. Restore still accepts it so a running bridge can
+/// reprojection instead of failing closed on content drift.
+pub(super) fn legacy_codex_bridge_toml(rule: &CodexBridgeRule, port: u16) -> String {
+    format!(
         "model_provider = \"{slug}\"\nmodel = \"{model}\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\npreferred_auth_method = \"apikey\"\n\n[model_providers.{slug}]\nname = \"{name}\"\nbase_url = \"http://127.0.0.1:{port}/v1\"\nwire_api = \"responses\"\n",
         slug = rule.provider_slug,
         model = rule.default_model,
@@ -191,9 +208,58 @@ pub(super) fn codex_bridge_toml(rule: &CodexBridgeRule, port: u16) -> String {
     )
 }
 
-/// Grok config.toml for Codex official login. Local surface is Responses.
-/// No ChatGPT model name, no leftover `grok-*`.
+/// Model id a target CLI must send to the loopback.
+///
+/// Prefer a non-leftover configured or edge default. Otherwise the mapping
+/// table, then the subscription catalog default (`gpt-5.6-sol` for Codex).
+/// Leftover `grok-*` / `deepseek-*` names are not sent to official Codex.
+pub(super) fn cli_served_model(rule: &CodexBridgeRule, configured: &str) -> String {
+    fn take(value: &str) -> Option<String> {
+        let value = value.trim();
+        if value.is_empty() || crate::bridge::protocol::is_leftover_bridge_model(value) {
+            None
+        } else {
+            Some(value.to_owned())
+        }
+    }
+    if let Some(model) = take(configured) {
+        return model;
+    }
+    if let Some(model) = take(rule.default_model) {
+        return model;
+    }
+    if let Some(model) = crate::models::find_adapter_model_mapping(rule.source, rule.target_agent)
+        .and_then(|table| table.default_target_model)
+        .and_then(take)
+    {
+        return model;
+    }
+    crate::models::static_fallback_default(rule.source)
+        .and_then(|model| take(&model))
+        .unwrap_or_default()
+}
+
+/// Grok config.toml for a local-bridge write. `model` is the id the CLI sends.
 pub(super) fn grok_bridge_toml(rule: &CodexBridgeRule, port: u16, local_bearer: &str) -> String {
+    let model = cli_served_model(rule, "");
+    let model_line = if model.is_empty() {
+        String::new()
+    } else {
+        format!("model = \"{model}\"\n")
+    };
+    format!(
+        "[models]\ndefault = \"{slug}\"\n\n[model.\"{slug}\"]\n{model_line}base_url = \"http://127.0.0.1:{port}/v1\"\napi_key = \"{token}\"\napi_backend = \"responses\"\n\n[auth]\npreferred_method = \"api_key\"\n",
+        slug = rule.provider_slug,
+        token = local_bearer,
+    )
+}
+
+/// Responses Grok TOML from before the `model` and `[auth]` lines.
+pub(super) fn legacy_grok_responses_toml(
+    rule: &CodexBridgeRule,
+    port: u16,
+    local_bearer: &str,
+) -> String {
     format!(
         "[models]\ndefault = \"{slug}\"\n\n[model.\"{slug}\"]\nbase_url = \"http://127.0.0.1:{port}/v1\"\napi_key = \"{token}\"\napi_backend = \"responses\"\n",
         slug = rule.provider_slug,
@@ -331,6 +397,7 @@ pub(super) fn validate_generated_provider(
             let matches_current = if projection_of(rule.target_agent) == BridgeProjection::GrokToml
             {
                 content == grok_bridge_toml(&rule, port, &local_bearer)
+                    || content == legacy_grok_responses_toml(&rule, port, &local_bearer)
                     || content == legacy_grok_bridge_toml(&rule, port, &local_bearer)
             } else {
                 content == kimi_bridge_toml(&rule, port, &local_bearer)
@@ -376,7 +443,9 @@ pub(super) fn validate_generated_provider(
         return Err(invalid_projection());
     }
     if let Some(port) = expected_port {
-        if content != codex_bridge_toml(&rule, port) {
+        if content != codex_bridge_toml(&rule, port)
+            && content != legacy_codex_bridge_toml(&rule, port)
+        {
             return Err(AppError::message(
                 "adapter.provider_conflict",
                 "generated bridge provider does not match the bound port",

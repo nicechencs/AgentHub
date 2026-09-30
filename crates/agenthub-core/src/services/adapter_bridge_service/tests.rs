@@ -19,6 +19,30 @@ use futures_util::stream;
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
 
+#[test]
+fn codex_projection_templates_carry_env_key_model_and_catalog_default() {
+    let codex = super::codex_bridge_toml(&super::GROK_CODEX_RULE, 43623);
+    assert!(codex.contains("env_key = \"OPENAI_API_KEY\""), "{codex}");
+    assert!(!codex.contains("ahb_"));
+
+    let grok = super::grok_bridge_toml(&super::CODEX_GROK_RULE, 44227, "ahb_local");
+    assert!(grok.contains("model = \"gpt-5.6-sol\""), "{grok}");
+    assert!(grok.contains("preferred_method = \"api_key\""), "{grok}");
+    assert!(grok.contains("http://127.0.0.1:44227/v1"), "{grok}");
+    assert!(!grok.contains("grok-"));
+
+    assert_eq!(
+        super::cli_served_model(&super::CODEX_DSH_RULE, ""),
+        "gpt-5.6-sol"
+    );
+    let legacy = super::legacy_codex_bridge_toml(&super::GROK_CODEX_RULE, 43623);
+    assert!(!legacy.contains("env_key"));
+    let legacy_grok =
+        super::legacy_grok_responses_toml(&super::CODEX_GROK_RULE, 44227, "ahb_local");
+    assert!(!legacy_grok.contains("preferred_method"));
+    assert!(!legacy_grok.contains("model = "));
+}
+
 async fn health_upstream(status: StatusCode) -> (u16, tokio::task::JoinHandle<()>) {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
         .await
@@ -1948,10 +1972,26 @@ fn prepare_codex_subscription_projects_chat_loopback_for_grok_kimi_dsh() {
             );
         }
         assert!(!haystack.contains("grok-"), "{target:?} leftover grok-*");
-        assert!(
-            !haystack.contains("gpt-"),
-            "{target:?} invented ChatGPT model"
-        );
+        match target {
+            AgentId::Grok => {
+                assert!(
+                    haystack.contains("model = \"gpt-5.6-sol\""),
+                    "Codex→Grok must send the catalog default: {haystack}"
+                );
+                assert!(
+                    haystack.contains("preferred_method = \"api_key\""),
+                    "{haystack}"
+                );
+            }
+            AgentId::Dsh => {
+                assert_eq!(input.settings_config["model"], "gpt-5.6-sol");
+                assert!(!haystack.contains("gpt-"));
+            }
+            _ => assert!(
+                !haystack.contains("gpt-"),
+                "{target:?} invented ChatGPT model: {haystack}"
+            ),
+        }
         assert!(!serde_json::to_string(&input)
             .unwrap()
             .contains("codex-upstream-access-secret"));
@@ -2589,10 +2629,14 @@ fn legacy_codex_grok_chat_completions_toml_rewrites_to_responses() {
     let generated = create_projection(&db, &prepared, 43145);
     service.finalize(&prepared, 43145).unwrap();
     let mut legacy = generated.clone();
-    let content = legacy.settings_config["content"].as_str().unwrap();
-    legacy.settings_config["content"] = json!(content.replace(
-        "api_backend = \"responses\"",
-        "api_backend = \"chat_completions\""
+    let token = legacy.settings_config["auth"]["OPENAI_API_KEY"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    legacy.settings_config["content"] = json!(super::legacy_grok_bridge_toml(
+        &super::CODEX_GROK_RULE,
+        43145,
+        &token,
     ));
     persist_mutated_provider(&db, legacy);
 

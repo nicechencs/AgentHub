@@ -13,7 +13,9 @@ mod tools;
 
 pub use replay::{is_reasoning_decode_failure, strip_encrypted_reasoning, GrokReasoningReplay};
 pub use session::{extract_prompt_cache_seed, grok_session_id, grok_session_id_for_account};
-pub use tools::{inject_prompt_cache_key, normalize_grok_build_tools};
+pub use tools::{
+    inject_prompt_cache_key, normalize_grok_build_tools, sanitize_grok_responses_request,
+};
 
 use std::sync::OnceLock;
 

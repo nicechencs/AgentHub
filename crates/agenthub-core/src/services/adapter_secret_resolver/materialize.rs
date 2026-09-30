@@ -46,6 +46,14 @@ impl AdapterSecretResolver {
         }
     }
 
+    /// Generated local-token rows are the projection to re-apply.
+    ///
+    /// Live CLI files rewrite themselves. Backfilling that rewrite drops the
+    /// loopback secret and the next switch reports an invalid reference.
+    pub fn keeps_generated_local_token(&self, provider: &Provider) -> bool {
+        is_codex_local_token(provider) && valid_local_token_projection(provider)
+    }
+
     /// Return a live-write clone of a provider. Ordinary providers pass through
     /// unchanged. A generated reference is materialized only in this returned
     /// clone, never in the source or target provider row.

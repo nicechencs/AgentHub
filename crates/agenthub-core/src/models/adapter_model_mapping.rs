@@ -492,6 +492,23 @@ pub fn static_fallback_models(source: AdapterSourceProduct) -> &'static [String]
     }
 }
 
+/// Catalog default for a subscription source. Same file as [`static_fallback_models`].
+pub fn static_fallback_default(source: AdapterSourceProduct) -> Option<String> {
+    let file = fallback_file();
+    let default = match source {
+        AdapterSourceProduct::CodexChatGptSubscription => file.chatgpt.default.as_str(),
+        AdapterSourceProduct::ClaudeSubscription => file.claude.default.as_str(),
+        AdapterSourceProduct::XaiGrokSubscription => file.grok.default.as_str(),
+        _ => return None,
+    };
+    let default = default.trim();
+    if default.is_empty() {
+        None
+    } else {
+        Some(default.to_owned())
+    }
+}
+
 /// Model ids the local bridge may advertise on `GET /v1/models`.
 ///
 /// Subscription sources prefer [`static_fallback_models`]. Other sources union

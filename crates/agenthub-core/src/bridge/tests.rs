@@ -2580,6 +2580,79 @@ async fn grok_codex_passthrough_keeps_hosted_tools_only() {
 }
 
 #[tokio::test]
+async fn grok_codex_strips_codex_only_fields_and_keeps_a_simple_response() {
+    let (upstream_port, captured, upstream_task) = capturing_grok_responses_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec("grok-sanitize", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "grok-4.5",
+            "input": [
+                { "type": "message", "role": "user", "content": "hello" },
+                {
+                    "type": "reasoning",
+                    "summary": [{ "type": "summary_text", "text": "think" }],
+                    "content": null
+                }
+            ],
+            "tools": [
+                { "type": "local_shell" },
+                { "type": "web_search", "search_context_size": "high" },
+                { "type": "custom", "name": "not_a_grok_tool" }
+            ],
+            "tool_choice": { "type": "function", "name": "not_a_grok_tool" },
+            "reasoning": { "effort": "high", "summary": "auto" },
+            "store": false,
+            "client_metadata": { "turn": "1" }
+        }))
+        .send()
+        .await
+        .expect("responses request");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let upstream_bodies = captured.lock().expect("lock captured bodies").clone();
+    assert_eq!(upstream_bodies.len(), 1);
+    let body = &upstream_bodies[0];
+    assert!(body.get("client_metadata").is_none(), "{body}");
+    assert_eq!(body["store"], false);
+    assert_eq!(body["reasoning"]["effort"], "high");
+    assert_eq!(body["reasoning"]["summary"], "auto");
+    assert!(body["input"][1].get("content").is_none(), "{body}");
+    let tools = body["tools"].as_array().expect("tools kept");
+    assert_eq!(tools.len(), 2);
+    assert_eq!(tools[0]["type"], "shell");
+    assert_eq!(tools[1]["type"], "web_search");
+    assert!(tools[1].get("search_context_size").is_none());
+    assert!(body.get("tool_choice").is_none(), "{body}");
+
+    let simple = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "grok-4.5",
+            "input": "hello"
+        }))
+        .send()
+        .await
+        .expect("simple responses request");
+    assert_eq!(simple.status(), StatusCode::OK);
+    let upstream_bodies = captured.lock().expect("lock captured bodies").clone();
+    assert_eq!(upstream_bodies.len(), 2);
+    assert_eq!(upstream_bodies[1]["input"], "hello");
+    assert!(upstream_bodies[1].get("tools").is_none());
+
+    host.stop("grok-sanitize").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
 async fn grok_claude_thinking_maps_to_upstream_reasoning() {
     let (upstream_port, captured, upstream_task) = capturing_grok_requests().await;
     let host = BridgeRuntimeHost::new();

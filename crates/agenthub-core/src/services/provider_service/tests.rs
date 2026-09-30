@@ -838,6 +838,46 @@ fn switch_backfills_snapshots_writes_and_selects_transactionally() {
 }
 
 #[test]
+fn reswitching_local_token_bridge_keeps_the_stored_projection() {
+    let stored = json!({
+        "format": "toml",
+        "content": "[models]\ndefault = \"agenthub_codex_bridge\"\n\n[model.\"agenthub_codex_bridge\"]\nmodel = \"gpt-5.6-sol\"\nbase_url = \"http://127.0.0.1:44227/v1\"\napi_key = \"ahb_local\"\napi_backend = \"responses\"\n",
+        "auth": { "OPENAI_API_KEY": "ahb_local_token" }
+    });
+    let drifted = AgentConfig {
+        agent: AgentId::Grok,
+        raw: json!({
+            "format": "toml",
+            "content": "[models]\ndefault = \"grok\"\n\n[model.grok]\nmodel = \"grok-4.5\"\n"
+        }),
+    };
+    let (_root, _db, svc, adapter, _backups) = live_svc(AgentId::Grok, drifted);
+    let mut current = input("bridge", AgentId::Grok, "Codex bridge", true);
+    current.settings_config = stored.clone();
+    current.meta = json!({
+        "generatedBy": "adapter",
+        "adapterRuleId": "codex-subscription-to-grok-v1",
+        "adapterRuleVersion": 1,
+        "adapterSecretMode": "local_token",
+        "adapterProfileId": "adapter-codex-grok-bridge",
+        "adapterSourceRef": { "kind": "account", "id": "codex-subscription" }
+    });
+    svc.create(&current).unwrap();
+
+    let first = svc.switch("bridge", AgentId::Grok).unwrap();
+    assert!(first.backfilled_provider_id.is_none());
+    assert_eq!(first.provider.settings_config, stored);
+    assert_eq!(adapter.config().raw, stored);
+
+    let second = svc.switch("bridge", AgentId::Grok).unwrap();
+    assert_eq!(
+        second.provider.settings_config["auth"]["OPENAI_API_KEY"],
+        "ahb_local_token"
+    );
+    assert_eq!(svc.get("bridge", None).unwrap().settings_config, stored);
+}
+
+#[test]
 fn switching_already_current_provider_keeps_backfilled_live_value() {
     let live = AgentConfig {
         agent: AgentId::Claude,

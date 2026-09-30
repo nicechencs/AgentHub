@@ -50,7 +50,11 @@ pub const NPM_PACKAGE: &str = "@deepseek-ai/dsh";
 pub const SCOPE_PACKAGE: &str = "@deepseek-ai/dsh-scope";
 pub const HOME_PATCH_FILE: &str = "cordis.patch.yml";
 pub const CREDENTIALS_FILE: &str = ".credentials.yaml";
-pub const LLM_PLUGIN_ID: &str = "@deepseek-ai/dsh-llm-deepseek";
+/// Cordis merges home `cordis.patch.yml` over the bundle by this id.
+/// The bundle row is `llm-deepseek`; the npm package name does not override it.
+pub const LLM_PLUGIN_ID: &str = "llm-deepseek";
+/// Older AgentHub writes used the npm package name, which never overrode the bundle.
+pub const LEGACY_LLM_PLUGIN_ID: &str = "@deepseek-ai/dsh-llm-deepseek";
 pub const DEFAULT_API_KEY_ENV: &str = DSH_API_KEY_ENV;
 pub const DEFAULT_PROVIDER: &str = "deepseek-official";
 pub const DEFAULT_MODEL: &str = "deepseek-v4-flash";
@@ -420,6 +424,10 @@ pub(crate) fn write_dsh_config(config: &AgentConfig) -> Result<()> {
     if let Some(n) = raw.get("maxTokens").and_then(Value::as_u64) {
         fields.max_tokens = Some(n);
     }
+    // DSH drops the snapshot when thinking is disabled and effort is not off.
+    if fields.thinking == "disabled" && fields.reasoning_effort != "off" {
+        fields.reasoning_effort = "off".into();
+    }
     let creds = home.join(CREDENTIALS_FILE);
     with_restored_files(&[&patch, &creds], || {
         write_llm_fields(&patch, &fields)?;
@@ -446,7 +454,9 @@ pub(crate) fn read_llm_fields(path: &Path) -> Result<DshLlmFields> {
         return Ok(fields);
     }
     let text = std::fs::read_to_string(path)?;
-    let Some(row) = find_plugin_row(&text, LLM_PLUGIN_ID) else {
+    let Some(row) = find_plugin_row(&text, LLM_PLUGIN_ID)
+        .or_else(|| find_plugin_row(&text, LEGACY_LLM_PLUGIN_ID))
+    else {
         return Ok(fields);
     };
     if let Some(v) = row.get("apiKeyEnv") {
@@ -677,7 +687,7 @@ fn upsert_llm_row(existing: &str, fields: &DshLlmFields) -> Result<String> {
     if existing.trim().is_empty() {
         return Ok(new_row);
     }
-    if existing.contains(LLM_PLUGIN_ID)
+    if (existing.contains(LLM_PLUGIN_ID) || existing.contains(LEGACY_LLM_PLUGIN_ID))
         && (existing.contains("apiKey") && !existing.contains("apiKeyEnv")
             || existing.to_ascii_lowercase().contains("sk-"))
     {
@@ -686,6 +696,9 @@ fn upsert_llm_row(existing: &str, fields: &DshLlmFields) -> Result<String> {
         ));
     }
     if let Some(replaced) = replace_plugin_row(existing, LLM_PLUGIN_ID, &new_row) {
+        return Ok(replaced);
+    }
+    if let Some(replaced) = replace_plugin_row(existing, LEGACY_LLM_PLUGIN_ID, &new_row) {
         return Ok(replaced);
     }
     let mut out = existing.trim_end().to_string();
