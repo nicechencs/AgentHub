@@ -317,8 +317,8 @@ fn list_local_tokens_keeps_extras_for_inactive_and_orphaned_pools() {
     }));
 
     db.with_conn(|conn| {
-        conn.execute("DELETE FROM route_pools WHERE id = ?1", [&inactive.id])
-            .map(|_| ())
+        conn.execute("DELETE FROM route_pools WHERE id = ?1", [&inactive.id])?;
+        Ok(())
     })
     .unwrap();
     let after_delete = service.list_local_tokens().unwrap();

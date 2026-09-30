@@ -380,7 +380,7 @@ export function collectPoolAuthorizations(
       );
       items.set(key, {
         ...next,
-        catalogEmpty: (existing?.catalogEmpty !== false) && pool.listedModels.length === 0,
+        catalogEmpty: (existing?.catalogEmpty !== false) && (pool.listedModels?.length ?? 0) === 0,
         inTrash: existing?.inTrash === true || trashSourceIds.has(member.sourceId),
         memberUnhealthy: existing?.memberUnhealthy === true,
       });
