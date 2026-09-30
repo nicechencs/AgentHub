@@ -1653,8 +1653,8 @@ async fn start_local_gateway_entries(
 ) -> Result<LocalGatewayStatus, String> {
     let pools = with_hub_blocking(hub.clone(), move |hub| {
         hub.route_pools()
-            .list_default_pools()
-            .map_err(|error| map_err_string("list_default_pools", error))
+            .list_gateway_listener_pools()
+            .map_err(|error| map_err_string("list_gateway_listener_pools", error))
     })
     .await?;
     let flags = with_hub_blocking(hub.clone(), move |hub| {
@@ -1798,11 +1798,11 @@ pub(crate) async fn set_local_gateway_token(
         })
         .await?
     };
-    if !record.primary {
-        sync_extra_local_bearers(hub, &host).await?;
-        return Ok(record);
+    if record.primary {
+        restart_pool_listener_if_running(hub, &host, record.pool_id.clone()).await?;
     }
-    restart_pool_listener_if_running(hub, &host, record.pool_id.clone()).await?;
+    // Primary rotate used to skip this; live extras then still held the old hub.
+    sync_extra_local_bearers(hub, &host).await?;
     Ok(record)
 }
 
@@ -1929,8 +1929,8 @@ pub(crate) async fn restart_pool_listener_if_running(
 ) -> Result<(), String> {
     let pools = with_hub_blocking(hub.clone(), move |hub| {
         hub.route_pools()
-            .list_default_pools()
-            .map_err(|error| map_err_string("list_default_pools", error))
+            .list_gateway_listener_pools()
+            .map_err(|error| map_err_string("list_gateway_listener_pools", error))
     })
     .await?;
     let Some(pool) = pools.into_iter().find(|pool| pool.id == pool_id) else {
