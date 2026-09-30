@@ -55,6 +55,8 @@ pub const CREDENTIALS_FILE: &str = ".credentials.yaml";
 pub const LLM_PLUGIN_ID: &str = "llm-deepseek";
 /// Older AgentHub writes used the npm package name, which never overrode the bundle.
 pub const LEGACY_LLM_PLUGIN_ID: &str = "@deepseek-ai/dsh-llm-deepseek";
+/// Profile default model row; must match `llm-deepseek.model` for headless CLI.
+pub const AGENT_DEFAULT_MODEL_PLUGIN_ID: &str = "agent-default-model";
 pub const DEFAULT_API_KEY_ENV: &str = DSH_API_KEY_ENV;
 pub const DEFAULT_PROVIDER: &str = "deepseek-official";
 pub const DEFAULT_MODEL: &str = "deepseek-v4-flash";
@@ -492,6 +494,7 @@ pub(crate) fn write_llm_fields(path: &Path, fields: &DshLlmFields) -> Result<()>
         String::new()
     };
     let rendered = upsert_llm_row(&existing, fields)?;
+    let rendered = sync_agent_default_model(&rendered, fields)?;
     let mut bytes = rendered.into_bytes();
     if !bytes.ends_with(b"\n") {
         bytes.push(b'\n');
@@ -667,6 +670,28 @@ fn find_plugin_row(
         found = Some(row);
     }
     found
+}
+
+fn sync_agent_default_model(existing: &str, fields: &DshLlmFields) -> Result<String> {
+    let provider = find_plugin_row(existing, AGENT_DEFAULT_MODEL_PLUGIN_ID)
+        .and_then(|row| row.get("provider").cloned())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
+    let new_row = format!(
+        "- id: {id}\n  config:\n    provider: {provider}\n    model: {model}\n",
+        id = yaml_quote(AGENT_DEFAULT_MODEL_PLUGIN_ID),
+        provider = yaml_quote(&provider),
+        model = yaml_quote(&fields.model),
+    );
+    if let Some(replaced) = replace_plugin_row(existing, AGENT_DEFAULT_MODEL_PLUGIN_ID, &new_row) {
+        return Ok(replaced);
+    }
+    let mut out = existing.trim_end().to_string();
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    out.push_str(&new_row);
+    Ok(out)
 }
 
 fn upsert_llm_row(existing: &str, fields: &DshLlmFields) -> Result<String> {

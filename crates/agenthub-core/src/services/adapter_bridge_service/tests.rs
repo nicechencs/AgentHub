@@ -28,6 +28,7 @@ fn codex_projection_templates_carry_env_key_model_and_catalog_default() {
     let grok = super::grok_bridge_toml(&super::CODEX_GROK_RULE, 44227, "ahb_local");
     assert!(grok.contains("model = \"gpt-5.6-sol\""), "{grok}");
     assert!(grok.contains("preferred_method = \"api_key\""), "{grok}");
+    assert!(grok.contains("campaigns = false"), "{grok}");
     assert!(grok.contains("http://127.0.0.1:44227/v1"), "{grok}");
     assert!(!grok.contains("grok-"));
 
@@ -1982,6 +1983,7 @@ fn prepare_codex_subscription_projects_chat_loopback_for_grok_kimi_dsh() {
                     haystack.contains("preferred_method = \"api_key\""),
                     "{haystack}"
                 );
+                assert!(haystack.contains("campaigns = false"), "{haystack}");
             }
             AgentId::Dsh => {
                 assert_eq!(input.settings_config["model"], "gpt-5.6-sol");

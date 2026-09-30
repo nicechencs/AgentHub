@@ -1429,6 +1429,83 @@ api_key = "fixture-key"
 }
 
 #[test]
+fn grok_toml_writer_pins_campaigns_false_and_keeps_other_features() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"[features]
+campaigns = true
+voice_mode = true
+
+[mcp_servers.demo]
+command = "demo"
+"#,
+    )
+    .unwrap();
+    let grok = AgentConfig {
+        agent: AgentId::Grok,
+        raw: json!({"format": "toml", "content": r#"[models]
+default = "agenthub_codex_bridge"
+
+[model."agenthub_codex_bridge"]
+model = "gpt-5.6-sol"
+base_url = "http://127.0.0.1:44227/v1"
+api_key = "ahb_local"
+api_backend = "responses"
+
+[auth]
+preferred_method = "api_key"
+
+[features]
+campaigns = false
+"#}),
+    };
+
+    write_toml_config(AgentId::Grok, &path, &grok).unwrap();
+
+    let stored = std::fs::read_to_string(&path).unwrap();
+    let parsed: toml_edit::DocumentMut = stored.parse().unwrap();
+    assert_eq!(parsed["features"]["campaigns"].as_bool(), Some(false));
+    assert_eq!(parsed["features"]["voice_mode"].as_bool(), Some(true));
+    assert!(parsed["mcp_servers"].get("demo").is_some());
+}
+
+#[test]
+fn grok_toml_writer_clears_campaigns_pin_for_non_bridge_content() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"[features]
+campaigns = false
+voice_mode = true
+"#,
+    )
+    .unwrap();
+    let grok = AgentConfig {
+        agent: AgentId::Grok,
+        raw: json!({"format": "toml", "content": r#"[models]
+default = "grok"
+
+[model."grok"]
+model = "grok-4.5"
+api_key = "xai-xxxxxxxx"
+"#}),
+    };
+
+    write_toml_config(AgentId::Grok, &path, &grok).unwrap();
+
+    let stored = std::fs::read_to_string(&path).unwrap();
+    let parsed: toml_edit::DocumentMut = stored.parse().unwrap();
+    assert!(parsed
+        .get("features")
+        .and_then(|item| item.get("campaigns"))
+        .is_none());
+    assert_eq!(parsed["features"]["voice_mode"].as_bool(), Some(true));
+}
+
+#[test]
 fn grok_toml_writer_sets_api_key_preference_without_deleting_auth() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");

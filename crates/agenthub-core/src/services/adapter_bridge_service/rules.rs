@@ -240,6 +240,9 @@ pub(super) fn cli_served_model(rule: &CodexBridgeRule, configured: &str) -> Stri
 }
 
 /// Grok config.toml for a local-bridge write. `model` is the id the CLI sends.
+///
+/// `features.campaigns = false` stops grok.com's campaign default (e.g. `grok-4.7`)
+/// from overriding `models.default` on bare `grok -p` when OIDC `auth.json` exists.
 pub(super) fn grok_bridge_toml(rule: &CodexBridgeRule, port: u16, local_bearer: &str) -> String {
     let model = cli_served_model(rule, "");
     let model_line = if model.is_empty() {
@@ -248,7 +251,7 @@ pub(super) fn grok_bridge_toml(rule: &CodexBridgeRule, port: u16, local_bearer: 
         format!("model = \"{model}\"\n")
     };
     format!(
-        "[models]\ndefault = \"{slug}\"\n\n[model.\"{slug}\"]\n{model_line}base_url = \"http://127.0.0.1:{port}/v1\"\napi_key = \"{token}\"\napi_backend = \"responses\"\n\n[auth]\npreferred_method = \"api_key\"\n",
+        "[models]\ndefault = \"{slug}\"\n\n[model.\"{slug}\"]\n{model_line}base_url = \"http://127.0.0.1:{port}/v1\"\napi_key = \"{token}\"\napi_backend = \"responses\"\n\n[auth]\npreferred_method = \"api_key\"\n\n[features]\ncampaigns = false\n",
         slug = rule.provider_slug,
         token = local_bearer,
     )

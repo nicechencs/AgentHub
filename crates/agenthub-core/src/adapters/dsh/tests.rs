@@ -126,6 +126,35 @@ fn write_config_can_point_base_url_at_loopback_without_inventing_chatgpt_model()
 }
 
 #[test]
+fn write_config_syncs_agent_default_model_with_catalog_model() {
+    let dir = tempfile::tempdir().unwrap();
+    with_dsh_home(dir.path(), || {
+        let patch = dir.path().join(HOME_PATCH_FILE);
+        std::fs::write(
+            &patch,
+            "- id: agent-default-model\n  config:\n    provider: deepseek-official\n    model: deepseek-v4-flash\n",
+        )
+        .unwrap();
+        write_dsh_config(&AgentConfig {
+            agent: AgentId::Dsh,
+            raw: json!({
+                "baseURL": "http://127.0.0.1:44227",
+                "api_key": "ahb_local",
+                "model": "gpt-5.6-sol"
+            }),
+        })
+        .unwrap();
+        let text = std::fs::read_to_string(&patch).unwrap();
+        assert!(text.contains(LLM_PLUGIN_ID), "{text}");
+        assert!(text.contains("model: gpt-5.6-sol"), "{text}");
+        assert!(text.contains("agent-default-model"), "{text}");
+        assert!(text.contains("provider: deepseek-official"), "{text}");
+        assert_eq!(text.matches("model: gpt-5.6-sol").count(), 2, "{text}");
+        assert!(!text.contains("deepseek-v4-flash"), "{text}");
+    });
+}
+
+#[test]
 fn write_config_merges_llm_row_and_preserves_other_rows() {
     let dir = tempfile::tempdir().unwrap();
     with_dsh_home(dir.path(), || {
@@ -148,6 +177,9 @@ fn write_config_merges_llm_row_and_preserves_other_rows() {
         assert!(text.contains("thinking: disabled"));
         assert!(text.contains("reasoningEffort: off"));
         assert!(text.contains("maxTokens: 1024"));
+        assert!(text.contains("agent-default-model"));
+        assert!(text.contains("provider: deepseek-official"));
+        assert_eq!(text.matches("model: deepseek-v4-pro").count(), 2);
         let fields = read_llm_fields(&patch).unwrap();
         assert_eq!(fields.model, "deepseek-v4-pro");
         assert_eq!(fields.thinking, "disabled");
