@@ -60,6 +60,14 @@ impl UpstreamTransport for OpenAiChatTransport {
                     admitted.state.custom_openai,
                     &admitted.state.listed_models,
                 );
+                // Native chat→Kimi (and other non-custom OpenAI-compat) rejects
+                // `temperature` (`Unsupported parameter`); converted surfaces
+                // already strip it in `to_kimi_chat_request`.
+                if !admitted.state.custom_openai {
+                    if let Some(object) = body.as_object_mut() {
+                        object.remove("temperature");
+                    }
+                }
                 Ok(UpstreamPrepare {
                     path: self.path(),
                     body,

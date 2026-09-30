@@ -732,6 +732,7 @@ fn openai_chat_prepare_passthroughs_chat_surface() {
         "model": "gpt-test",
         "messages": [{"role": "user", "content": "hi"}],
         "stream": true,
+        "temperature": 0.2,
         "response_format": {"type": "json_object"}
     });
     let admitted = admitted(
@@ -747,6 +748,11 @@ fn openai_chat_prepare_passthroughs_chat_surface() {
     assert_eq!(prepared.body["model"], "configured-model");
     assert_eq!(prepared.body["messages"], body["messages"]);
     assert_eq!(prepared.body["response_format"], body["response_format"]);
+    assert!(
+        prepared.body.get("temperature").is_none(),
+        "native chat→Kimi must strip temperature: {}",
+        prepared.body
+    );
     assert!(prepared.stream);
 }
 
