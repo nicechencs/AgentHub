@@ -136,8 +136,8 @@ const OFFICIAL_CODEX_RESPONSE_KEYS: &[&str] = &[
     "instructions",
     "tools",
     "tool_choice",
-    // Kept until a live official 400; existing tests still forward them.
-    "temperature",
+    // Official ChatGPT / Codex Responses 400s on `temperature`
+    // (`Unsupported parameter`). `top_p` is kept until a live official 400.
     "top_p",
 ];
 
@@ -146,9 +146,9 @@ const OFFICIAL_CODEX_RESPONSE_KEYS: &[&str] = &[
 /// The official endpoint requires storage to be disabled for this local
 /// subscription route, **requires `stream: true`**, rejects `role=system`
 /// input items, and 400s on unsupported request fields (`metadata`,
-/// `max_output_tokens`, and other Chat Completions leftovers). Keep only
-/// the allowlisted Responses keys so callers cannot accidentally forward
-/// Claude/OpenAI extras while leaving the provider-neutral request
+/// `max_output_tokens`, `temperature`, and other Chat Completions leftovers).
+/// Keep only the allowlisted Responses keys so callers cannot accidentally
+/// forward Claude/OpenAI extras while leaving the provider-neutral request
 /// conversion unchanged.
 ///
 /// Downstream `stream` stays the client's request. The host consumes the
