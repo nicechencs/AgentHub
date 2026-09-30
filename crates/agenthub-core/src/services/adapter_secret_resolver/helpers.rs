@@ -1,3 +1,5 @@
+use std::path::{Component, Path};
+
 use serde_json::Value;
 use toml_edit::DocumentMut;
 
@@ -330,6 +332,43 @@ pub(super) fn extract_explicit_provider_api_key(rule_id: &str, settings: &Value)
         }
     }
     Err(invalid_reference())
+}
+
+/// Official DSH rows store the key in `.credentials.yaml`, named by
+/// `apiKeyEnv`, and only record that path under `paths.credentials`.
+/// Inline `api_key` / `apiKey` stays on [`extract_deepseek_api_key`].
+pub(super) fn deepseek_credentials_file_key(settings: &Value) -> Result<String> {
+    let env_name = settings
+        .get("apiKeyEnv")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|name| {
+            let mut chars = name.chars();
+            matches!(chars.next(), Some(ch) if ch.is_ascii_alphabetic() || ch == '_')
+                && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        })
+        .ok_or_else(invalid_reference)?;
+    let raw = settings
+        .pointer("/paths/credentials")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .ok_or_else(invalid_reference)?;
+    let path = Path::new(raw);
+    if !path.is_absolute()
+        || path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+        || path.file_name().and_then(|name| name.to_str())
+            != Some(crate::adapters::dsh::CREDENTIALS_FILE)
+    {
+        return Err(invalid_reference());
+    }
+    let value = crate::adapters::dsh::read_credential_value(path, env_name)?
+        .ok_or_else(invalid_reference)?;
+    usable_secret(&value)
+        .map(str::to_owned)
+        .ok_or_else(invalid_reference)
 }
 
 pub(super) fn extract_deepseek_api_key(settings: &Value) -> Result<String> {

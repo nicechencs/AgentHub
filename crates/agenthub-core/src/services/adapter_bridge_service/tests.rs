@@ -4,7 +4,7 @@ use crate::models::{
     static_fallback_models, Account, AccountKind, AdapterProfile, AdapterProfileMode,
     AdapterProfileStatus, AdapterRoute, AdapterSourceKind, AdapterSourceProduct,
     AdapterTargetProtocol, AdapterUpstreamTransport, Provider, RouteDownstreamDialect,
-    RouteDownstreamSurface, RouteSchedulePolicy, FEATURE_MIXED_PROVIDER_POOL,
+    RouteDownstreamSurface, RoutePool, RouteSchedulePolicy, FEATURE_MIXED_PROVIDER_POOL,
     FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2, LOCAL_BRIDGE_EDGES,
 };
 use crate::services::{ProviderService, RoutePoolService};
@@ -2347,6 +2347,119 @@ fn default_pool_resolves_provider_backed_openai_compatible_keys() {
             assert_ne!(spec.upstream.auth.token(), "pending");
         }
     }
+}
+
+/// Official DSH rows keep the API key in `.credentials.yaml` (`apiKeyEnv` +
+/// `paths.credentials`). A demoted manual pool that also has a custom sibling
+/// must still advertise DeepSeek models and route `deepseek-chat` to the
+/// official login. An inline sibling model must not become the whole catalog.
+#[test]
+fn demoted_manual_dsh_pool_routes_deepseek_chat_from_credentials_file() {
+    let (dir, db) = test_db();
+    let creds = dir.path().join(".credentials.yaml");
+    std::fs::write(&creds, "DEEPSEEK_API_KEY: \"sk-dsh-file-key\"\n").unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "dsh-official".into(),
+            agent_id: AgentId::Dsh,
+            name: "api.deepseek.com".into(),
+            settings_config: json!({
+                "provider": "deepseek-official",
+                "model": "deepseek-v4-flash",
+                "apiKeyEnv": "DEEPSEEK_API_KEY",
+                "baseURL": "https://api.deepseek.com",
+                "paths": { "credentials": creds },
+            }),
+            meta: json!({
+                "preset": "custom",
+                "official": false,
+                "surface": "deepseek-api",
+            }),
+            is_current: true,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "cursor-sibling".into(),
+            agent_id: AgentId::Cursor,
+            name: "custom relay".into(),
+            settings_config: json!({
+                "baseUrl": "https://relay.example/v1",
+                "model": "kimi-k2",
+                "apiKey": "sk-sibling",
+            }),
+            meta: json!({"preset": "custom", "surface": "unknown"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+
+    let pools = RoutePoolService::new(db.clone());
+    let default_pool = pools
+        .ensure_default_pool(AgentId::Dsh, RouteDownstreamSurface::ChatCompletions)
+        .unwrap();
+    let now = "now".to_owned();
+    let manual = RoutePoolRepo::new(db.clone())
+        .create_pool(&RoutePool {
+            id: "manual-dsh-pool".into(),
+            target_agent_id: AgentId::Dsh,
+            downstream_surface: RouteDownstreamSurface::ChatCompletions,
+            downstream_dialect: RouteDownstreamDialect::for_agent(AgentId::Dsh),
+            hub_token: "ahb_hub_z7cc".into(),
+            schedule_policy: RouteSchedulePolicy::PriorityFailover,
+            is_default: false,
+            unified_gateway_enrolled: false,
+            policy_revision: 1,
+            auto_start: true,
+            gateway_port: None,
+            created_at: now.clone(),
+            updated_at: now,
+        })
+        .unwrap();
+    assert_ne!(manual.id, default_pool.id);
+    let manual = pools.enroll_unified_gateway(&manual.id, 44227).unwrap();
+    assert!(!manual.is_default);
+    assert!(manual.unified_gateway_enrolled);
+    pools
+        .add_member(&manual.id, AdapterSourceKind::Provider, "dsh-official")
+        .unwrap();
+    pools
+        .add_member(&manual.id, AdapterSourceKind::Provider, "cursor-sibling")
+        .unwrap();
+
+    let spec = AdapterBridgeService::new(db).pool_listener_spec(&manual, (false, false));
+    assert_eq!(spec.upstream.base_url, "https://api.deepseek.com");
+    assert_eq!(spec.upstream.auth.token(), "sk-dsh-file-key");
+    let official = spec
+        .members
+        .iter()
+        .find(|member| member.source_id == "dsh-official")
+        .expect("official DeepSeek login stays in the indexed pool");
+    assert_eq!(official.auth.token(), "sk-dsh-file-key");
+    let index = spec
+        .route_index
+        .expect("enrolled manual pool attaches a route index");
+    let models = index.list_models("chat_completions");
+    assert!(
+        models.iter().any(|model| model == "deepseek-chat"),
+        "catalog collapsed: {models:?}"
+    );
+    assert!(
+        models.iter().any(|model| model == "deepseek-v4-flash"),
+        "catalog collapsed: {models:?}"
+    );
+    let candidates = index
+        .resolve("chat_completions", "deepseek-chat")
+        .expect("deepseek-chat must pass route resolution");
+    assert!(
+        candidates
+            .iter()
+            .any(|candidate| candidate.member_id == "dsh-official"),
+        "{candidates:?}"
+    );
 }
 
 #[test]
