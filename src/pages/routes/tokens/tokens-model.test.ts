@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { agentDisplayName } from '@/config/agents';
 import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
 import {
   agentSupportsLocalEndpointKind,
   buildCreateTokenEndpointCards,
+  buildCreateTokenTargets,
   createTokenPoolLabel,
   buildLocalTokenGroups,
   buildLocalTokenRows,
@@ -631,6 +633,42 @@ describe('tokens-model', () => {
     expect(resolveCreateTokenPoolId(chat)).toBe('');
     expect(resolveCreateTokenPoolId(chat, 'pool-kimi')).toBe('pool-kimi');
     expect(resolveCreateTokenPoolId(chat, 'missing')).toBe('');
+  });
+
+  it('labels the chat picker with pool name + last4, including pools with no key', () => {
+    const targets = buildCreateTokenTargets(
+      [
+        pool({
+          id: 'pool-dsh',
+          targetAgentId: 'dsh',
+          surface: 'chat_completions',
+          dialect: 'openai',
+        }),
+        pool({
+          id: 'pool-kimi',
+          targetAgentId: 'kimi',
+          surface: 'chat_completions',
+          dialect: 'openai',
+        }),
+      ],
+      [
+        {
+          id: 'key-dsh',
+          poolId: 'pool-dsh',
+          token: 'ahb_xxxxxxxxF9FE',
+          name: '',
+          primary: true,
+        },
+      ],
+    );
+    const cards = buildCreateTokenEndpointCards(targets);
+    const chat = cards.find((card) => card.kind === 'chat_completions');
+    expect(chat?.poolId).toBeNull();
+    expect(chat?.pools.map((pool) => createTokenPoolLabel(pool))).toEqual([
+      `${agentDisplayName('dsh')} · …F9FE`,
+      agentDisplayName('kimi'),
+    ]);
+    expect(resolveCreateTokenPoolId(chat)).toBe('');
   });
 
   it('lists persisted extras when the pool is not a visible default row', () => {

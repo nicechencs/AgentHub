@@ -10,6 +10,7 @@ import type {
 } from '@/lib/backend/contracts/adapter';
 import type { GatewayUsageRow } from '@/lib/backend/contracts/usage-types';
 import type { TranslateFn } from '@/lib/i18n';
+import { agentDisplayName } from '@/config/agents';
 import { KNOWN_AGENT_IDS, type AgentKey } from '@/lib/types';
 import {
   LOCAL_ENDPOINT_KINDS,
@@ -186,6 +187,29 @@ export function createTokenPoolLabel(pool: CreateTokenPoolOption): string {
   if (name) return name;
   if (last4) return `…${last4}`;
   return pool.targetAgentId.trim() || pool.id;
+}
+
+/** Eligible default pools for 新建入口 Key, labeled by pool name + key last4. */
+export function buildCreateTokenTargets(
+  pools: readonly DefaultRoutePoolOverview[],
+  records: readonly LocalTokenRecord[] | null | undefined,
+): CreateTokenEndpointTarget[] {
+  return pools.flatMap((pool) => {
+    if (pool.members.length === 0) return [];
+    const kind = localEndpointKindFromPool(pool);
+    if (!kind) return [];
+    const list = records ?? [];
+    const primary = list.find((record) => record.primary && record.poolId === pool.id);
+    const anyRecord = primary ?? list.find((record) => record.poolId === pool.id);
+    const token = anyRecord?.token?.trim() ?? '';
+    return [{
+      id: pool.id,
+      kind,
+      name: agentDisplayName(pool.targetAgentId),
+      last4: token.slice(-4),
+      targetAgentId: pool.targetAgentId,
+    }];
+  });
 }
 
 /** Four endpoint cards for 新建入口 Key; missing pools stay visible and unselectable. */
