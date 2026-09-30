@@ -334,6 +334,28 @@ export function poolAuthorizationTicketView(
   };
 }
 
+/** Enabled pool member that is cooling or isolated — not merely disabled. */
+export function poolMemberUnhealthy(
+  member: Pick<RouteMemberOverview, 'enabled' | 'availability'>,
+): boolean {
+  if (!member.enabled) return false;
+  return member.availability === 'cooling' || member.availability === 'isolated';
+}
+
+/** Source ids sitting in Connections or the connection-pool trash. */
+export function trashSourceIdsFromItems(
+  items: readonly { sourceId?: string; membership?: { sourceId?: string } | null }[],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const item of items) {
+    const sourceId = item.sourceId?.trim();
+    if (sourceId) ids.add(sourceId);
+    const membershipId = item.membership?.sourceId?.trim();
+    if (membershipId) ids.add(membershipId);
+  }
+  return ids;
+}
+
 /** Every OAuth / API authorization visible on the auth-pool page. */
 export function collectPoolAuthorizations(
   pools: readonly DefaultRoutePoolOverview[],
@@ -382,7 +404,7 @@ export function collectPoolAuthorizations(
         ...next,
         catalogEmpty: (existing?.catalogEmpty !== false) && (pool.listedModels?.length ?? 0) === 0,
         inTrash: existing?.inTrash === true || trashSourceIds.has(member.sourceId),
-        memberUnhealthy: existing?.memberUnhealthy === true,
+        memberUnhealthy: existing?.memberUnhealthy === true || poolMemberUnhealthy(member),
       });
     }
   }
@@ -391,20 +413,23 @@ export function collectPoolAuthorizations(
     const key = `${entry.source}:${entry.id}`;
     if (items.has(key)) continue;
     const endpointKind = localEndpointKindForTargetAgent(entry.agentId);
-    items.set(key, poolAuthorizationItem(
-      key,
-      entry.source,
-      entry.id,
-      entry,
-      {
-        agentId: entry.agentId,
-        kind: entry.kind,
-        title: entry.id,
-        surface: poolSurfaceForAgent(entry.agentId),
-        endpointKind,
-        addedHere: true,
-      },
-    ));
+    items.set(key, {
+      ...poolAuthorizationItem(
+        key,
+        entry.source,
+        entry.id,
+        entry,
+        {
+          agentId: entry.agentId,
+          kind: entry.kind,
+          title: entry.id,
+          surface: poolSurfaceForAgent(entry.agentId),
+          endpointKind,
+          addedHere: true,
+        },
+      ),
+      inTrash: trashSourceIds.has(entry.id),
+    });
   }
   return [...items.values()]
     .map((item) => {

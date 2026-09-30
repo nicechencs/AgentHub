@@ -4,6 +4,8 @@ import type { ConnectionEntry } from '@/lib/connection-entry';
 import {
   buildPoolWorkbenchRows,
   collectPoolAuthorizations,
+  poolMemberUnhealthy,
+  trashSourceIdsFromItems,
   defaultPoolEntryUrl,
   directProfilesForRoutePoolV2,
   leadProfileForPool,
@@ -281,6 +283,7 @@ describe('route pool v2 view-model', () => {
     ], []);
     expect(items).toHaveLength(1);
     expect(items[0]?.key).toBe('account:oauth-1');
+    expect(items[0]?.memberUnhealthy).toBe(false);
   });
 
   it('drops the list row only after both the pool member and the source entry are gone', () => {
@@ -327,12 +330,43 @@ describe('route pool v2 view-model', () => {
     expect(items[0]?.endpointKinds).toEqual(['responses_grok', 'chat_completions']);
   });
 
+  it('marks trash and cooling/isolated members on the configured status chip', () => {
+    expect(poolMemberUnhealthy({ enabled: true, availability: 'cooling' })).toBe(true);
+    expect(poolMemberUnhealthy({ enabled: true, availability: 'isolated' })).toBe(true);
+    expect(poolMemberUnhealthy({ enabled: true, availability: 'ready' })).toBe(false);
+    expect(poolMemberUnhealthy({ enabled: false, availability: 'isolated' })).toBe(false);
+    expect([...trashSourceIdsFromItems([
+      { sourceId: 'oauth-1' },
+      { sourceId: '  ', membership: { sourceId: 'api-1' } },
+    ])]).toEqual(['oauth-1', 'api-1']);
+    const items = collectPoolAuthorizations([
+      pool({
+        members: [
+          { sourceKind: 'account', sourceId: 'oauth-1', enabled: true, availability: 'cooling' },
+          { sourceKind: 'provider', sourceId: 'api-1', enabled: true, availability: 'ready' },
+        ],
+      }),
+    ], [], new Map(), '未提供登录', new Set(['api-1']));
+    expect(items.find((item) => item.sourceId === 'oauth-1')).toMatchObject({
+      memberUnhealthy: true,
+      inTrash: false,
+    });
+    expect(items.find((item) => item.sourceId === 'api-1')).toMatchObject({
+      memberUnhealthy: false,
+      inTrash: true,
+    });
+  });
+
   it('maps stored auth health to a status chip', () => {
     expect(poolAuthorizationStatusView({ authHealth: 'verified' }).label).toBe('已验证');
     expect(poolAuthorizationStatusView({ authHealth: 'verified' }).tone).toBe('success');
     expect(poolAuthorizationStatusView({ authHealth: 'configured' }).tone).toBe('warning');
     expect(poolAuthorizationStatusView({ authHealth: 'configured', catalogEmpty: true }).label)
       .toBe('已配置 · 没有可用模型');
+    expect(poolAuthorizationStatusView({ authHealth: 'configured', inTrash: true }).label)
+      .toBe('已进回收站');
+    expect(poolAuthorizationStatusView({ authHealth: 'configured', memberUnhealthy: true }).label)
+      .toBe('登录不健康');
     expect(poolAuthorizationStatusView({ authStatus: 'expired' }).label).toBe('需要重新登录');
     expect(poolAuthorizationStatusView({ authStatus: 'expired' }).tone).toBe('danger');
     expect(poolAuthorizationStatusView({}).label).toBe('状态未知');
