@@ -42,6 +42,22 @@ fn codex_projection_templates_carry_env_key_model_and_catalog_default() {
         super::legacy_grok_responses_toml(&super::CODEX_GROK_RULE, 44227, "ahb_local");
     assert!(!legacy_grok.contains("preferred_method"));
     assert!(!legacy_grok.contains("model = "));
+    let pre_campaigns =
+        super::legacy_grok_pre_campaigns_toml(&super::CODEX_GROK_RULE, 44227, "ahb_local");
+    assert!(
+        pre_campaigns.contains("preferred_method = \"api_key\""),
+        "{pre_campaigns}"
+    );
+    assert!(
+        pre_campaigns.contains("model = \"gpt-5.6-sol\""),
+        "{pre_campaigns}"
+    );
+    assert!(
+        pre_campaigns.contains("api_backend = \"responses\""),
+        "{pre_campaigns}"
+    );
+    assert!(!pre_campaigns.contains("campaigns"), "{pre_campaigns}");
+    assert_ne!(pre_campaigns, grok);
 }
 
 async fn health_upstream(status: StatusCode) -> (u16, tokio::task::JoinHandle<()>) {
@@ -2652,6 +2668,51 @@ fn legacy_codex_grok_chat_completions_toml_rewrites_to_responses() {
     let content = input.settings_config["content"].as_str().unwrap();
     assert!(content.contains("api_backend = \"responses\""));
     assert!(!content.contains("api_backend = \"chat_completions\""));
+}
+
+#[test]
+fn legacy_grok_pre_campaigns_toml_rewrites_and_restore_flags_reprojection() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&codex_subscription_account(
+            "codex-subscription",
+            "codex-upstream-access-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&codex_chat_request("codex-subscription", AgentId::Grok))
+        .unwrap();
+    let generated = create_projection(&db, &prepared, 43145);
+    let profile = service.finalize(&prepared, 43145).unwrap();
+    let mut legacy = generated.clone();
+    let token = legacy.settings_config["auth"]["OPENAI_API_KEY"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    legacy.settings_config["content"] = json!(super::legacy_grok_pre_campaigns_toml(
+        &super::CODEX_GROK_RULE,
+        43145,
+        &token,
+    ));
+    persist_mutated_provider(&db, legacy);
+
+    let restored = service.resolve_restore_material(&profile.id).unwrap();
+    assert!(restored.needs_reprojection());
+
+    let retried = service
+        .prepare(&codex_chat_request("codex-subscription", AgentId::Grok))
+        .unwrap();
+    let input = match retried.provider_projection(43145).unwrap() {
+        AdapterBridgeProviderProjection::Update(input) => input,
+        other => panic!("pre-campaigns TOML must rewrite, got {other:?}"),
+    };
+    let content = input.settings_config["content"].as_str().unwrap();
+    assert!(content.contains("campaigns = false"), "{content}");
+    assert!(
+        content.contains("preferred_method = \"api_key\""),
+        "{content}"
+    );
 }
 
 #[test]

@@ -661,6 +661,13 @@ impl AccountPicker {
     }
 
     pub fn isolate(&self, source_id: &str) {
+        let key_last4 = self
+            .inner
+            .members
+            .iter()
+            .find(|member| member.source_id == source_id)
+            .map(|member| crate::utils::redact::sanitize_gui_last4(Some(&member.auth.token())))
+            .unwrap_or_default();
         if let Some(member) = self
             .inner
             .members
@@ -669,6 +676,13 @@ impl AccountPicker {
         {
             member.isolate();
         }
+        tracing::warn!(
+            target: "core.adapter.sticky",
+            source_id,
+            key_last4 = key_last4.as_str(),
+            stage = "sticky_isolate",
+            "sticky member isolated"
+        );
         self.drop_sticky_for_member(source_id);
         if let Some(sink) = &self.inner.isolate_sink {
             sink(source_id);

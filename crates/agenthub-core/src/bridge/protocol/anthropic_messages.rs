@@ -8,8 +8,8 @@ use serde_json::{json, Map, Value};
 
 use crate::bridge::protocol::responses::grok_reasoning_effort_from_thinking;
 use crate::bridge::types::{
-    BridgeContent, BridgeMessage, BridgeRequest, BridgeTool, IrEvent, MessageRole, ProtocolError,
-    ProtocolResult, StopReason, ToolChoice, Usage,
+    is_reported_upstream_error, BridgeContent, BridgeMessage, BridgeRequest, BridgeTool, IrEvent,
+    MessageRole, ProtocolError, ProtocolResult, StopReason, ToolChoice, Usage,
 };
 
 /// Parse the subset of `POST /v1/messages` that the Codex→Claude kernel can represent.
@@ -530,7 +530,7 @@ pub fn translate_responses_to_anthropic_request(
 
 /// Convert a completed non-streaming Anthropic Messages object into [`IrEvent`]s.
 pub fn anthropic_message_to_ir(value: &Value) -> ProtocolResult<Vec<IrEvent>> {
-    if value.get("error").is_some() {
+    if is_reported_upstream_error(value.get("error")) {
         return Ok(vec![IrEvent::Error {
             code: "upstream_error".to_owned(),
             message: "The upstream model provider returned an error.".to_owned(),

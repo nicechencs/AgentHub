@@ -244,14 +244,39 @@ pub(super) fn cli_served_model(rule: &CodexBridgeRule, configured: &str) -> Stri
 /// `features.campaigns = false` stops grok.com's campaign default (e.g. `grok-4.7`)
 /// from overriding `models.default` on bare `grok -p` when OIDC `auth.json` exists.
 pub(super) fn grok_bridge_toml(rule: &CodexBridgeRule, port: u16, local_bearer: &str) -> String {
+    grok_responses_auth_toml(rule, port, local_bearer, true)
+}
+
+/// Pre-campaigns Grok TOML (`0ba84ab8`): responses + `model` + `[auth]`, no
+/// `[features] campaigns = false`. Restore must accept it so `needs_reprojection`
+/// can rewrite existing rows without a manual seed.
+pub(super) fn legacy_grok_pre_campaigns_toml(
+    rule: &CodexBridgeRule,
+    port: u16,
+    local_bearer: &str,
+) -> String {
+    grok_responses_auth_toml(rule, port, local_bearer, false)
+}
+
+fn grok_responses_auth_toml(
+    rule: &CodexBridgeRule,
+    port: u16,
+    local_bearer: &str,
+    campaigns: bool,
+) -> String {
     let model = cli_served_model(rule, "");
     let model_line = if model.is_empty() {
         String::new()
     } else {
         format!("model = \"{model}\"\n")
     };
+    let features = if campaigns {
+        "\n[features]\ncampaigns = false\n"
+    } else {
+        ""
+    };
     format!(
-        "[models]\ndefault = \"{slug}\"\n\n[model.\"{slug}\"]\n{model_line}base_url = \"http://127.0.0.1:{port}/v1\"\napi_key = \"{token}\"\napi_backend = \"responses\"\n\n[auth]\npreferred_method = \"api_key\"\n\n[features]\ncampaigns = false\n",
+        "[models]\ndefault = \"{slug}\"\n\n[model.\"{slug}\"]\n{model_line}base_url = \"http://127.0.0.1:{port}/v1\"\napi_key = \"{token}\"\napi_backend = \"responses\"\n\n[auth]\npreferred_method = \"api_key\"\n{features}",
         slug = rule.provider_slug,
         token = local_bearer,
     )
@@ -400,6 +425,7 @@ pub(super) fn validate_generated_provider(
             let matches_current = if projection_of(rule.target_agent) == BridgeProjection::GrokToml
             {
                 content == grok_bridge_toml(&rule, port, &local_bearer)
+                    || content == legacy_grok_pre_campaigns_toml(&rule, port, &local_bearer)
                     || content == legacy_grok_responses_toml(&rule, port, &local_bearer)
                     || content == legacy_grok_bridge_toml(&rule, port, &local_bearer)
             } else {

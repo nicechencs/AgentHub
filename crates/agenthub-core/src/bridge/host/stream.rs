@@ -28,7 +28,7 @@ use crate::bridge::types::{BridgeEvent, IrEvent, ProtocolError, Usage};
 use crate::bridge::usage_capture::{emit, CaptureContext, GatewayUsageEvent, StreamCaptureGuard};
 
 use super::http::{
-    error_response, log_protocol_error, protocol_error_response, sse_data_payload,
+    error_response, log_protocol_error_at, protocol_error_response, sse_data_payload,
     sse_frame_end_deque, stopping_response, stream_error_frame, EdgeState,
 };
 use super::passthrough_usage::PassthroughUsageObserver;
@@ -89,6 +89,29 @@ fn record_trace_usage(
         usage.map(|row| row.output_tokens),
         usage.and_then(|row| row.cached_input_tokens),
         usage.map(|row| row.reasoning_tokens),
+    );
+}
+
+fn member_key_last4(member: &PickedMember) -> Option<String> {
+    let last4 = crate::utils::redact::sanitize_gui_last4(Some(&member.auth.token()));
+    (!last4.is_empty()).then_some(last4)
+}
+
+fn log_response_conversion_error(
+    state: &EdgeState,
+    request_id: &str,
+    started: Instant,
+    member: &PickedMember,
+    error: &ProtocolError,
+) {
+    let last4 = member_key_last4(member);
+    log_protocol_error_at(
+        state,
+        request_id,
+        started,
+        error,
+        "response_conversion",
+        last4.as_deref(),
     );
 }
 
@@ -247,7 +270,7 @@ pub(super) async fn messages_non_stream_response(
         }
         Err(error) => {
             state.record_upstream_failure();
-            log_protocol_error(&state, &request_id, started, &error);
+            log_response_conversion_error(&state, &request_id, started, &member, &error);
             emit(
                 &state.usage_spool,
                 usage_event(&state, &request_id, started, &member, &capture)
@@ -332,7 +355,7 @@ pub(super) async fn chat_non_stream_response(
         }
         Err(error) => {
             state.record_upstream_failure();
-            log_protocol_error(&state, &request_id, started, &error);
+            log_response_conversion_error(&state, &request_id, started, &member, &error);
             emit(
                 &state.usage_spool,
                 usage_event(&state, &request_id, started, &member, &capture)
@@ -419,7 +442,7 @@ pub(super) async fn non_stream_response(
         }
         Err(error) => {
             state.record_upstream_failure();
-            log_protocol_error(&state, &request_id, started, &error);
+            log_response_conversion_error(&state, &request_id, started, &member, &error);
             emit(
                 &state.usage_spool,
                 usage_event(&state, &request_id, started, &member, &capture)
