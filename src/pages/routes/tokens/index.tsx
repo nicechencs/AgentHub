@@ -8,6 +8,7 @@ import { useSideSplit } from '@/components/layout/use-side-split';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { Notice } from '@/components/shared/Notice';
 import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
@@ -182,9 +183,21 @@ export default function RoutesTokensPage() {
     () => defaultPools.flatMap((pool) => {
       if (pool.members.length === 0) return [];
       const kind = localEndpointKindFromPool(pool);
-      return kind ? [{ id: pool.id, kind }] : [];
+      if (!kind) return [];
+      const primary = (tokenRecords ?? []).find((record) => (
+        record.primary && record.poolId === pool.id
+      ));
+      const anyRecord = primary ?? (tokenRecords ?? []).find((record) => record.poolId === pool.id);
+      const token = anyRecord?.token?.trim() ?? '';
+      return [{
+        id: pool.id,
+        kind,
+        name: primary?.name ?? '',
+        last4: token.slice(-4),
+        targetAgentId: pool.targetAgentId,
+      }];
     }),
-    [defaultPools],
+    [defaultPools, tokenRecords],
   );
   const createCards = useMemo(
     () => buildCreateTokenEndpointCards(createTargets),
@@ -252,7 +265,7 @@ export default function RoutesTokensPage() {
       return;
     }
     const typedName = createName.trim();
-    const kind = createCards.find((card) => card.poolId === createPoolId)?.kind
+    const kind = createCards.find((card) => card.pools.some((pool) => pool.id === createPoolId))?.kind
       ?? createTargets.find((row) => row.id === createPoolId)?.kind;
     const name = typedName || (kind
       ? defaultCreateTokenName({
@@ -489,6 +502,11 @@ export default function RoutesTokensPage() {
         />
       ) : (
         <PageSection first>
+          {!localGateway.running && listRows.some((row) => row.token?.trim()) ? (
+            <Notice className="mb-3" tone="warning">
+              {t('routes.tokens.gatewayOffNotice')}
+            </Notice>
+          ) : null}
           <TokenList
             rows={listRows}
             activeId={inspect.target}
@@ -503,9 +521,13 @@ export default function RoutesTokensPage() {
             )}
             needRoute={!localGateway.running && localGateway.hasEnrolledLogins}
             onCreateForEndpoint={(row) => {
-              const poolId = row.poolBacked
-                ? row.id
-                : (createCards.find((card) => card.kind === row.kind)?.poolId ?? '');
+              const card = createCards.find((item) => item.kind === row.kind);
+              const pools = card?.pools ?? [];
+              const poolId = pools.length === 1
+                ? pools[0]!.id
+                : (pools.some((pool) => pool.id === row.id)
+                  ? row.id
+                  : (card?.poolId ?? ''));
               if (!poolId) {
                 toast({
                   title: !localGateway.running && localGateway.hasEnrolledLogins

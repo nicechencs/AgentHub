@@ -7,7 +7,7 @@ import {
 import { cn } from '@/lib/utils';
 import { agentCssVar } from '@/styles/tokens';
 import { localEndpointKindLabel } from '@/pages/routes/shared/route-pool-view-model';
-import type { CreateTokenEndpointCard } from './tokens-model';
+import { createTokenPoolLabel, type CreateTokenEndpointCard } from './tokens-model';
 
 export function CreateTokenEndpointCards({
   cards,
@@ -32,8 +32,8 @@ export function CreateTokenEndpointCards({
     >
       {cards.map((card) => {
         const label = localEndpointKindLabel(card.kind, t);
-        const selectable = Boolean(card.poolId) && !disabled;
-        const selected = Boolean(card.poolId) && card.poolId === value;
+        const selectable = card.pools.length > 0 && !disabled;
+        const selected = card.pools.some((pool) => pool.id === value);
         const color = agentCssVar(localEndpointBrandAgentId(card.kind));
         return (
           <Card
@@ -46,14 +46,16 @@ export function CreateTokenEndpointCards({
             data-create-endpoint={card.kind}
             title={card.poolId ? undefined : unavailableReason}
             onClick={() => {
-              if (!selectable || !card.poolId) return;
-              onChange(card.poolId);
+              if (!selectable) return;
+              const keep = card.pools.find((pool) => pool.id === value);
+              onChange(keep?.id ?? card.pools[0]!.id);
             }}
             onKeyDown={(event) => {
-              if (!selectable || !card.poolId) return;
+              if (!selectable) return;
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
-                onChange(card.poolId);
+                const keep = card.pools.find((pool) => pool.id === value);
+                onChange(keep?.id ?? card.pools[0]!.id);
               }
             }}
             className={cn(
@@ -77,6 +79,38 @@ export function CreateTokenEndpointCards({
                 <AgentLogo key={agentId} agentId={agentId} size="sm" />
               ))}
             </div>
+            {card.kind === 'messages' ? (
+              <p className="text-meta text-secondary">{t('routes.tokens.messagesClaudeOnly')}</p>
+            ) : null}
+            {selected && card.pools.length > 1 ? (
+              <div
+                className="mt-1 flex flex-col gap-1"
+                role="radiogroup"
+                aria-label={t('routes.tokens.pickPool')}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <p className="text-meta text-muted">{t('routes.tokens.pickPool')}</p>
+                {card.pools.map((pool) => {
+                  const poolSelected = pool.id === value;
+                  return (
+                    <button
+                      key={pool.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={poolSelected}
+                      disabled={disabled}
+                      onClick={() => onChange(pool.id)}
+                      className={cn(
+                        'rounded-md border px-2 py-1 text-left text-sm',
+                        poolSelected ? 'border-accent bg-hover/40' : 'border-border',
+                      )}
+                    >
+                      {createTokenPoolLabel(pool)}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
           </Card>
         );
       })}

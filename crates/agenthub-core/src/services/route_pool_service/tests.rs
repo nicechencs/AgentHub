@@ -255,7 +255,14 @@ fn set_local_token_promotes_non_default_pool() {
         .create_legacy_pool(&profile, "ahb_legacy-before", false)
         .unwrap();
     assert!(!pool.is_default);
-    assert!(service.list_local_tokens().unwrap().is_empty());
+    let before = service.list_local_tokens().unwrap();
+    assert_eq!(before.len(), 1);
+    assert_eq!(before[0].pool_id, pool.id);
+    assert_eq!(
+        before[0].lifecycle,
+        crate::models::LocalTokenLifecycle::Inactive
+    );
+    assert_eq!(before[0].token, "ahb_legacy-before");
 
     let updated = service
         .set_local_token(&pool.id, "ahb_legacy-after")
@@ -267,6 +274,63 @@ fn set_local_token_promotes_non_default_pool() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].pool_id, pool.id);
     assert_eq!(listed[0].token, "ahb_legacy-after");
+    assert_eq!(
+        listed[0].lifecycle,
+        crate::models::LocalTokenLifecycle::Active
+    );
+}
+
+#[test]
+fn list_local_tokens_keeps_extras_for_inactive_and_orphaned_pools() {
+    let (_dir, db, service, profiles) = tmp();
+    let profile = bridge_profile("inactive-pool", "acc-inactive", AgentId::Kimi, true);
+    profiles.create(&profile).unwrap();
+    let inactive = service
+        .create_legacy_pool(&profile, "ahb_inactive-hub", false)
+        .unwrap();
+    assert!(!inactive.is_default);
+    let extra = crate::storage::LocalEntryKeyRepo::new(db.clone())
+        .insert(&crate::storage::LocalEntryKey {
+            id: "extra-inactive".into(),
+            pool_id: inactive.id.clone(),
+            name: "家里".into(),
+            token: "ahb_inactive-extra".into(),
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+
+    let listed = service.list_local_tokens().unwrap();
+    let extra_row = listed
+        .iter()
+        .find(|row| row.id == extra.id)
+        .expect("persisted extra must stay visible");
+    assert_eq!(
+        extra_row.lifecycle,
+        crate::models::LocalTokenLifecycle::Inactive
+    );
+    assert_eq!(extra_row.token, "ahb_inactive-extra");
+    assert!(listed.iter().any(|row| {
+        row.primary
+            && row.pool_id == inactive.id
+            && row.lifecycle == crate::models::LocalTokenLifecycle::Inactive
+    }));
+
+    db.with_conn(|conn| {
+        conn.execute("DELETE FROM route_pools WHERE id = ?1", [&inactive.id])
+            .map(|_| ())
+    })
+    .unwrap();
+    let after_delete = service.list_local_tokens().unwrap();
+    let orphan = after_delete
+        .iter()
+        .find(|row| row.id == extra.id)
+        .expect("orphaned extra stays listed");
+    assert_eq!(
+        orphan.lifecycle,
+        crate::models::LocalTokenLifecycle::Orphaned
+    );
+    assert_eq!(orphan.token, extra.token);
 }
 
 #[test]
