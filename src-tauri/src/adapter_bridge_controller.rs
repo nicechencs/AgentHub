@@ -2046,8 +2046,8 @@ pub(crate) async fn sync_extra_local_bearers(
 ) -> Result<(), String> {
     let rows = with_hub_blocking(hub, move |hub| {
         hub.route_pools()
-            .list_extra_local_bearers()
-            .map_err(|error| map_err_string("list_extra_local_bearers", error))
+            .list_accepted_local_bearers()
+            .map_err(|error| map_err_string("list_accepted_local_bearers", error))
     })
     .await?;
     host.set_extra_local_bearers(rows)

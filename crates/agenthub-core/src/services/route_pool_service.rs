@@ -9,7 +9,9 @@ use chrono::Utc;
 use rusqlite::{params, Transaction, TransactionBehavior};
 use uuid::Uuid;
 
-use super::adapter_projection::{classify_account_live, generated_provider_is_adapter_owned};
+use super::adapter_projection::{
+    classify_account_live, generated_provider_is_adapter_owned, projected_local_bearer,
+};
 use super::AdapterRouteService;
 use crate::bridge::BridgeRuntimeHost;
 use crate::error::{AppError, Result};
@@ -229,7 +231,8 @@ impl RoutePoolService {
         Ok(records)
     }
 
-    /// Extra bearers the live gateway should accept besides each pool hub_token.
+    /// Named extras only. The live edge's primary token is supposed to be
+    /// `pool.hub_token`; see [`Self::list_accepted_local_bearers`] when it is not.
     pub fn list_extra_local_bearers(&self) -> Result<Vec<(String, String)>> {
         Ok(self
             .entry_keys
@@ -238,6 +241,85 @@ impl RoutePoolService {
             .filter(|row| !row.token.trim().is_empty())
             .map(|row| (row.token, row.pool_id))
             .collect())
+    }
+
+    /// Every loopback bearer the running gateway must accept.
+    ///
+    /// Restore may start an edge with the projected `ahb_` key written into the
+    /// Agent, then skip rebuilding that listener. The Tokens-page hub token is
+    /// a different secret. Register both, plus named extras, so neither 401s.
+    pub fn list_accepted_local_bearers(&self) -> Result<Vec<(String, String)>> {
+        let mut rows = self.list_extra_local_bearers()?;
+        if !self.enabled()? {
+            return Ok(rows);
+        }
+        let pools = self.pools.list_pools(None, None)?;
+        for pool in &pools {
+            if !pool.is_default && !pool.unified_gateway_enrolled {
+                continue;
+            }
+            push_accepted_bearer(&mut rows, &pool.hub_token, &pool.id);
+        }
+        self.append_projected_local_bearers(&mut rows, &pools)?;
+        Ok(rows)
+    }
+
+    fn append_projected_local_bearers(
+        &self,
+        rows: &mut Vec<(String, String)>,
+        pools: &[RoutePool],
+    ) -> Result<()> {
+        let pool_ids: HashSet<&str> = pools.iter().map(|pool| pool.id.as_str()).collect();
+        let profiles = self
+            .profiles
+            .list_filtered(&AdapterProfileFilter::default())?;
+        let pool_by_provider: HashMap<&str, &str> = profiles
+            .iter()
+            .filter_map(|profile| {
+                let provider_id = profile.generated_provider_id.as_deref()?;
+                pool_ids
+                    .contains(profile.id.as_str())
+                    .then_some((provider_id, profile.id.as_str()))
+            })
+            .collect();
+        for provider in self.providers.list(None)? {
+            if !generated_provider_is_adapter_owned(&provider) {
+                continue;
+            }
+            let Some(token) = projected_local_bearer(&provider.settings_config) else {
+                continue;
+            };
+            let pool_id = provider
+                .meta
+                .get("adapterProfileId")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|id| !id.is_empty() && pool_ids.contains(*id))
+                .map(str::to_owned)
+                .or_else(|| {
+                    pool_by_provider
+                        .get(provider.id.as_str())
+                        .map(|id| (*id).to_owned())
+                });
+            let Some(pool_id) = pool_id else {
+                continue;
+            };
+            push_accepted_bearer(rows, &token, &pool_id);
+        }
+        Ok(())
+    }
+
+    fn projected_bearer_for_profile(&self, profile: &AdapterProfile) -> Result<Option<String>> {
+        let Some(provider_id) = profile.generated_provider_id.as_deref() else {
+            return Ok(None);
+        };
+        let Some(provider) = self.providers.get_by_id(provider_id)? else {
+            return Ok(None);
+        };
+        if !generated_provider_is_adapter_owned(&provider) {
+            return Ok(None);
+        }
+        Ok(projected_local_bearer(&provider.settings_config))
     }
 
     /// Replace one pool loopback bearer, or rotate a named extra key.
@@ -1503,13 +1585,17 @@ impl RoutePoolService {
             self.ensure_lead_member(&existing.id, profile)?;
             return Ok(existing);
         }
+        let hub_token = match self.projected_bearer_for_profile(profile)? {
+            Some(token) if !token.trim().is_empty() => token,
+            _ => generate_hub_token()?,
+        };
         let now = now();
         let pool = self.pools.create_pool(&RoutePool {
             id: profile.id.clone(),
             target_agent_id: profile.target_agent_id,
             downstream_surface: surface,
             downstream_dialect: RouteDownstreamDialect::for_agent(profile.target_agent_id),
-            hub_token: generate_hub_token()?,
+            hub_token,
             schedule_policy: schedule_policy.unwrap_or_default(),
             is_default: false,
             unified_gateway_enrolled: false,
@@ -2166,6 +2252,21 @@ const HIDDEN_PRIMARY_ENTRY_NAME: &str = "\u{2060}";
 
 fn now() -> String {
     Utc::now().to_rfc3339()
+}
+
+fn push_accepted_bearer(rows: &mut Vec<(String, String)>, token: &str, pool_id: &str) {
+    let token = token.trim();
+    let pool_id = pool_id.trim();
+    if token.is_empty() || pool_id.is_empty() {
+        return;
+    }
+    if rows
+        .iter()
+        .any(|(existing, id)| existing == token && id == pool_id)
+    {
+        return;
+    }
+    rows.push((token.to_owned(), pool_id.to_owned()));
 }
 
 fn to_extra_record(row: LocalEntryKey) -> LocalTokenRecord {

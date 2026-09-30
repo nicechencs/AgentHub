@@ -107,12 +107,22 @@ impl AdapterBridgeService {
             profile = self.profiles.update(&profile)?;
         }
 
+        // Prefer the Tokens-page hub token when minting a new local bearer so
+        // a later enroll does not leave hub≠entry. Existing projected keys
+        // stay as-is; the gateway also accepts the hub token as an extra.
+        let reuse_hub = self
+            .route_pools
+            .get(&profile.id)
+            .ok()
+            .flatten()
+            .map(|pool| pool.hub_token.trim().to_owned())
+            .filter(|token| !token.is_empty());
         let local_bearer = if leftover_incomplete {
-            generate_local_bearer()?
+            reuse_hub.map_or_else(generate_local_bearer, Ok)?
         } else {
             match existing_provider.as_ref() {
                 Some(provider) => local_bearer_from_provider(provider)?,
-                None => generate_local_bearer()?,
+                None => reuse_hub.map_or_else(generate_local_bearer, Ok)?,
             }
         };
         let material = self.attach_route_index(

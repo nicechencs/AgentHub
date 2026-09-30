@@ -157,3 +157,42 @@ async fn http_health_and_models_are_logged_without_query_or_secrets() {
     assert!(!json.contains("authorization"));
     host.shutdown().await.expect("shutdown");
 }
+
+#[tokio::test]
+async fn extra_hub_token_authenticates_when_edge_primary_is_projected_bearer() {
+    let host = BridgeRuntimeHost::new();
+    let started = host
+        .start(start_spec("codex-dsh-pool", "ahb_projected_uYvc"))
+        .await
+        .expect("start");
+    host.set_extra_local_bearers(vec![("ahb_hub_F9FE".into(), "codex-dsh-pool".into())])
+        .expect("register hub token");
+    let client = reqwest::Client::builder().build().expect("client");
+    let models = format!("http://127.0.0.1:{}/v1/models", started.port);
+
+    let hub = client
+        .get(&models)
+        .header("authorization", "Bearer ahb_hub_F9FE")
+        .send()
+        .await
+        .expect("hub key");
+    assert_eq!(hub.status(), reqwest::StatusCode::OK);
+
+    let projected = client
+        .get(&models)
+        .header("authorization", "Bearer ahb_projected_uYvc")
+        .send()
+        .await
+        .expect("projected key");
+    assert_eq!(projected.status(), reqwest::StatusCode::OK);
+
+    let unknown = client
+        .get(&models)
+        .header("authorization", "Bearer ahb_unknown_QByg")
+        .send()
+        .await
+        .expect("unknown key");
+    assert_eq!(unknown.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    host.shutdown().await.expect("shutdown");
+}
