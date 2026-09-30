@@ -9,6 +9,7 @@ import {
   defaultCreateTokenName,
   firstCreateTokenPoolId,
   generateLocalToken,
+  resolveCreateTokenPoolId,
   localTokenDeleteGate,
   localTokenEditKeyGate,
   localTokenEmptyCreateGate,
@@ -620,12 +621,16 @@ describe('tokens-model', () => {
       { id: 'pool-kimi', kind: 'chat_completions', name: 'Kimi', last4: 'QByg', targetAgentId: 'kimi' },
     ]);
     const chat = cards.find((card) => card.kind === 'chat_completions');
-    expect(chat?.poolId).toBe('pool-dsh');
+    expect(chat?.poolId).toBeNull();
     expect(chat?.pools).toEqual([
       { id: 'pool-dsh', name: 'DSH', last4: 'z7cc', targetAgentId: 'dsh' },
       { id: 'pool-kimi', name: 'Kimi', last4: 'QByg', targetAgentId: 'kimi' },
     ]);
     expect(createTokenPoolLabel(chat!.pools[1]!)).toBe('Kimi · …QByg');
+    expect(firstCreateTokenPoolId(cards)).toBe('');
+    expect(resolveCreateTokenPoolId(chat)).toBe('');
+    expect(resolveCreateTokenPoolId(chat, 'pool-kimi')).toBe('pool-kimi');
+    expect(resolveCreateTokenPoolId(chat, 'missing')).toBe('');
   });
 
   it('lists persisted extras when the pool is not a visible default row', () => {

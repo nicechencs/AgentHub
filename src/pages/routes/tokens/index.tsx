@@ -31,7 +31,7 @@ import { deleteProvider, listProviders } from '@/lib/api/provider';
 import type { ConnectApiKeyDraft } from '@/lib/connect-flow/connect-intent';
 import type { AgentKey } from '@/lib/types';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import { localEndpointKindFromPool, localEndpointPath } from '@/lib/route-endpoints';
+import { localEndpointKindFromPool, localEndpointPath, type LocalEndpointKind } from '@/lib/route-endpoints';
 import { ROUTES_POOL_PATH } from '@/lib/routes-path';
 import {
   createLocalToken,
@@ -59,6 +59,7 @@ import {
   defaultCreateTokenName,
   firstCreateTokenPoolId,
   generateLocalToken,
+  resolveCreateTokenPoolId,
   localTokenDeleteGate,
   localTokenEditKeyGate,
   maskLocalToken,
@@ -104,6 +105,7 @@ export default function RoutesTokensPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState('');
   const [createPoolId, setCreatePoolId] = useState('');
+  const [createKind, setCreateKind] = useState<LocalEndpointKind | ''>('');
   const [createBusy, setCreateBusy] = useState(false);
   const [deleteRow, setDeleteRow] = useState<LocalTokenRow | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -253,7 +255,9 @@ export default function RoutesTokensPage() {
       toast({ title: t('routes.tokens.createNeedPool'), variant: 'danger' });
       return;
     }
-    setCreatePoolId(firstCreateTokenPoolId(createCards));
+    const poolId = firstCreateTokenPoolId(createCards);
+    setCreatePoolId(poolId);
+    setCreateKind(createCards.find((card) => card.poolId === poolId)?.kind ?? '');
     setCreateName('');
     setCreateOpen(true);
   };
@@ -261,7 +265,13 @@ export default function RoutesTokensPage() {
   const saveCreate = async () => {
     if (createBusy) return;
     if (!createPoolId) {
-      toast({ title: t('routes.tokens.createNeedPool'), variant: 'danger' });
+      const card = createCards.find((item) => item.kind === createKind);
+      toast({
+        title: card && card.pools.length > 1
+          ? t('routes.tokens.pickPool')
+          : t('routes.tokens.createNeedPool'),
+        variant: 'danger',
+      });
       return;
     }
     const typedName = createName.trim();
@@ -516,19 +526,14 @@ export default function RoutesTokensPage() {
             onImport={startImport}
             createPoolIdByKind={Object.fromEntries(
               createCards
-                .filter((card) => card.poolId)
-                .map((card) => [card.kind, card.poolId as string]),
+                .filter((card) => card.pools.length > 0)
+                .map((card) => [card.kind, card.poolId ?? card.pools[0]!.id]),
             )}
             needRoute={!localGateway.running && localGateway.hasEnrolledLogins}
             onCreateForEndpoint={(row) => {
               const card = createCards.find((item) => item.kind === row.kind);
-              const pools = card?.pools ?? [];
-              const poolId = pools.length === 1
-                ? pools[0]!.id
-                : (pools.some((pool) => pool.id === row.id)
-                  ? row.id
-                  : (card?.poolId ?? ''));
-              if (!poolId) {
+              const poolId = resolveCreateTokenPoolId(card, row.id);
+              if (!card || card.pools.length === 0) {
                 toast({
                   title: !localGateway.running && localGateway.hasEnrolledLogins
                     ? t('routes.board.entryNeedRoute')
@@ -537,6 +542,7 @@ export default function RoutesTokensPage() {
                 });
                 return;
               }
+              setCreateKind(row.kind);
               setCreatePoolId(poolId);
               setCreateName('');
               setCreateOpen(true);
@@ -629,7 +635,9 @@ export default function RoutesTokensPage() {
             <CreateTokenEndpointCards
               cards={createCards}
               value={createPoolId}
+              selectedKind={createKind}
               onChange={setCreatePoolId}
+              onSelectKind={setCreateKind}
               disabled={createBusy}
               unavailableReason={t('routes.tokens.createNeedPool')}
             />
@@ -648,7 +656,7 @@ export default function RoutesTokensPage() {
             <Button variant="secondary" onClick={() => setCreateOpen(false)} disabled={createBusy}>
               {t('common.cancel')}
             </Button>
-            <Button onClick={() => { void saveCreate(); }} disabled={createBusy}>
+            <Button onClick={() => { void saveCreate(); }} disabled={createBusy || !createPoolId}>
               {t('routes.tokens.create')}
             </Button>
           </DialogFooter>

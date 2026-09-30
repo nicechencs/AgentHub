@@ -161,7 +161,10 @@ export type CreateTokenPoolOption = {
 export type CreateTokenEndpointCard = {
   kind: LocalEndpointKind;
   path: string;
-  /** First eligible pool; null when this endpoint cannot receive a new key. */
+  /**
+   * Unambiguous pool for this kind: set only when exactly one pool is eligible.
+   * Multi-pool kinds stay null so 新建 cannot silently bind the first pool.
+   */
   poolId: string | null;
   /** Real eligible pools for this kind — not only currently visible rows. */
   pools: CreateTokenPoolOption[];
@@ -207,17 +210,31 @@ export function buildCreateTokenEndpointCards(
     return {
       kind: endpoint.kind,
       path: endpoint.path,
-      poolId: pools[0]?.id ?? null,
+      poolId: pools.length === 1 ? pools[0]!.id : null,
       pools,
       agentIds: supportedAgentsForEndpointKind(endpoint.kind),
     };
   });
 }
 
+/** First kind that has exactly one eligible pool. Multi-pool kinds are skipped. */
 export function firstCreateTokenPoolId(
   cards: readonly CreateTokenEndpointCard[],
 ): string {
   return cards.find((card) => card.poolId)?.poolId ?? '';
+}
+
+/** Bind a pool only when the choice is explicit or unambiguous. */
+export function resolveCreateTokenPoolId(
+  card: CreateTokenEndpointCard | undefined,
+  preferredPoolId?: string,
+): string {
+  const pools = card?.pools ?? [];
+  if (pools.length === 0) return '';
+  if (pools.length === 1) return pools[0]!.id;
+  const preferred = preferredPoolId?.trim() ?? '';
+  if (preferred && pools.some((pool) => pool.id === preferred)) return preferred;
+  return '';
 }
 
 /** Name used when 新建 leaves the field empty. Numbered from 2 because the type already has a default key. */
