@@ -268,6 +268,53 @@ fn demoted_manual_dsh_pool_keeps_hub_and_extra_in_accepted_bearers() {
         accepted.contains(&("ahb_hub_F9FE".into(), adapter.id.clone())),
         "{accepted:?}"
     );
+
+    let leftover_profile = bridge_profile("leftover-claude", "acc-claude", AgentId::Claude, true);
+    profiles.create(&leftover_profile).unwrap();
+    let leftover = service
+        .create_legacy_pool(&leftover_profile, "ahb_hub_claude", false)
+        .unwrap();
+    let listeners = service.list_gateway_listener_pools().unwrap();
+    assert!(
+        listeners.iter().all(|pool| pool.id != leftover.id),
+        "hub-only leftover on another Agent/surface must not start: {listeners:?}"
+    );
+    let accepted = service.list_accepted_local_bearers().unwrap();
+    assert!(
+        !accepted.iter().any(|(token, _)| token == "ahb_hub_claude"),
+        "{accepted:?}"
+    );
+}
+
+#[test]
+fn hub_only_demoted_sibling_still_gets_a_listener() {
+    let (_dir, _db, service, profiles) = tmp();
+    let manual_profile = bridge_profile("manual-dsh-pool", "acc-manual-ds", AgentId::Dsh, true);
+    profiles.create(&manual_profile).unwrap();
+    let manual = service
+        .create_legacy_pool(&manual_profile, "ahb_hub_z7cc", true)
+        .unwrap();
+    let adapter_profile = bridge_profile("codex-dsh-pool", "acc-codex-dsh", AgentId::Dsh, true);
+    profiles.create(&adapter_profile).unwrap();
+    let adapter = service
+        .create_legacy_pool(&adapter_profile, "ahb_hub_F9FE", false)
+        .unwrap();
+    service
+        .enroll_unified_gateway_as_default(&adapter.id, 44227)
+        .unwrap();
+    assert!(service.list_extra_local_bearers().unwrap().is_empty());
+    assert!(!service.get(&manual.id).unwrap().unwrap().is_default);
+
+    let listeners = service.list_gateway_listener_pools().unwrap();
+    assert!(
+        listeners.iter().any(|pool| pool.id == manual.id),
+        "{listeners:?}"
+    );
+    let accepted = service.list_accepted_local_bearers().unwrap();
+    assert!(
+        accepted.contains(&("ahb_hub_z7cc".into(), manual.id.clone())),
+        "{accepted:?}"
+    );
 }
 
 fn strip_members(service: &RoutePoolService, pool_id: &str) {

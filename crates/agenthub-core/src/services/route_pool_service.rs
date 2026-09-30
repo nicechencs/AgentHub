@@ -181,11 +181,11 @@ impl RoutePoolService {
             return Ok(Vec::new());
         }
         let extra_ids = extra_pool_ids(&self.list_extra_local_bearers()?);
-        let mut pools: Vec<RoutePool> = self
-            .pools
-            .list_pools(None, None)?
+        let pools = self.pools.list_pools(None, None)?;
+        let default_surfaces = default_pool_surfaces(&pools);
+        let mut pools: Vec<RoutePool> = pools
             .into_iter()
-            .filter(|pool| pool_needs_listener(pool, &extra_ids))
+            .filter(|pool| pool_needs_listener(pool, &extra_ids, &default_surfaces))
             .collect();
         pools.sort_by(|left, right| {
             right
@@ -290,8 +290,9 @@ impl RoutePoolService {
         }
         let extra_ids = extra_pool_ids(&rows);
         let pools = self.pools.list_pools(None, None)?;
+        let default_surfaces = default_pool_surfaces(&pools);
         for pool in &pools {
-            if !pool_needs_listener(pool, &extra_ids) {
+            if !pool_needs_listener(pool, &extra_ids, &default_surfaces) {
                 continue;
             }
             push_accepted_bearer(&mut rows, &pool.hub_token, &pool.id);
@@ -2294,11 +2295,25 @@ fn extra_pool_ids(extras: &[(String, String)]) -> HashSet<String> {
     extras.iter().map(|(_, pool_id)| pool_id.clone()).collect()
 }
 
-fn pool_needs_listener(pool: &RoutePool, extra_ids: &HashSet<String>) -> bool {
+fn default_pool_surfaces(pools: &[RoutePool]) -> HashSet<(AgentId, RouteDownstreamSurface)> {
+    pools
+        .iter()
+        .filter(|pool| pool.is_default)
+        .map(|pool| (pool.target_agent_id, pool.downstream_surface))
+        .collect()
+}
+
+fn pool_needs_listener(
+    pool: &RoutePool,
+    extra_ids: &HashSet<String>,
+    default_surfaces: &HashSet<(AgentId, RouteDownstreamSurface)>,
+) -> bool {
+    // Every persisted pool has a hub token (`validate_pool`). Do not treat
+    // "has hub" as a start reason — that would listen on every leftover row.
     pool.is_default
         || pool.unified_gateway_enrolled
-        || !pool.hub_token.trim().is_empty()
         || extra_ids.contains(&pool.id)
+        || default_surfaces.contains(&(pool.target_agent_id, pool.downstream_surface))
 }
 
 fn push_accepted_bearer(rows: &mut Vec<(String, String)>, token: &str, pool_id: &str) {
