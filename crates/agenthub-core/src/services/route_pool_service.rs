@@ -170,6 +170,37 @@ impl RoutePoolService {
             .collect())
     }
 
+    /// Pools that must have a live loopback edge so Tokens-page keys authenticate.
+    ///
+    /// Enrolling a later Codex→DSH / Kimi / Grok profile as the default for the
+    /// same Agent/surface clears `is_default` on the earlier manual pool. The
+    /// Tokens page still lists that pool's hub and named extras. Start those
+    /// edges too: extras resolve by pool id, and a missing runtime is 401.
+    pub fn list_gateway_listener_pools(&self) -> Result<Vec<RoutePool>> {
+        if !self.enabled()? {
+            return Ok(Vec::new());
+        }
+        let extra_ids = extra_pool_ids(&self.list_extra_local_bearers()?);
+        let pools = self.pools.list_pools(None, None)?;
+        let default_surfaces = default_pool_surfaces(&pools);
+        let mut pools: Vec<RoutePool> = pools
+            .into_iter()
+            .filter(|pool| pool_needs_listener(pool, &extra_ids, &default_surfaces))
+            .collect();
+        pools.sort_by(|left, right| {
+            right
+                .is_default
+                .cmp(&left.is_default)
+                .then_with(|| {
+                    right
+                        .unified_gateway_enrolled
+                        .cmp(&left.unified_gateway_enrolled)
+                })
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        Ok(pools)
+    }
+
     /// Loopback bearers for the tokens page. Empty when the pool flag is off.
     ///
     /// Persisted extras for non-default or missing pools stay visible with an
@@ -248,14 +279,20 @@ impl RoutePoolService {
     /// Restore may start an edge with the projected `ahb_` key written into the
     /// Agent, then skip rebuilding that listener. The Tokens-page hub token is
     /// a different secret. Register both, plus named extras, so neither 401s.
+    ///
+    /// Hub tokens of demoted manual pools (same Agent/surface, `is_default`
+    /// cleared by a later enroll) are included too. Skipping them left
+    /// `…z7cc` / `…q6gg` in the DB while the live set only had Codex hubs.
     pub fn list_accepted_local_bearers(&self) -> Result<Vec<(String, String)>> {
         let mut rows = self.list_extra_local_bearers()?;
         if !self.enabled()? {
             return Ok(rows);
         }
+        let extra_ids = extra_pool_ids(&rows);
         let pools = self.pools.list_pools(None, None)?;
+        let default_surfaces = default_pool_surfaces(&pools);
         for pool in &pools {
-            if !pool.is_default && !pool.unified_gateway_enrolled {
+            if !pool_needs_listener(pool, &extra_ids, &default_surfaces) {
                 continue;
             }
             push_accepted_bearer(&mut rows, &pool.hub_token, &pool.id);
@@ -2252,6 +2289,31 @@ const HIDDEN_PRIMARY_ENTRY_NAME: &str = "\u{2060}";
 
 fn now() -> String {
     Utc::now().to_rfc3339()
+}
+
+fn extra_pool_ids(extras: &[(String, String)]) -> HashSet<String> {
+    extras.iter().map(|(_, pool_id)| pool_id.clone()).collect()
+}
+
+fn default_pool_surfaces(pools: &[RoutePool]) -> HashSet<(AgentId, RouteDownstreamSurface)> {
+    pools
+        .iter()
+        .filter(|pool| pool.is_default)
+        .map(|pool| (pool.target_agent_id, pool.downstream_surface))
+        .collect()
+}
+
+fn pool_needs_listener(
+    pool: &RoutePool,
+    extra_ids: &HashSet<String>,
+    default_surfaces: &HashSet<(AgentId, RouteDownstreamSurface)>,
+) -> bool {
+    // Every persisted pool has a hub token (`validate_pool`). Do not treat
+    // "has hub" as a start reason — that would listen on every leftover row.
+    pool.is_default
+        || pool.unified_gateway_enrolled
+        || extra_ids.contains(&pool.id)
+        || default_surfaces.contains(&(pool.target_agent_id, pool.downstream_surface))
 }
 
 fn push_accepted_bearer(rows: &mut Vec<(String, String)>, token: &str, pool_id: &str) {

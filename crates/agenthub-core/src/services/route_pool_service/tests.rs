@@ -210,6 +210,186 @@ fn accepted_bearers_include_projected_local_bearer_for_same_pool() {
 }
 
 #[test]
+fn demoted_manual_dsh_pool_keeps_hub_and_extra_in_accepted_bearers() {
+    let (_dir, db, service, profiles) = tmp();
+    let manual_profile = bridge_profile("manual-dsh-pool", "acc-manual-ds", AgentId::Dsh, true);
+    profiles.create(&manual_profile).unwrap();
+    let manual = service
+        .create_legacy_pool(&manual_profile, "ahb_hub_z7cc", true)
+        .unwrap();
+    crate::storage::LocalEntryKeyRepo::new(db)
+        .insert(&crate::storage::LocalEntryKey {
+            id: "entry-q6gg".into(),
+            pool_id: manual.id.clone(),
+            name: "kimi-chat".into(),
+            token: "ahb_entry_q6gg".into(),
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+
+    let adapter_profile = bridge_profile("codex-dsh-pool", "acc-codex-dsh", AgentId::Dsh, true);
+    profiles.create(&adapter_profile).unwrap();
+    let adapter = service
+        .create_legacy_pool(&adapter_profile, "ahb_hub_F9FE", false)
+        .unwrap();
+    service
+        .enroll_unified_gateway_as_default(&adapter.id, 44227)
+        .unwrap();
+
+    let saved_manual = service.get(&manual.id).unwrap().expect("manual");
+    assert!(!saved_manual.is_default);
+    assert!(!saved_manual.unified_gateway_enrolled);
+    let defaults = service.list_default_pools().unwrap();
+    assert!(defaults.iter().all(|pool| pool.id != manual.id));
+    assert!(defaults.iter().any(|pool| pool.id == adapter.id));
+
+    let listeners = service.list_gateway_listener_pools().unwrap();
+    assert!(
+        listeners.iter().any(|pool| pool.id == manual.id),
+        "{listeners:?}"
+    );
+    assert!(listeners.iter().any(|pool| pool.id == adapter.id));
+    assert!(
+        listeners[0].is_default,
+        "defaults start first so they own the primary port: {listeners:?}"
+    );
+
+    let accepted = service.list_accepted_local_bearers().unwrap();
+    assert!(
+        accepted.contains(&("ahb_hub_z7cc".into(), manual.id.clone())),
+        "{accepted:?}"
+    );
+    assert!(
+        accepted.contains(&("ahb_entry_q6gg".into(), manual.id.clone())),
+        "{accepted:?}"
+    );
+    assert!(
+        accepted.contains(&("ahb_hub_F9FE".into(), adapter.id.clone())),
+        "{accepted:?}"
+    );
+
+    let leftover_profile = bridge_profile("leftover-claude", "acc-claude", AgentId::Claude, true);
+    profiles.create(&leftover_profile).unwrap();
+    let leftover = service
+        .create_legacy_pool(&leftover_profile, "ahb_hub_claude", false)
+        .unwrap();
+    let listeners = service.list_gateway_listener_pools().unwrap();
+    assert!(
+        listeners.iter().all(|pool| pool.id != leftover.id),
+        "hub-only leftover on another Agent/surface must not start: {listeners:?}"
+    );
+    let accepted = service.list_accepted_local_bearers().unwrap();
+    assert!(
+        !accepted.iter().any(|(token, _)| token == "ahb_hub_claude"),
+        "{accepted:?}"
+    );
+}
+
+#[test]
+fn hub_only_demoted_sibling_still_gets_a_listener() {
+    let (_dir, _db, service, profiles) = tmp();
+    let manual_profile = bridge_profile("manual-dsh-pool", "acc-manual-ds", AgentId::Dsh, true);
+    profiles.create(&manual_profile).unwrap();
+    let manual = service
+        .create_legacy_pool(&manual_profile, "ahb_hub_z7cc", true)
+        .unwrap();
+    let adapter_profile = bridge_profile("codex-dsh-pool", "acc-codex-dsh", AgentId::Dsh, true);
+    profiles.create(&adapter_profile).unwrap();
+    let adapter = service
+        .create_legacy_pool(&adapter_profile, "ahb_hub_F9FE", false)
+        .unwrap();
+    service
+        .enroll_unified_gateway_as_default(&adapter.id, 44227)
+        .unwrap();
+    assert!(service.list_extra_local_bearers().unwrap().is_empty());
+    assert!(!service.get(&manual.id).unwrap().unwrap().is_default);
+
+    let listeners = service.list_gateway_listener_pools().unwrap();
+    assert!(
+        listeners.iter().any(|pool| pool.id == manual.id),
+        "{listeners:?}"
+    );
+    let accepted = service.list_accepted_local_bearers().unwrap();
+    assert!(
+        accepted.contains(&("ahb_hub_z7cc".into(), manual.id.clone())),
+        "{accepted:?}"
+    );
+}
+
+fn strip_members(service: &RoutePoolService, pool_id: &str) {
+    for member in service.list_members(pool_id).unwrap() {
+        service.remove_member(&member.id).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn demoted_manual_dsh_tokens_authenticate_on_shared_listener() {
+    let (_dir, db, service, profiles) = tmp();
+    let manual_profile = bridge_profile("manual-dsh-pool", "acc-manual-ds", AgentId::Dsh, true);
+    profiles.create(&manual_profile).unwrap();
+    let manual = service
+        .create_legacy_pool(&manual_profile, "ahb_hub_z7cc", true)
+        .unwrap();
+    crate::storage::LocalEntryKeyRepo::new(db.clone())
+        .insert(&crate::storage::LocalEntryKey {
+            id: "entry-q6gg".into(),
+            pool_id: manual.id.clone(),
+            name: "kimi-chat".into(),
+            token: "ahb_entry_q6gg".into(),
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    strip_members(&service, &manual.id);
+
+    let adapter_profile = bridge_profile("codex-dsh-pool", "acc-codex-dsh", AgentId::Dsh, true);
+    profiles.create(&adapter_profile).unwrap();
+    let adapter = service
+        .create_legacy_pool(&adapter_profile, "ahb_hub_F9FE", false)
+        .unwrap();
+    strip_members(&service, &adapter.id);
+    let bind = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let enroll_port = bind.local_addr().unwrap().port();
+    drop(bind);
+    service
+        .enroll_unified_gateway_as_default(&adapter.id, enroll_port)
+        .unwrap();
+    assert!(!service.get(&manual.id).unwrap().unwrap().is_default);
+
+    let bridge = crate::services::AdapterBridgeService::new(db);
+    let host = crate::bridge::BridgeRuntimeHost::new();
+    let mut port = None;
+    for pool in service.list_gateway_listener_pools().unwrap() {
+        let started = host
+            .start(bridge.pool_listener_spec(&pool, (false, false)))
+            .await
+            .unwrap_or_else(|error| panic!("start {}: {error}", pool.id));
+        port = Some(started.port);
+    }
+    host.set_extra_local_bearers(service.list_accepted_local_bearers().unwrap())
+        .unwrap();
+
+    let client = reqwest::Client::builder().build().unwrap();
+    let models = format!("http://127.0.0.1:{}/v1/models", port.expect("port"));
+    for token in ["ahb_hub_z7cc", "ahb_entry_q6gg", "ahb_hub_F9FE"] {
+        let response = client
+            .get(&models)
+            .header("authorization", format!("Bearer {token}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::OK,
+            "{token} must authenticate on the shared listener"
+        );
+    }
+
+    host.shutdown().await.unwrap();
+}
+
+#[test]
 fn project_one_reuses_generated_provider_bearer_as_hub_token() {
     let (_dir, db, service, profiles) = tmp();
     let mut profile = bridge_profile("codex-kimi-pool", "acc-kimi", AgentId::Codex, true);

@@ -196,3 +196,66 @@ async fn extra_hub_token_authenticates_when_edge_primary_is_projected_bearer() {
 
     host.shutdown().await.expect("shutdown");
 }
+
+#[tokio::test]
+async fn extra_for_missing_pool_runtime_is_401_until_that_edge_starts() {
+    let host = BridgeRuntimeHost::new();
+    let started = host
+        .start(start_spec("codex-dsh-pool", "ahb_projected_uYvc"))
+        .await
+        .expect("start default");
+    host.set_extra_local_bearers(vec![
+        ("ahb_hub_F9FE".into(), "codex-dsh-pool".into()),
+        ("ahb_hub_z7cc".into(), "manual-dsh-pool".into()),
+        ("ahb_entry_q6gg".into(), "manual-dsh-pool".into()),
+    ])
+    .expect("extras");
+    let client = reqwest::Client::builder().build().expect("client");
+    let models = format!("http://127.0.0.1:{}/v1/models", started.port);
+
+    let missing_hub = client
+        .get(&models)
+        .header("authorization", "Bearer ahb_hub_z7cc")
+        .send()
+        .await
+        .expect("z7cc before start");
+    assert_eq!(missing_hub.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    let missing_extra = client
+        .get(&models)
+        .header("authorization", "Bearer ahb_entry_q6gg")
+        .send()
+        .await
+        .expect("q6gg before start");
+    assert_eq!(missing_extra.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    host.start(start_spec("manual-dsh-pool", "ahb_hub_z7cc"))
+        .await
+        .expect("start demoted");
+
+    let hub = client
+        .get(&models)
+        .header("authorization", "Bearer ahb_hub_z7cc")
+        .send()
+        .await
+        .expect("z7cc after start");
+    assert_eq!(hub.status(), reqwest::StatusCode::OK);
+
+    let extra = client
+        .get(&models)
+        .header("authorization", "Bearer ahb_entry_q6gg")
+        .send()
+        .await
+        .expect("q6gg after start");
+    assert_eq!(extra.status(), reqwest::StatusCode::OK);
+
+    let control = client
+        .get(&models)
+        .header("authorization", "Bearer ahb_hub_F9FE")
+        .send()
+        .await
+        .expect("F9FE control");
+    assert_eq!(control.status(), reqwest::StatusCode::OK);
+
+    host.shutdown().await.expect("shutdown");
+}
