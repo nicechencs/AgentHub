@@ -83,14 +83,13 @@ jobs:
       - name: Frontend tests (mock backend + contracts)
         run: pnpm test
 
-      - name: Core Rust tests (adapter contract + services)
-        run: cargo test -p agenthub-core --locked
-
-      - name: CLI Rust tests
-        run: cargo test -p agenthub-cli --locked
-
-      - name: GUI Rust tests
-        run: cargo test -p agenthub-gui --locked
+      - name: Rust tests (core, CLI, GUI in parallel)
+        shell: bash
+        run: |
+          bash scripts/cargo-ci.sh parallel \
+            'cargo test -p agenthub-core --locked' \
+            'cargo test -p agenthub-cli --locked' \
+            'cargo test -p agenthub-gui --locked'
 
   check-windows:
     if: github.event_name == 'pull_request'
@@ -126,11 +125,12 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Cargo check core
-        run: cargo check -p agenthub-core --locked
-
-      - name: Cargo check GUI
-        run: cargo check -p agenthub-gui --locked
+      - name: Cargo check core and GUI in parallel
+        shell: bash
+        run: |
+          bash scripts/cargo-ci.sh parallel \
+            'cargo check -p agenthub-core --locked' \
+            'cargo check -p agenthub-gui --locked'
 
   check-macos:
     if: github.event_name == 'pull_request'
@@ -166,11 +166,12 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Cargo check core
-        run: cargo check -p agenthub-core --locked
-
-      - name: Cargo check GUI
-        run: cargo check -p agenthub-gui --locked
+      - name: Cargo check core and GUI in parallel
+        shell: bash
+        run: |
+          bash scripts/cargo-ci.sh parallel \
+            'cargo check -p agenthub-core --locked' \
+            'cargo check -p agenthub-gui --locked'
 
   browser-e2e:
     if: github.event_name == 'pull_request'
