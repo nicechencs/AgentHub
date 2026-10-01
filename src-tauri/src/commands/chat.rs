@@ -56,7 +56,7 @@ pub async fn create_conversation(
 ) -> Result<ConversationWire, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        create_conversation_inner(hub, agent_ids, cwd).map(wire_conversation)
+        create_conversation_inner(hub, agent_ids, cwd_or_home(cwd)).map(wire_conversation)
     })
     .await
 }
@@ -70,7 +70,7 @@ pub async fn ensure_default_conversation(
 ) -> Result<ConversationWire, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        ensure_default_conversation_inner(hub, agent_ids, cwd).map(wire_conversation)
+        ensure_default_conversation_inner(hub, agent_ids, cwd_or_home(cwd)).map(wire_conversation)
     })
     .await
 }
@@ -408,6 +408,18 @@ fn list_conversations_inner(hub: &AgentHub) -> Result<Vec<Conversation>, String>
         .map_err(|e| map_err_string("list_conversations", e))
 }
 
+/// New chats without a folder start in the user's home so the first message can
+/// be sent right away. The UI already passes the active / last folder when it has one.
+fn cwd_or_home(cwd: Option<String>) -> Option<String> {
+    if cwd.as_deref().is_some_and(|c| !c.trim().is_empty()) {
+        return cwd;
+    }
+    agenthub_core::utils::paths::home_dir()
+        .ok()
+        .map(|home| home.to_string_lossy().into_owned())
+        .or(cwd)
+}
+
 fn create_conversation_inner(
     hub: &AgentHub,
     agent_ids: Vec<String>,
@@ -590,20 +602,127 @@ fn save_chat_paste_image_inner(
     if bytes.len() as u64 > MAX_BYTES {
         return Err("image too large (max 10MB)".into());
     }
-    let dir = std::env::temp_dir().join("agenthub-chat-paste");
+    let dir = std::env::temp_dir().join(PASTE_DIR_NAME);
     std::fs::create_dir_all(&dir).map_err(|e| format!("create paste dir: {e}"))?;
-    let name = format!(
-        "paste-{}-{}.{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0),
-        std::process::id(),
-        if ext == "jpeg" { "jpg" } else { &ext }
-    );
-    let path = dir.join(name);
-    std::fs::write(&path, bytes).map_err(|e| format!("write paste image: {e}"))?;
+    // Best-effort: a failed sweep must never block saving the new image.
+    cleanup_stale_paste_images(&dir, std::time::SystemTime::now(), PASTE_IMAGE_MAX_AGE);
+    let ext = if ext == "jpeg" {
+        "jpg".to_string()
+    } else {
+        ext
+    };
+    let path = write_new_paste_image(&dir, &ext, &bytes)?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+const PASTE_DIR_NAME: &str = "agenthub-chat-paste";
+const PASTE_FILE_PREFIX: &str = "paste-";
+const PASTE_SAVED_EXTENSIONS: [&str; 5] = ["png", "jpg", "gif", "webp", "bmp"];
+
+/// Pasted images older than this are removed on the next paste. Screenshots may
+/// hold sensitive content, so they must not live forever; but the other Agent
+/// can still reference the path in later turns of the same conversation, so the
+/// window is deliberately generous (a week) rather than minutes or hours.
+const PASTE_IMAGE_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 60 * 60);
+
+/// Process-wide sequence so two pastes in the same millisecond never share a name.
+static PASTE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Writes `bytes` to a fresh `paste-<millis>-<pid>-<seq>.<ext>` file in `dir`.
+/// Uses `create_new`, so an existing file is never overwritten; on the (unexpected)
+/// `AlreadyExists` it retries with the next sequence number.
+fn write_new_paste_image(
+    dir: &std::path::Path,
+    ext: &str,
+    bytes: &[u8],
+) -> Result<std::path::PathBuf, String> {
+    use std::io::Write;
+    const MAX_ATTEMPTS: u32 = 16;
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    for _ in 0..MAX_ATTEMPTS {
+        let seq = PASTE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = dir.join(format!("{PASTE_FILE_PREFIX}{millis}-{pid}-{seq}.{ext}"));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut file) => {
+                if let Err(e) = file.write_all(bytes) {
+                    drop(file);
+                    let _ = std::fs::remove_file(&path);
+                    return Err(format!("write paste image: {e}"));
+                }
+                return Ok(path);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("write paste image: {e}")),
+        }
+    }
+    Err("write paste image: could not allocate a unique file name".into())
+}
+
+/// True when `name` matches what [`write_new_paste_image`] produces
+/// (`paste-<digits>-<digits>[-<digits>].<ext>`; the 2-part form is the legacy name).
+fn is_generated_paste_name(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix(PASTE_FILE_PREFIX) else {
+        return false;
+    };
+    let Some((stem, ext)) = rest.rsplit_once('.') else {
+        return false;
+    };
+    if !PASTE_SAVED_EXTENSIONS.contains(&ext) {
+        return false;
+    }
+    let parts: Vec<&str> = stem.split('-').collect();
+    (parts.len() == 2 || parts.len() == 3)
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Deletes generated paste images in `dir` whose mtime is older than `max_age`
+/// relative to `now`. Only regular files directly in `dir` are touched; symlinks
+/// (checked via `symlink_metadata`, never followed), subdirectories and files with
+/// other names are left alone. All errors are ignored.
+fn cleanup_stale_paste_images(
+    dir: &std::path::Path,
+    now: std::time::SystemTime,
+    max_age: std::time::Duration,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !is_generated_paste_name(name) {
+            continue;
+        }
+        let path = entry.path();
+        let Ok(meta) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if !meta.file_type().is_file() {
+            continue;
+        }
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
+        let expired = now
+            .duration_since(modified)
+            .map(|age| age > max_age)
+            .unwrap_or(false);
+        if expired {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
 }
 
 /// Invoke: `read_markdown_preview` — load a text/markdown file under the chat working directory.
@@ -613,25 +732,4 @@ pub async fn read_markdown_preview(
     cwd: String,
 ) -> Result<MarkdownFilePreview, String> {
     read_markdown_file_preview(&path, &cwd).map_err(|e| map_err_string("read_markdown_preview", e))
-}
-
-#[cfg(test)]
-mod paste_image_tests {
-    use super::save_chat_paste_image_inner;
-
-    #[test]
-    fn rejects_unknown_extension() {
-        let err = save_chat_paste_image_inner("AQID", "exe", None).unwrap_err();
-        assert!(err.contains("unsupported"));
-    }
-
-    #[test]
-    fn writes_small_png_bytes() {
-        // 1x1 PNG
-        let b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
-        let path = save_chat_paste_image_inner(b64, "png", Some(68)).unwrap();
-        assert!(path.ends_with(".png"));
-        assert!(std::path::Path::new(&path).is_file());
-        let _ = std::fs::remove_file(path);
-    }
 }

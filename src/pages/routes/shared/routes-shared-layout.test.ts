@@ -138,6 +138,8 @@ describe('routes layout wiring', () => {
     const split = source('components/layout/SideSplit.tsx');
     expect(page).toContain('listFooter={trashDock}');
     expect(page).toContain('<ConnectionTrashButton');
+    expect(page).toContain('listConnectionTrash');
+    expect(page).toContain('trashSourceIds');
     expect(button).not.toContain('fixed bottom-4 right-4');
     expect(split).toContain('listFooter');
     expect(split).toContain('flex shrink-0 justify-end');
@@ -151,7 +153,7 @@ describe('routes layout wiring', () => {
     );
     expect(emptyBlock).toContain("t('routes.pool.page.emptyTitle')");
     expect(emptyBlock).toContain("t('routes.pool.page.syncFromConnections')");
-    expect(emptyBlock).toContain('actionLabel');
+    expect(emptyBlock).toContain('RoutesStartChecklist');
     expect(emptyBlock).not.toContain("t('routes.create.action')");
   });
 });

@@ -85,7 +85,7 @@ function walkSourceFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-describe('buttonVariants (docs/ui-design.md §2 Button)', () => {
+describe('buttonVariants (docs/ui/design-system.md Button)', () => {
   it('locks shadow-none on rest, hover, and active for every role', () => {
     for (const variant of VARIANTS) {
       const cls = buttonVariants({ variant });

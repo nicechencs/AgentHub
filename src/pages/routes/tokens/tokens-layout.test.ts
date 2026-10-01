@@ -14,7 +14,9 @@ describe('routes tokens layout wiring', () => {
     const page = source('index.tsx');
     expect(page).toContain('CreateTokenEndpointCards');
     expect(page).toContain('buildCreateTokenEndpointCards');
+    expect(page).toContain('buildCreateTokenTargets');
     expect(page).toContain('firstCreateTokenPoolId');
+    expect(page).toContain('resolveCreateTokenPoolId');
     expect(page).toContain('defaultCreateTokenName');
     expect(page).toContain('createNamePlaceholder');
     expect(page).toContain('setImportAfterSaveRow');
@@ -31,6 +33,8 @@ describe('routes tokens layout wiring', () => {
     expect(cards).toContain('data-create-endpoint');
     expect(cards).toContain('AgentLogo');
     expect(cards).toContain('flex flex-col gap-2');
+    expect(cards).toContain('card.pools.length === 1');
+    expect(cards).not.toContain('keep?.id ?? card.pools[0]');
     expect(cards).not.toContain('grid-cols');
   });
 

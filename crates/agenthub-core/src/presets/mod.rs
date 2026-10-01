@@ -1,7 +1,6 @@
 //! L3 built-in product resources: read-only provider preset registry.
 //!
-//! Ported from frontend `src/config/presets/index.ts` for the first P1 slice.
-//! Core is the authority; the frontend file remains a temporary mirror until
+//! Mirrors frontend `src/config/presets/index.ts`. Core is the authority; the frontend file remains a temporary mirror until
 //! GUI is wired to core. Do not introduce a second mutable source.
 
 use crate::models::{AgentId, ConfigFormat, ProviderPreset};

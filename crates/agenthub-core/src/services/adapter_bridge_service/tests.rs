@@ -4,7 +4,7 @@ use crate::models::{
     static_fallback_models, Account, AccountKind, AdapterProfile, AdapterProfileMode,
     AdapterProfileStatus, AdapterRoute, AdapterSourceKind, AdapterSourceProduct,
     AdapterTargetProtocol, AdapterUpstreamTransport, Provider, RouteDownstreamDialect,
-    RouteDownstreamSurface, RouteSchedulePolicy, FEATURE_MIXED_PROVIDER_POOL,
+    RouteDownstreamSurface, RoutePool, RouteSchedulePolicy, FEATURE_MIXED_PROVIDER_POOL,
     FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2, LOCAL_BRIDGE_EDGES,
 };
 use crate::services::{ProviderService, RoutePoolService};
@@ -18,6 +18,47 @@ use axum::Router;
 use futures_util::stream;
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
+
+#[test]
+fn codex_projection_templates_carry_env_key_model_and_catalog_default() {
+    let codex = super::codex_bridge_toml(&super::GROK_CODEX_RULE, 43623);
+    assert!(codex.contains("env_key = \"OPENAI_API_KEY\""), "{codex}");
+    assert!(!codex.contains("ahb_"));
+
+    let grok = super::grok_bridge_toml(&super::CODEX_GROK_RULE, 44227, "ahb_local");
+    assert!(grok.contains("model = \"gpt-5.6-sol\""), "{grok}");
+    assert!(grok.contains("preferred_method = \"api_key\""), "{grok}");
+    assert!(grok.contains("campaigns = false"), "{grok}");
+    assert!(grok.contains("http://127.0.0.1:44227/v1"), "{grok}");
+    assert!(!grok.contains("grok-"));
+
+    assert_eq!(
+        super::cli_served_model(&super::CODEX_DSH_RULE, ""),
+        "gpt-5.6-sol"
+    );
+    let legacy = super::legacy_codex_bridge_toml(&super::GROK_CODEX_RULE, 43623);
+    assert!(!legacy.contains("env_key"));
+    let legacy_grok =
+        super::legacy_grok_responses_toml(&super::CODEX_GROK_RULE, 44227, "ahb_local");
+    assert!(!legacy_grok.contains("preferred_method"));
+    assert!(!legacy_grok.contains("model = "));
+    let pre_campaigns =
+        super::legacy_grok_pre_campaigns_toml(&super::CODEX_GROK_RULE, 44227, "ahb_local");
+    assert!(
+        pre_campaigns.contains("preferred_method = \"api_key\""),
+        "{pre_campaigns}"
+    );
+    assert!(
+        pre_campaigns.contains("model = \"gpt-5.6-sol\""),
+        "{pre_campaigns}"
+    );
+    assert!(
+        pre_campaigns.contains("api_backend = \"responses\""),
+        "{pre_campaigns}"
+    );
+    assert!(!pre_campaigns.contains("campaigns"), "{pre_campaigns}");
+    assert_ne!(pre_campaigns, grok);
+}
 
 async fn health_upstream(status: StatusCode) -> (u16, tokio::task::JoinHandle<()>) {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
@@ -1948,10 +1989,27 @@ fn prepare_codex_subscription_projects_chat_loopback_for_grok_kimi_dsh() {
             );
         }
         assert!(!haystack.contains("grok-"), "{target:?} leftover grok-*");
-        assert!(
-            !haystack.contains("gpt-"),
-            "{target:?} invented ChatGPT model"
-        );
+        match target {
+            AgentId::Grok => {
+                assert!(
+                    haystack.contains("model = \"gpt-5.6-sol\""),
+                    "Codex→Grok must send the catalog default: {haystack}"
+                );
+                assert!(
+                    haystack.contains("preferred_method = \"api_key\""),
+                    "{haystack}"
+                );
+                assert!(haystack.contains("campaigns = false"), "{haystack}");
+            }
+            AgentId::Dsh => {
+                assert_eq!(input.settings_config["model"], "gpt-5.6-sol");
+                assert!(!haystack.contains("gpt-"));
+            }
+            _ => assert!(
+                !haystack.contains("gpt-"),
+                "{target:?} invented ChatGPT model: {haystack}"
+            ),
+        }
         assert!(!serde_json::to_string(&input)
             .unwrap()
             .contains("codex-upstream-access-secret"));
@@ -2016,6 +2074,70 @@ fn prepare_anthropic_provider_projects_messages_bridge_not_kimi() {
     assert!(!serde_json::to_string(&generated)
         .unwrap()
         .contains("sk-ant-secret"));
+}
+
+#[test]
+fn prepare_anthropic_mytokens_provider_uses_anthropic_source_upstream_base() {
+    let (_dir, db) = test_db();
+    let mut source = anthropic_source("mytokens-claude", "sk-fixture-mytokens");
+    source.meta = json!({"preset": "custom"});
+    source.settings_config = json!({
+        "env": {
+            "ANTHROPIC_BASE_URL": "https://mytokens.cc",
+            "ANTHROPIC_AUTH_TOKEN": "sk-fixture-mytokens"
+        }
+    });
+    ProviderRepo::new(db.clone()).create(&source).unwrap();
+    let service = AdapterBridgeService::new(db);
+
+    let prepared = service
+        .prepare(&anthropic_request(
+            AdapterSourceKind::Provider,
+            "mytokens-claude",
+        ))
+        .unwrap();
+    let start = prepared.runtime_material().start_spec(None);
+    assert_eq!(start.upstream.base_url, "https://mytokens.cc/v1");
+    assert_ne!(start.upstream.base_url, ANTHROPIC_MESSAGES_BASE_URL);
+    assert_eq!(
+        start.upstream.protocol,
+        BridgeUpstreamProtocol::AnthropicMessages
+    );
+    assert!(!format!("{prepared:?}").contains("sk-fixture-mytokens"));
+
+    let direct = super::prepare::anthropic_source_upstream(
+        &service,
+        AdapterSourceKind::Provider,
+        "mytokens-claude",
+    );
+    assert_eq!(direct.as_deref(), Some("https://mytokens.cc/v1"));
+}
+
+#[test]
+fn prepare_anthropic_account_uses_credential_base_url() {
+    let (_dir, db) = test_db();
+    let mut account = anthropic_account("anthropic-relay", "sk-ant-relay");
+    account.credentials = json!({
+        "format": "api_key",
+        "api_key": "sk-ant-relay",
+        "base_url": "https://mytokens.cc/"
+    });
+    AccountRepo::new(db.clone()).create(&account).unwrap();
+    let service = AdapterBridgeService::new(db);
+
+    let prepared = service
+        .prepare(&anthropic_request(
+            AdapterSourceKind::Account,
+            "anthropic-relay",
+        ))
+        .unwrap();
+    let start = prepared.runtime_material().start_spec(None);
+    assert_eq!(start.upstream.base_url, "https://mytokens.cc/v1");
+    assert_eq!(
+        start.upstream.protocol,
+        BridgeUpstreamProtocol::AnthropicMessages
+    );
+    assert!(!format!("{prepared:?}").contains("sk-ant-relay"));
 }
 
 #[test]
@@ -2349,6 +2471,119 @@ fn default_pool_resolves_provider_backed_openai_compatible_keys() {
     }
 }
 
+/// Official DSH rows keep the API key in `.credentials.yaml` (`apiKeyEnv` +
+/// `paths.credentials`). A demoted manual pool that also has a custom sibling
+/// must still advertise DeepSeek models and route `deepseek-chat` to the
+/// official login. An inline sibling model must not become the whole catalog.
+#[test]
+fn demoted_manual_dsh_pool_routes_deepseek_chat_from_credentials_file() {
+    let (dir, db) = test_db();
+    let creds = dir.path().join(".credentials.yaml");
+    std::fs::write(&creds, "DEEPSEEK_API_KEY: \"sk-dsh-file-key\"\n").unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "dsh-official".into(),
+            agent_id: AgentId::Dsh,
+            name: "api.deepseek.com".into(),
+            settings_config: json!({
+                "provider": "deepseek-official",
+                "model": "deepseek-v4-flash",
+                "apiKeyEnv": "DEEPSEEK_API_KEY",
+                "baseURL": "https://api.deepseek.com",
+                "paths": { "credentials": creds },
+            }),
+            meta: json!({
+                "preset": "custom",
+                "official": false,
+                "surface": "deepseek-api",
+            }),
+            is_current: true,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "cursor-sibling".into(),
+            agent_id: AgentId::Cursor,
+            name: "custom relay".into(),
+            settings_config: json!({
+                "baseUrl": "https://relay.example/v1",
+                "model": "kimi-k2",
+                "apiKey": "sk-sibling",
+            }),
+            meta: json!({"preset": "custom", "surface": "unknown"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+
+    let pools = RoutePoolService::new(db.clone());
+    let default_pool = pools
+        .ensure_default_pool(AgentId::Dsh, RouteDownstreamSurface::ChatCompletions)
+        .unwrap();
+    let now = "now".to_owned();
+    let manual = RoutePoolRepo::new(db.clone())
+        .create_pool(&RoutePool {
+            id: "manual-dsh-pool".into(),
+            target_agent_id: AgentId::Dsh,
+            downstream_surface: RouteDownstreamSurface::ChatCompletions,
+            downstream_dialect: RouteDownstreamDialect::for_agent(AgentId::Dsh),
+            hub_token: "ahb_hub_z7cc".into(),
+            schedule_policy: RouteSchedulePolicy::PriorityFailover,
+            is_default: false,
+            unified_gateway_enrolled: false,
+            policy_revision: 1,
+            auto_start: true,
+            gateway_port: None,
+            created_at: now.clone(),
+            updated_at: now,
+        })
+        .unwrap();
+    assert_ne!(manual.id, default_pool.id);
+    let manual = pools.enroll_unified_gateway(&manual.id, 44227).unwrap();
+    assert!(!manual.is_default);
+    assert!(manual.unified_gateway_enrolled);
+    pools
+        .add_member(&manual.id, AdapterSourceKind::Provider, "dsh-official")
+        .unwrap();
+    pools
+        .add_member(&manual.id, AdapterSourceKind::Provider, "cursor-sibling")
+        .unwrap();
+
+    let spec = AdapterBridgeService::new(db).pool_listener_spec(&manual, (false, false));
+    assert_eq!(spec.upstream.base_url, "https://api.deepseek.com");
+    assert_eq!(spec.upstream.auth.token(), "sk-dsh-file-key");
+    let official = spec
+        .members
+        .iter()
+        .find(|member| member.source_id == "dsh-official")
+        .expect("official DeepSeek login stays in the indexed pool");
+    assert_eq!(official.auth.token(), "sk-dsh-file-key");
+    let index = spec
+        .route_index
+        .expect("enrolled manual pool attaches a route index");
+    let models = index.list_models("chat_completions");
+    assert!(
+        models.iter().any(|model| model == "deepseek-chat"),
+        "catalog collapsed: {models:?}"
+    );
+    assert!(
+        models.iter().any(|model| model == "deepseek-v4-flash"),
+        "catalog collapsed: {models:?}"
+    );
+    let candidates = index
+        .resolve("chat_completions", "deepseek-chat")
+        .expect("deepseek-chat must pass route resolution");
+    assert!(
+        candidates
+            .iter()
+            .any(|candidate| candidate.member_id == "dsh-official"),
+        "{candidates:?}"
+    );
+}
+
 #[test]
 fn legacy_pool_does_not_mix_login_keys_across_upstream_endpoints() {
     let (_dir, db) = test_db();
@@ -2476,10 +2711,14 @@ fn legacy_codex_grok_chat_completions_toml_rewrites_to_responses() {
     let generated = create_projection(&db, &prepared, 43145);
     service.finalize(&prepared, 43145).unwrap();
     let mut legacy = generated.clone();
-    let content = legacy.settings_config["content"].as_str().unwrap();
-    legacy.settings_config["content"] = json!(content.replace(
-        "api_backend = \"responses\"",
-        "api_backend = \"chat_completions\""
+    let token = legacy.settings_config["auth"]["OPENAI_API_KEY"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    legacy.settings_config["content"] = json!(super::legacy_grok_bridge_toml(
+        &super::CODEX_GROK_RULE,
+        43145,
+        &token,
     ));
     persist_mutated_provider(&db, legacy);
 
@@ -2493,6 +2732,79 @@ fn legacy_codex_grok_chat_completions_toml_rewrites_to_responses() {
     let content = input.settings_config["content"].as_str().unwrap();
     assert!(content.contains("api_backend = \"responses\""));
     assert!(!content.contains("api_backend = \"chat_completions\""));
+}
+
+#[test]
+fn legacy_grok_pre_campaigns_toml_rewrites_and_restore_flags_reprojection() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&codex_subscription_account(
+            "codex-subscription",
+            "codex-upstream-access-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&codex_chat_request("codex-subscription", AgentId::Grok))
+        .unwrap();
+    let generated = create_projection(&db, &prepared, 43145);
+    let profile = service.finalize(&prepared, 43145).unwrap();
+    let mut legacy = generated.clone();
+    let token = legacy.settings_config["auth"]["OPENAI_API_KEY"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    legacy.settings_config["content"] = json!(super::legacy_grok_pre_campaigns_toml(
+        &super::CODEX_GROK_RULE,
+        43145,
+        &token,
+    ));
+    persist_mutated_provider(&db, legacy);
+
+    let restored = service.resolve_restore_material(&profile.id).unwrap();
+    assert!(restored.needs_reprojection());
+
+    let retried = service
+        .prepare(&codex_chat_request("codex-subscription", AgentId::Grok))
+        .unwrap();
+    let input = match retried.provider_projection(43145).unwrap() {
+        AdapterBridgeProviderProjection::Update(input) => input,
+        other => panic!("pre-campaigns TOML must rewrite, got {other:?}"),
+    };
+    let content = input.settings_config["content"].as_str().unwrap();
+    assert!(content.contains("campaigns = false"), "{content}");
+    assert!(
+        content.contains("preferred_method = \"api_key\""),
+        "{content}"
+    );
+
+    // Restore realign path: same port + needs_reprojection must rewrite the
+    // *stored* provider row (not only a live-file merge) to the current template.
+    let (restore_input, _was_current) = service
+        .projection_for_restored_port(&profile.id, 43145)
+        .unwrap();
+    ProviderService::new(db.clone())
+        .update(&restore_input)
+        .unwrap();
+    let stored = ProviderRepo::new(db.clone())
+        .get_by_id(profile.generated_provider_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    let stored_content = stored.settings_config["content"]
+        .as_str()
+        .expect("stored provider content");
+    assert!(
+        stored_content.contains("campaigns = false"),
+        "stored L1 must include campaigns pin after restore rewrite: {stored_content}"
+    );
+    assert!(
+        stored_content.contains("[features]"),
+        "stored L1 must include [features] after restore rewrite: {stored_content}"
+    );
+    assert!(
+        stored_content.contains("preferred_method = \"api_key\""),
+        "{stored_content}"
+    );
 }
 
 #[test]

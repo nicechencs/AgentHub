@@ -48,7 +48,7 @@ type Step = 'usage' | 'env' | 'detect' | 'import' | 'done';
 
 /**
  * 首次启动引导:
- * 选择本地路由 / Sub2API → 检测共享环境 → 检测 agent → 导入登录态。
+ * 选择路由 / Sub2API → 检测共享环境 → 检测 agent → 导入登录态。
  */
 export function OnboardingDialog() {
   const navigate = useNavigate();
@@ -389,12 +389,22 @@ export function OnboardingDialog() {
           )}
           {step === 'done' && (
             <>
-              <Button variant="outline" onClick={() => finish('/connections')}>
+              <Button
+                variant={noAgents ? 'outline' : 'ghost'}
+                onClick={() => finish('/connections')}
+              >
                 {t('chrome.onboarding.viewAccounts')}
               </Button>
-              <Button onClick={() => finish(noAgents ? '/agents' : '/')}>
-                {noAgents ? t('chrome.onboarding.goAgents') : t('chrome.onboarding.enterDashboard')}
-              </Button>
+              {noAgents ? (
+                <Button onClick={() => finish('/agents')}>{t('chrome.onboarding.goAgents')}</Button>
+              ) : (
+                <>
+                  <Button variant="outline" onClick={() => finish('/')}>
+                    {t('chrome.onboarding.enterDashboard')}
+                  </Button>
+                  <Button onClick={() => finish('/chat')}>{t('chrome.onboarding.startChat')}</Button>
+                </>
+              )}
             </>
           )}
         </DialogFooter>

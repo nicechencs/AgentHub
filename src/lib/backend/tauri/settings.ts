@@ -85,6 +85,7 @@ const DEFAULTS: AppSettings = {
   keepLiveFileCopies: true,
   warnDuplicateRouteCredential: true,
   updateDuplicateRouteUrl: true,
+  autoImportLocalLogin: true,
   // Real value comes from Tauri getVersion(); do not hardcode a product semver.
   appVersion: UNKNOWN_APP_VERSION,
 };
@@ -116,6 +117,7 @@ interface CoreAppSettings {
   keepLiveFileCopies?: boolean;
   warnDuplicateRouteCredential?: boolean;
   updateDuplicateRouteUrl?: boolean;
+  autoImportLocalLogin?: boolean;
 }
 
 interface CorePathInfo {
@@ -314,6 +316,10 @@ export function createTauriSettingsPort(): SettingsPort {
             typeof core.updateDuplicateRouteUrl === 'boolean'
               ? core.updateDuplicateRouteUrl
               : DEFAULTS.updateDuplicateRouteUrl,
+          autoImportLocalLogin:
+            typeof core.autoImportLocalLogin === 'boolean'
+              ? core.autoImportLocalLogin
+              : DEFAULTS.autoImportLocalLogin,
           // OS login item is authoritative when the plugin is available.
           autoStart:
             typeof osAutoStart === 'boolean'
@@ -390,6 +396,12 @@ export function createTauriSettingsPort(): SettingsPort {
               value: closeToTraySettingValue(patch.updateDuplicateRouteUrl),
             });
           }
+          if (patch.autoImportLocalLogin !== undefined) {
+            await invoke('set_setting', {
+              key: 'auto_import_local_login',
+              value: closeToTraySettingValue(patch.autoImportLocalLogin),
+            });
+          }
           if (patch.usageCollectIntervalMin !== undefined) {
             const mins = normalizeIntervalMin(patch.usageCollectIntervalMin);
             await invoke('set_setting', {
@@ -425,7 +437,7 @@ export function createTauriSettingsPort(): SettingsPort {
           };
           saveJson(SETTINGS_KEY, mergedLocal);
 
-          // Phase 2: refresh the full snapshot. A refresh failure must not
+          // Then refresh the full snapshot. A refresh failure must not
           // undo a durable write — return the committed patch on top of the
           // last known snapshot so UI rollback does not fire.
           try {

@@ -393,7 +393,7 @@ describe('Bridges page', () => {
     expect(markup).toContain('删除路由');
     expect(markup).not.toContain('收起');
     expect(markup).toContain('data-route-detail="bridge-1"');
-    expect(markup).toContain('来源登录已删除，路由仅可查看或解除绑定');
+    expect(markup).toContain('来源登录已删除，这条路由只能查看或删除');
     expect(markup).not.toContain('客户端接入');
     expect(markup).not.toContain('将勾选项写入客户端配置');
     expect(markup).not.toContain('同一类登录');
@@ -475,7 +475,7 @@ describe('Bridges page', () => {
       canApplyLocalBridge: true,
       onEnrollNative: vi.fn(),
     });
-    expect(shown).toContain('交给本机网关');
+    expect(shown).toContain('改用本机转发');
   });
 
   it('shows recent inbound requests newest first, and empty copy when none', () => {

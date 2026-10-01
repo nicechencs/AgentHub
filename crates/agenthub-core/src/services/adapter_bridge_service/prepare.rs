@@ -107,12 +107,22 @@ impl AdapterBridgeService {
             profile = self.profiles.update(&profile)?;
         }
 
+        // Prefer the Tokens-page hub token when minting a new local bearer so
+        // a later enroll does not leave hub≠entry. Existing projected keys
+        // stay as-is; the gateway also accepts the hub token as an extra.
+        let reuse_hub = self
+            .route_pools
+            .get(&profile.id)
+            .ok()
+            .flatten()
+            .map(|pool| pool.hub_token.trim().to_owned())
+            .filter(|token| !token.is_empty());
         let local_bearer = if leftover_incomplete {
-            generate_local_bearer()?
+            reuse_hub.map_or_else(generate_local_bearer, Ok)?
         } else {
             match existing_provider.as_ref() {
                 Some(provider) => local_bearer_from_provider(provider)?,
-                None => generate_local_bearer()?,
+                None => reuse_hub.map_or_else(generate_local_bearer, Ok)?,
             }
         };
         let material = self.attach_route_index(
@@ -325,11 +335,17 @@ impl AdapterBridgeService {
             .routes
             .classify_source_product(source_kind, source_id)?;
         if rule.source == AdapterSourceProduct::OpenaiApi
+            && product == AdapterSourceProduct::DeepseekApi
+        {
+            // Official DSH keeps the key in `.credentials.yaml`. Without that
+            // file, the route index treats the login as unsigned and the
+            // catalog collapses to whatever sibling still has an inline key.
+            self.secrets
+                .resolve_deepseek_provider_auth(source_kind, source_id)
+        } else if rule.source == AdapterSourceProduct::OpenaiApi
             && matches!(
                 product,
-                AdapterSourceProduct::DeepseekApi
-                    | AdapterSourceProduct::GlmCodingPlan
-                    | AdapterSourceProduct::XaiApi
+                AdapterSourceProduct::GlmCodingPlan | AdapterSourceProduct::XaiApi
             )
         {
             self.secrets
@@ -409,6 +425,13 @@ pub(super) fn openai_source_upstream(
     let mut listed = Vec::new();
     let mut protocol = rule.protocol;
     let mut context_window_tokens = None;
+    // Anthropic rules keep the official host unless the source configured a base.
+    if rule.source == crate::models::AdapterSourceProduct::AnthropicApi {
+        if let Some(base) = anthropic_source_upstream(service, source_kind, source_id) {
+            url = base;
+        }
+        return (url, model, listed, protocol, context_window_tokens);
+    }
     if rule.source != crate::models::AdapterSourceProduct::OpenaiApi {
         return (url, model, listed, protocol, context_window_tokens);
     }
@@ -477,6 +500,47 @@ pub(super) fn openai_source_upstream(
         protocol = crate::bridge::BridgeUpstreamProtocol::AnthropicMessages;
     }
     (url, model, listed, protocol, context_window_tokens)
+}
+
+/// Custom Anthropic Messages base for a provider or account, when one is set.
+///
+/// Absent or unusable values return `None` so the caller keeps the rule default.
+pub(super) fn anthropic_source_upstream(
+    service: &AdapterBridgeService,
+    source_kind: AdapterSourceKind,
+    source_id: &str,
+) -> Option<String> {
+    match source_kind {
+        AdapterSourceKind::Provider => {
+            let provider = service.providers.get_by_id(source_id).ok().flatten()?;
+            crate::services::adapter_route_constants::anthropic_messages_upstream_base_url(
+                &provider.settings_config,
+            )
+        }
+        AdapterSourceKind::Account => {
+            let account = service
+                .secrets
+                .accounts
+                .get_by_id(source_id)
+                .ok()
+                .flatten()?;
+            anthropic_account_base(&account.credentials)
+                .or_else(|| anthropic_account_base(&account.extra))
+        }
+    }
+}
+
+fn anthropic_account_base(blob: &Value) -> Option<String> {
+    for key in ["base_url", "baseUrl", "url", "endpoint"] {
+        if let Some(raw) = blob.get(key).and_then(Value::as_str) {
+            if let Some(base) =
+                crate::services::adapter_route_constants::anthropic_messages_base_from_raw(raw)
+            {
+                return Some(base);
+            }
+        }
+    }
+    crate::services::adapter_route_constants::anthropic_messages_upstream_base_url(blob)
 }
 
 /// Turn a WorkBuddy model endpoint into the base URL that the bridge host

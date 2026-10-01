@@ -156,12 +156,12 @@ describe('formatApiConnectionLabel', () => {
       }),
     });
     expect(isInternalGeneratedProvider(generated)).toBe(true);
-    expect(formatApiConnectionLabel(generated)).toBe('本机路由');
+    expect(formatApiConnectionLabel(generated)).toBe('本机转发');
     expect(formatApiConnectionLabel(generated, { sourceLabel: 'user@x.com' })).toBe(
-      '本机路由 · user@x.com',
+      '本机转发 · user@x.com',
     );
     expect(formatApiConnectionLabel(generated)).not.toMatch(/Bridge|grok-live|127\.0\.0\.1|44227/i);
-    expect(formatLocalRouteLabel('user@x.com')).toBe('本机路由 · user@x.com');
+    expect(formatLocalRouteLabel('user@x.com')).toBe('本机转发 · user@x.com');
   });
 });
 

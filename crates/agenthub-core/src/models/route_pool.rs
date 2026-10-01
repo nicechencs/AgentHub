@@ -1,4 +1,4 @@
-//! RoutePool / RouteMember domain types for the unified loopback pool (P1).
+//! RoutePool / RouteMember domain types for the unified loopback pool.
 //!
 //! The Hub token lives on the pool, not on each ticket. Upstream credentials
 //! stay on account/provider rows; members only store authorization references.
@@ -430,6 +430,19 @@ pub struct DefaultRoutePoolList {
     pub chat_completions_shared: bool,
 }
 
+/// Whether a listed entry key belongs to a live default pool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum LocalTokenLifecycle {
+    /// Default pool is present; extras authenticate when that runtime is up.
+    #[default]
+    Active,
+    /// Pool still exists but is not the default / not the live listener.
+    Inactive,
+    /// Extra row whose pool is gone.
+    Orphaned,
+}
+
 /// Loopback bearer for the tokens page. Not included in pool overview.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -441,6 +454,12 @@ pub struct LocalTokenRecord {
     pub name: String,
     #[serde(default)]
     pub primary: bool,
+    #[serde(default)]
+    pub lifecycle: LocalTokenLifecycle,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_agent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<String>,
 }
 
 /// Pick the unique default pool among candidates for one Agent / surface.

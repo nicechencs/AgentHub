@@ -1366,6 +1366,181 @@ api_key = "new-secret"
 }
 
 #[test]
+fn grok_toml_writer_merges_auth_preference_and_keeps_other_auth_keys() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"[models]
+default = "old"
+
+[auth]
+preferred_method = "old"
+keep_this = "yes"
+
+[model_providers.old]
+base_url = "https://old.example/v1"
+
+[model."old"]
+model = "old"
+model_provider = "old"
+
+[mcp_servers.demo]
+command = "demo"
+"#,
+    )
+    .unwrap();
+    let grok = AgentConfig {
+        agent: AgentId::Grok,
+        raw: json!({"format": "toml", "content": r#"[models]
+default = "grok-4.7"
+
+[auth]
+preferred_method = "api_key"
+
+[model_providers.proxy]
+base_url = "https://relay.example/v1"
+api_backend = "responses"
+
+[model."grok-4.7"]
+model = "grok-4.7"
+model_provider = "proxy"
+api_key = "fixture-key"
+"#}),
+    };
+
+    write_toml_config(AgentId::Grok, &path, &grok).unwrap();
+
+    let stored = std::fs::read_to_string(&path).unwrap();
+    let parsed: toml_edit::DocumentMut = stored.parse().unwrap();
+    assert_eq!(parsed["models"]["default"].as_str(), Some("grok-4.7"));
+    assert_eq!(parsed["auth"]["preferred_method"].as_str(), Some("api_key"));
+    assert_eq!(parsed["auth"]["keep_this"].as_str(), Some("yes"));
+    assert_eq!(
+        parsed["model_providers"]["proxy"]["base_url"].as_str(),
+        Some("https://relay.example/v1")
+    );
+    assert!(parsed["model_providers"].get("old").is_none());
+    assert_eq!(
+        parsed["model"]["grok-4.7"]["api_key"].as_str(),
+        Some("fixture-key")
+    );
+    assert!(parsed["mcp_servers"].get("demo").is_some());
+}
+
+#[test]
+fn grok_toml_writer_pins_campaigns_false_and_keeps_other_features() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"[features]
+campaigns = true
+voice_mode = true
+
+[mcp_servers.demo]
+command = "demo"
+"#,
+    )
+    .unwrap();
+    let grok = AgentConfig {
+        agent: AgentId::Grok,
+        raw: json!({"format": "toml", "content": r#"[models]
+default = "agenthub_codex_bridge"
+
+[model."agenthub_codex_bridge"]
+model = "gpt-5.6-sol"
+base_url = "http://127.0.0.1:44227/v1"
+api_key = "ahb_local"
+api_backend = "responses"
+
+[auth]
+preferred_method = "api_key"
+
+[features]
+campaigns = false
+"#}),
+    };
+
+    write_toml_config(AgentId::Grok, &path, &grok).unwrap();
+
+    let stored = std::fs::read_to_string(&path).unwrap();
+    let parsed: toml_edit::DocumentMut = stored.parse().unwrap();
+    assert_eq!(parsed["features"]["campaigns"].as_bool(), Some(false));
+    assert_eq!(parsed["features"]["voice_mode"].as_bool(), Some(true));
+    assert!(parsed["mcp_servers"].get("demo").is_some());
+}
+
+#[test]
+fn grok_toml_writer_clears_campaigns_pin_for_non_bridge_content() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"[features]
+campaigns = false
+voice_mode = true
+"#,
+    )
+    .unwrap();
+    let grok = AgentConfig {
+        agent: AgentId::Grok,
+        raw: json!({"format": "toml", "content": r#"[models]
+default = "grok"
+
+[model."grok"]
+model = "grok-4.5"
+api_key = "xai-xxxxxxxx"
+"#}),
+    };
+
+    write_toml_config(AgentId::Grok, &path, &grok).unwrap();
+
+    let stored = std::fs::read_to_string(&path).unwrap();
+    let parsed: toml_edit::DocumentMut = stored.parse().unwrap();
+    assert!(parsed
+        .get("features")
+        .and_then(|item| item.get("campaigns"))
+        .is_none());
+    assert_eq!(parsed["features"]["voice_mode"].as_bool(), Some(true));
+}
+
+#[test]
+fn grok_toml_writer_sets_api_key_preference_without_deleting_auth() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"[auth]
+preferred_method = "old"
+keep_this = "yes"
+
+[mcp_servers.demo]
+command = "demo"
+"#,
+    )
+    .unwrap();
+    let grok = AgentConfig {
+        agent: AgentId::Grok,
+        raw: json!({"format": "toml", "content": r#"[models]
+default = "grok"
+
+[model."grok"]
+model = "grok-4.5"
+api_key = "xai-xxxxxxxx"
+"#}),
+    };
+
+    write_toml_config(AgentId::Grok, &path, &grok).unwrap();
+
+    let stored = std::fs::read_to_string(&path).unwrap();
+    let parsed: toml_edit::DocumentMut = stored.parse().unwrap();
+    assert_eq!(parsed["auth"]["preferred_method"].as_str(), Some("api_key"));
+    assert_eq!(parsed["auth"]["keep_this"].as_str(), Some("yes"));
+    assert!(parsed["mcp_servers"].get("demo").is_some());
+}
+
+#[test]
 fn toml_writer_accepts_ccswitch_config_alias() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
@@ -2516,7 +2691,7 @@ api_key = "old"
 "#,
     )
     .unwrap();
-    kimi::write_kimi_api_key(&path, "sk-new-key").unwrap();
+    kimi::write_kimi_api_key(&path, "sk-new-key", None, None).unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(text.contains("sk-new-key"), "{text}");
     assert!(
@@ -2528,6 +2703,83 @@ api_key = "old"
     assert!(text.contains("max_context_size = 131072"), "{text}");
     assert!(text.contains("type = \"openai\""), "{text}");
     assert!(text.contains("default_provider = \"moonshot\""), "{text}");
+}
+
+#[test]
+fn write_kimi_api_key_uses_account_provider_instead_of_live_default() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"default_provider = "relay"
+default_model = "kimi-k2"
+
+[providers.relay]
+base_url = "https://relay.example/v1"
+api_key = "sk-relay"
+
+[providers.moonshot]
+base_url = "https://api.moonshot.cn/v1"
+api_key = "sk-old"
+"#,
+    )
+    .unwrap();
+    kimi::apply_kimi_api_key_credentials(
+        &path,
+        &json!({
+            "format": "api_key",
+            "api_key": "sk-account",
+            "providerSlug": "moonshot",
+            "base_url": "https://api.moonshot.cn/v1",
+            "model": "kimi-k2",
+        }),
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("default_provider = \"moonshot\""), "{text}");
+    assert!(text.contains("api_key = \"sk-account\""), "{text}");
+    assert!(text.contains("api_key = \"sk-relay\""), "{text}");
+    assert!(text.contains("https://api.moonshot.cn/v1"), "{text}");
+    let doc: toml_edit::DocumentMut = text.parse().unwrap();
+    let moonshot_key = doc["providers"]["moonshot"]["api_key"].as_str();
+    assert_eq!(moonshot_key, Some("sk-account"));
+}
+
+#[test]
+fn kimi_new_account_provider_infers_type_after_its_base_url() {
+    for (url, expected_type) in [
+        ("https://api.moonshot.cn/v1", "kimi"),
+        ("https://relay.example/anthropic", "anthropic"),
+        ("https://relay.example/v1/responses", "openai_responses"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "default_provider = \"relay\"\n\n[providers.relay]\nbase_url = \"https://relay.example/v1\"\napi_key = \"sk-relay\"\n",
+        )
+        .unwrap();
+        kimi::apply_kimi_api_key_credentials(
+            &path,
+            &json!({
+                "api_key": "sk-account",
+                "providerSlug": "next",
+                "base_url": url,
+            }),
+        )
+        .unwrap();
+        let doc: toml_edit::DocumentMut = std::fs::read_to_string(&path).unwrap().parse().unwrap();
+        assert_eq!(doc["default_provider"].as_str(), Some("next"));
+        assert_eq!(doc["providers"]["next"]["base_url"].as_str(), Some(url));
+        assert_eq!(
+            doc["providers"]["next"]["type"].as_str(),
+            Some(expected_type)
+        );
+        assert_eq!(
+            doc["providers"]["relay"]["api_key"].as_str(),
+            Some("sk-relay")
+        );
+    }
 }
 
 #[test]
@@ -2543,7 +2795,7 @@ api_key = "old"
 "#,
     )
     .unwrap();
-    kimi::write_kimi_api_key(&path, "sk-new-key").unwrap();
+    kimi::write_kimi_api_key(&path, "sk-new-key", None, None).unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(text.contains("type = \"kimi\""), "{text}");
 }

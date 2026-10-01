@@ -1,7 +1,8 @@
 use serde_json::{json, Value};
 
 use crate::bridge::types::{
-    BridgeEvent, EmissionState, IrEvent, RetryClass, RetryGate, StopReason, Usage,
+    is_reported_upstream_error, BridgeEvent, EmissionState, IrEvent, RetryClass, RetryGate,
+    StopReason, Usage,
 };
 
 use super::{
@@ -64,7 +65,10 @@ fn responses_request_maps_text_tools_options_and_unicode() {
     assert_eq!(kimi["messages"][1]["content"], "Hello, 世界");
     assert_eq!(kimi["tools"][0]["function"]["name"], "weather");
     assert_eq!(kimi["max_tokens"], 512);
-    assert_eq!(kimi["temperature"], json!(0.2));
+    assert!(
+        kimi.get("temperature").is_none(),
+        "Codex→Kimi must strip temperature: {kimi}"
+    );
     assert!(kimi.get("stream_options").is_none());
 }
 
@@ -838,9 +842,39 @@ fn prepare_official_codex_request_omits_max_output_tokens_from_passthrough() {
         body.get("max_output_tokens").is_none(),
         "official Codex Responses rejects max_output_tokens: {body}"
     );
-    assert_eq!(body["temperature"], 0.2);
+    assert!(
+        body.get("temperature").is_none(),
+        "official Codex Responses rejects temperature: {body}"
+    );
     assert_eq!(body["top_p"], 0.9);
     assert_eq!(body["input"][0]["content"][0]["text"], "ping");
+}
+
+#[test]
+fn prepare_official_codex_chat_path_omits_temperature() {
+    let request = parse_chat_request(&json!({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 64,
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "messages": [
+            { "role": "user", "content": "hello" }
+        ]
+    }))
+    .expect("parse chat");
+    assert_eq!(request.passthrough["temperature"], json!(0.2));
+
+    let mut body = to_responses_request(&request);
+    assert_eq!(body["temperature"], 0.2);
+
+    prepare_official_codex_request(&mut body, &request.model, Some(""));
+    assert!(
+        body.get("temperature").is_none(),
+        "chat→official Codex must strip temperature: {body}"
+    );
+    assert_eq!(body["top_p"], 0.9);
+    assert_eq!(body["store"], false);
+    assert_eq!(body["input"][0]["content"][0]["text"], "hello");
 }
 
 #[test]
@@ -886,10 +920,10 @@ fn prepare_official_codex_request_allowlists_responses_keys() {
     assert_no_system_input_items(&body);
     assert_eq!(body["tool_choice"], "auto");
     assert_eq!(body["tools"][0]["name"], "echo");
-    assert_eq!(body["temperature"], 0.2);
     assert_eq!(body["top_p"], 0.9);
     assert_eq!(body["input"][0]["content"][0]["text"], "ping");
     for key in [
+        "temperature",
         "max_output_tokens",
         "metadata",
         "presence_penalty",
@@ -1275,6 +1309,59 @@ fn responses_output_skips_encrypted_reasoning_items() {
     .expect("reasoning items must not fail Messages translation");
     let encoded = encode_anthropic_message(&ir).expect("anthropic");
     assert_eq!(encoded["content"][0]["text"], "hello");
+}
+
+#[test]
+fn reported_upstream_error_ignores_null_and_missing() {
+    assert!(!is_reported_upstream_error(None));
+    assert!(!is_reported_upstream_error(Some(&Value::Null)));
+    assert!(is_reported_upstream_error(Some(&json!({"message": "x"}))));
+    assert!(is_reported_upstream_error(Some(&json!("failed"))));
+}
+
+#[test]
+fn responses_output_null_error_converts_to_anthropic_text() {
+    let mut body = fixture("responses_upstream_text");
+    body["error"] = Value::Null;
+    let ir = responses_output_to_ir(&body).expect("null error is success");
+    let message = encode_anthropic_message(&ir).expect("anthropic");
+    assert_eq!(message["content"][0]["text"], "你好，世界。");
+    assert_eq!(message["type"], "message");
+}
+
+#[test]
+fn responses_output_object_error_stays_generic_upstream_error() {
+    let ir = responses_output_to_ir(&json!({
+        "id": "resp_fail",
+        "status": "failed",
+        "error": { "message": "sk-secret-key private input" },
+        "output": []
+    }))
+    .expect("maps to ir error");
+    let error = encode_anthropic_message(&ir).expect_err("encode fails closed");
+    assert_eq!(error.code, "upstream_error");
+    assert!(!error.message.contains("sk-secret-key"));
+    assert!(!error.message.contains("private input"));
+}
+
+#[test]
+fn chat_null_error_still_translates() {
+    let mut body = fixture("chat_text");
+    body["error"] = Value::Null;
+    let response =
+        translate_chat_response(&body, Some("resp_text")).expect("null error is success");
+    assert_eq!(response["output"][0]["content"][0]["text"], "你好，世界。");
+}
+
+#[test]
+fn anthropic_null_error_still_maps_to_ir() {
+    let mut body = fixture("anthropic_upstream_text");
+    body["error"] = Value::Null;
+    let ir = anthropic_message_to_ir(&body).expect("null error is success");
+    assert!(ir.iter().any(|event| matches!(
+        event,
+        IrEvent::TextDelta { text } if text == "你好，世界。"
+    )));
 }
 
 #[test]

@@ -4,7 +4,7 @@ description: AgentHub 用户界面、领域模型和内部实现术语的对应�
 type: reference
 audience: all
 status: current
-updated: 2026-09-20
+updated: 2026-09-29
 ---
 
 # 术语表
@@ -16,7 +16,8 @@ updated: 2026-09-20
 | Agent | `AgentId` / `AgentKey` / `AgentAdapter` | 被 AgentHub 检测、安装、配置或运行的第三方 CLI/runtime。开放注册表与新 TypeScript 契约优先 `AgentKey`；`AgentId` 为兼容别名 |
 | 登录 | account / credential / Ticket（内部） | 用户可选择的授权或 API key 记录。连接页与连接池各自管理自己添加的登录；从连接分享到池里的登录仍归连接页，直到在连接池里编辑该官方登录并保存：那时会复制成连接池自己的一份，连接页那份还在。实现中仍可能出现 Ticket，但 UI 不说“票” |
 | 官方登录 | oauth / 「官方登录」入口 | 浏览器或设备码订阅登录，与 API Key 分行保存 |
-| API Key | api_key / 「添加 API Key」 | 钥匙登录；本机若是官方登录则引导改用「导入授权」 |
+| API Key | api_key / 「添加 API Key」 | 钥匙登录；本机若是官方登录则引导改用「导入本机登录」 |
+| 导入本机登录 | `import-login` / auto-import | 把这台电脑上已有的官方登录或 API Key 收到连接页。设置 → 偏好里「自动导入本机登录」默认开启；开启时连接页不显示该按钮，关掉后可手动导入 |
 | 相关文件 | credential files | 登录详情里记下的配置/登录文件（打码后可复制、打开所在目录） |
 | 保留本机配置副本 | `keepLiveFileCopies` | 切换/导入时把各家本机配置拷到备份目录；默认开启 |
 | 供应商 | provider | 某 Agent 的 API 端点、模型和相关配置记录 |
@@ -41,9 +42,9 @@ updated: 2026-09-20
 | 部分支持 | `Partial` | 可用但有降级，必须提示 |
 | 不支持 | `Unsupported` | 对方契约不存在或明确不支持 |
 | 计划中 | `Planned` | AgentHub 尚未接入，不得假装可用 |
-| live 配置 | live files | 第三方 Agent 实际读取的配置/登录文件 |
+| 本机配置 | live files / live 配置（内部） | 第三方 Agent 实际读取的配置/登录文件。对用户说「本机配置」或「本机正在用的配置」，不说 live |
 | 数据目录 | `data_dir` / `AGENTHUB_HOME` | AgentHub 自己的 SQLite、备份、日志和缓存根目录 |
-| 共享技能真源 | `~/.agents/skills` | 用户技能的共享库；各 Agent 可有自己的投影目录 |
+| 共享库（技能） | `~/.agents/skills`（内部亦称共享技能真源） | 用户技能的共享库；同步到各 Agent 自己的技能目录 |
 | 项目技能 | `<工作区>/.agents/skills` | 只作用于该项目的技能；Skills 页按项目列表里已识别的工作区选择 |
 | 插件 | 各家 `plugin` / `extension` 包（Claude `/plugin`、Codex `/plugins`、Grok `plugin`、Pi `pi install`） | 可安装的发行单元，常含 skills/commands/hooks，有时附带 MCP。**不是** MCP server 条目，也不是 Skills 页 |
 | 历史 | `ProjectHistory` / `/projects` | 各 Agent 的本机会话记录与工作区。侧栏入口和页面标题说「历史」；代码、路径和内部文档仍用 Projects / 项目 |

@@ -1,6 +1,6 @@
 /**
  * 圆角契约：生产源码只用语义 token，禁止魔法值和禁用 Tailwind 名。
- * 真源见 `RADIUS` / docs/ui-design.md §2。
+ * 真源见 `RADIUS` / docs/ui/design-system.md §3.3。
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';

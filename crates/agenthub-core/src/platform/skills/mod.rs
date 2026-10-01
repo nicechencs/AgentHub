@@ -1,5 +1,5 @@
 //! Skills platform: source materialization, package placement, lockfile, git update,
-//! assignment + reconcile (P12), plus pure list/classify/hash/yaml helpers (P2-6).
+//! assignment + reconcile, plus pure list/classify/hash/yaml helpers.
 //!
 //! [`crate::services::SkillService`] remains the public façade; install/update
 //! (and package place used by sync) own their FS work here so live trees are

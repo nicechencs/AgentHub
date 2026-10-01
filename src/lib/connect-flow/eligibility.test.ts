@@ -176,7 +176,7 @@ describe('planToEligibility', () => {
     }));
     expect(bridge.kind).toBe('ready');
     expect(sync.kind).toBe('ready');
-    if (bridge.kind === 'ready') expect(bridge.routeSummary).toBe('本机路由');
+    if (bridge.kind === 'ready') expect(bridge.routeSummary).toBe('本机转发');
     if (sync.kind === 'ready') expect(sync.routeSummary).toBe('');
   });
 
@@ -363,7 +363,7 @@ describe('eligibility labels with translator', () => {
     expect(planMaturityLabel('experimental', t)).toBe('');
     expect(oauthIncompleteMessage(t)).toMatch(/official login is not finished/i);
     const bridge = plan({ analysis: analysis({ route: 'local_bridge' }) });
-    expect(planRouteSummary(bridge, t)).toBe('Local route');
+    expect(planRouteSummary(bridge, t)).toBe('Local forwarding');
     const reuse = plan({ reusePath: 'native_subscription', analysis: analysis({ route: 'config_sync' }) });
     expect(planRouteSummary(reuse, t)).toBe('Use this login');
     const direct = plan({ analysis: analysis({ route: 'native_endpoint' }) });

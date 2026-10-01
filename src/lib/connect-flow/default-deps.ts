@@ -21,7 +21,7 @@ import { createPlanFanout } from './plan-fanout';
 import type { ConnectFlowDeps, PlanFanoutDeps, SourceOption } from './types';
 
 /**
- * 复用 Connections 页切换链（ConnectionList.tsx openSwitch + confirmSwitch）：
+ * 原生切换顺序：
  * - account：无 preview API，直接 switchAccount
  * - provider：必须先 switchPreview，再 switchProvider
  */
@@ -94,7 +94,7 @@ async function bindViaTicket(request: AdapterApplyRequest): Promise<AdapterApply
       && row.targetAgentId === request.targetAgentId
     ));
   if (!profile) {
-    throw new Error('已接上，但找不到对应的本机路由记录');
+    throw new Error('已接上，但找不到对应的路由记录');
   }
   const providers = await providerApi.listProviders(request.targetAgentId);
   const provider = profile.generatedProviderId

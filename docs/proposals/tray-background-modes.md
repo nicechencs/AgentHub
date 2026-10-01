@@ -3,67 +3,53 @@ title: Tray Background Modes
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-08-25
+updated: 2026-09-29
 ---
 
 # Tray Background Modes
 
-> Status: proposed
-> 
-> This is a future behavior candidate. The current close-to-tray behavior remains the contract until a mode is implemented, tested, and documented as current.
+> Status: proposed. The current close-to-tray behavior stays the contract until a new mode is implemented and documented as current.
 
 ## 1. Current baseline
 
-Closing to the tray currently hides the window while the Tauri process, WebView, React tree, timers, and in-process route host remain alive. This preserves fast restore but does not materially reduce WebView memory. Route ownership is independent of whether the window is visible.
+- Close goes through the pure policy `decide_close_action` (`src-tauri/src/window_policy.rs`, tests in `window_policy/tests.rs`): tray 退出 exits; otherwise hide when `close_to_tray` is on **or** a local route is running.
+- Hiding keeps the Tauri process, WebView, React tree, and in-process route host alive. Restore is fast; WebView memory is not reduced.
+- Usage sync already pauses its timer when the page is hidden and reschedules on visible (`src/components/shared/UsageSyncProvider.tsx`). Other polling (route health, global tick) does not.
+- There is no `background_mode` setting and no window destroy/rebuild path.
 
-## 2. Candidate user model
+## 2. Candidate modes
 
-The setting could eventually offer two or three modes:
-
-| Mode | Candidate behavior | Trade-off |
+| Mode | Behavior | Trade-off |
 |---|---|---|
-| Standard background | Hide the window and keep the current process | Fast restore, little memory reduction |
-| Power-saving background | Hide and pause eligible frontend polling/timers; refresh on visible | Lower background CPU, refresh latency on wake |
-| Deep low-memory background | Destroy the WebView/window and keep Rust/tray state | Largest memory reduction, cold UI rebuild and state restoration |
+| Standard | Hide window, keep process (today) | Fast restore, little memory saved |
+| Power-saving | Hide and pause eligible polling; refresh once on visible | Less CPU, short refresh on wake |
+| Low-memory | Destroy WebView/window, keep Rust and tray | Most memory saved, cold UI rebuild |
 
-The product may expose only “隐藏界面” and “低内存后台”, with the middle mode as an implementation detail. The choice must not alter whether a local route is configured or running.
+The UI may show only “隐藏界面” and “低内存后台”. No mode changes whether a route is configured or running.
 
-## 3. Candidate design
+## 3. Design constraints
 
-### Settings and policy
+- `background_mode` is normalized; unknown values fall back to Standard. Decide residency first (existing policy), then hide vs destroy.
+- Low-memory destroys only the window. It does not use the exit path or stop the route host.
+- Rebuild waits for WebView ready before navigating; a pending tray navigation is single-valued, latest safe path wins.
+- Visibility pause/resume stays behind the backend façade; pages do not call `invoke`.
+- If suspend is unsupported, degrade to Standard. If rebuild fails, keep the tray alive with a reopen/retry action.
 
-Add a normalized `background_mode` setting only after the current close policy has a stable pure decision function and tests. Unknown values fall back to the safe standard mode. Decide residency first (`close_to_tray` or an active route), then choose hide versus destroy.
+## 4. Remaining slices
 
-### Tauri lifecycle
+1. ~~Extract and test the close policy.~~ Done (`window_policy.rs`).
+2. Pause/resume for route health and global tick, one refresh on return (usage sync already does this).
+3. Prototype window destroy/rebuild behind an internal setting; verify navigation, locale, pending work, update.
+4. Measure memory and CPU on supported Windows setups before any user-facing option.
 
-Converge close and tray actions through one policy function. A deep mode destroys only the window/WebView; it does not use the process exit path and does not stop the in-process route host. Rebuilding the window must defer navigation until WebView ready and preserve a pending route when creation is asynchronous.
+## 5. Gates
 
-### Frontend lifecycle
+- Hiding or rebuilding never stops a route listener.
+- Reopen restores the last safe page and keeps a pending tray navigation.
+- Polling pauses once and resumes with one refresh; no duplicate timers.
+- Close, tray, update, restart, and explicit exit each have tests.
+- Unsupported platforms behave explicitly and safely.
 
-Visibility events may pause the global tick, route health polling, and usage synchronization. Returning visible triggers one bounded refresh. Event subscription remains behind the backend façade; pages do not call `invoke` directly.
+## 6. Non-goals
 
-### Failure and recovery
-
-- If WebView suspension is unavailable, degrade to ordinary hide.
-- If window rebuild fails, keep the tray process alive and expose an explicit reopen/retry action.
-- App update/restart remains a process-level operation and must be tested with both hidden and rebuilt-window states.
-- Pending navigation is single-valued and replaced by the latest safe path.
-
-## 4. Evaluation slices
-
-1. Extract and test the close/residency policy without changing behavior.
-2. Add pause/resume events and refresh accounting for the power-saving mode.
-3. Prototype window destruction/rebuild behind an internal setting and verify navigation, localization, pending work, and update flows.
-4. Measure memory and CPU on supported Windows configurations before considering a user-facing choice.
-
-## 5. Acceptance gates
-
-- No route listener is stopped merely because the window is hidden or rebuilt.
-- Reopening restores the last safe page and does not drop a pending tray navigation.
-- Frontend polling is paused exactly once and resumed with one refresh, without duplicate timers.
-- Close, tray, update, restart, and explicit exit have distinct tests.
-- Unsupported platform behavior is explicit and safe.
-
-## 6. Explicit exclusions
-
-This proposal does not create an operating-system service, change the local route process boundary, add credential encryption, or add domestic OAuth/API conversion. Those are outside this candidate.
+OS services, changing the route process boundary, credential encryption, domestic OAuth/API conversion.

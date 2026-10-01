@@ -3,7 +3,7 @@ import {
   mapCoreProvider,
   type CoreProvider,
 } from './provider-map';
-import type { AdapterAction, AdapterApplyPlan, AdapterApplyResult, AdapterBridgeInboundRequest, AdapterBridgeRouteTrace, AdapterBridgeRuntimeState, AdapterBridgeRuntimeStatus, AdapterEvidence, AdapterGateKind, AdapterMaturity, AdapterPlanChange, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterServiceImpact, AdapterSourceKind, AdapterSupport, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenProbeOutcome, LocalTokenProbeResult, LocalTokenRecord, RouteMemberOverview, RouteTraceConversion, RouteTraceLocalAuth, RouteTraceMember, RouteTracePool, RouteTracePoolAttempt, RouteTraceStageStatus, RouteTraceStep, RouteTraceDelivery, RouteTraceUpstream, RouteTraceUpstreamAuth, RouteTraceUpstreamRequest, RouteTraceStageId, RoutePoolDialect, RoutePoolSurface, RouteSchedulePolicy } from './adapter';
+import type { AdapterAction, AdapterApplyPlan, AdapterApplyResult, AdapterBridgeInboundRequest, AdapterBridgeRouteTrace, AdapterBridgeRuntimeState, AdapterBridgeRuntimeStatus, AdapterEvidence, AdapterGateKind, AdapterMaturity, AdapterPlanChange, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterServiceImpact, AdapterSourceKind, AdapterSupport, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenLifecycle, LocalTokenProbeOutcome, LocalTokenProbeResult, LocalTokenRecord, RouteMemberOverview, RouteTraceConversion, RouteTraceLocalAuth, RouteTraceMember, RouteTracePool, RouteTracePoolAttempt, RouteTraceStageStatus, RouteTraceStep, RouteTraceDelivery, RouteTraceUpstream, RouteTraceUpstreamAuth, RouteTraceUpstreamRequest, RouteTraceStageId, RoutePoolDialect, RoutePoolSurface, RouteSchedulePolicy } from './adapter';
 
 /** Exact camelCase shape serialized by Rust's `AdapterProfile`. */
 export interface AdapterProfileWire {
@@ -902,6 +902,14 @@ export interface LocalTokenRecordWire {
   token: string;
   name?: string;
   primary?: boolean;
+  lifecycle?: string;
+  targetAgentId?: string;
+  surface?: string;
+}
+
+function mapLocalTokenLifecycle(value: unknown): LocalTokenLifecycle {
+  if (value === 'inactive' || value === 'orphaned') return value;
+  return 'active';
 }
 
 export function mapLocalTokenRecord(wire: LocalTokenRecordWire): LocalTokenRecord {
@@ -912,12 +920,17 @@ export function mapLocalTokenRecord(wire: LocalTokenRecordWire): LocalTokenRecor
   }
   const id = typeof wire.id === 'string' && wire.id.trim() ? wire.id.trim() : poolId;
   const name = typeof wire.name === 'string' ? wire.name.trim() : '';
+  const targetAgentId = typeof wire.targetAgentId === 'string' ? wire.targetAgentId.trim() : '';
+  const surface = typeof wire.surface === 'string' ? wire.surface.trim() : '';
   return {
     id,
     poolId,
     token,
     name,
     primary: wire.primary !== false,
+    lifecycle: mapLocalTokenLifecycle(wire.lifecycle),
+    ...(targetAgentId ? { targetAgentId } : {}),
+    ...(surface ? { surface } : {}),
   };
 }
 

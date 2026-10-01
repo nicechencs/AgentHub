@@ -5,69 +5,63 @@ status: current
 owner: maintainers
 audience: core, Tauri, and route/runtime contributors
 source-of-truth: AgentAdapter, adapter planner/apply ports, bridge host code, and the sidecar proposal
-updated: 2026-09-08
+updated: 2026-09-29
 ---
 
 # Adapters 与本机 Bridge
 
-## Adapter 解决什么问题
+本页解释两个内部角色：Adapter（每个 Agent 的对接代码）和 Bridge（界面上的“本机转发”）。路线怎么选见 [Connections、Routes 与绑定](connections-and-routing.md)；哪条来源能接到哪个目标见 [Route 兼容性](../reference/route-compatibility.md)；本机转发的接口见 [本机 Routes API](../reference/local-route-api.md)。
 
-Adapter 把 Agent 特有的路径、配置、账号、运行命令和流输出差异贡献给平台能力。它不是一个让每个页面直接写文件的万能服务。平台服务拥有锁、事务、备份、日志、能力门禁和进度；Adapter 只处理具体 Agent 的差异。
+## Adapter 管什么
 
-前端 adapter port 的核心读写面是：
+Adapter 只处理某个 Agent 特有的路径、配置、账号、启动命令和输出格式差异。锁、事务、备份、日志、能力门禁和进度由平台服务负责；页面不能绕过平台服务直接让 Adapter 写文件。
+
+前端 adapter port（`src/lib/backend/contracts/adapter.ts`）的核心读写面：
 
 ```text
-analyze(source, target)
-plan(source, target)
-listProfiles(filter)
-apply(source, target)
-remove(profile)
-startBridge(profile) / stopBridge(profile) / getBridgeStatus(profile)
+analyze(request) / plan(request)          预览，不写入
+listProfiles(filter)                      已有的接法
+apply(request) / remove(profileId)        写入与移除
+startBridge / stopBridge / getBridgeStatus(profileId)
 ```
 
-返回的 analysis/plan 不含 secret。`actions` 只表达“将配置到哪里”或引用哪份 Connection；任何 secret action 都是引用而不是序列化明文。
+port 另有连接池、入口 Key 和路由记录等方法，以源码为准。analyze/plan 的返回不含密钥；`actions` 只写“要配置到哪里”和引用哪份登录，不序列化明文。
 
-## 路线与状态
+## 四种路线
 
-路线的厂商、协议和凭据兼容性以 [Route compatibility reference](../reference/route-compatibility.md) 为准；本页只解释 Adapter 与 Bridge 的职责，不复制兼容矩阵。
-
-| wire/实现路线 | 用途 | 是否常驻进程 |
+| 路线 | 用途 | 是否常驻进程 |
 | --- | --- | --- |
-| `native_endpoint` | source API 已能说 target 端点，只改地址/模型 | 否 |
-| `config_sync` | 写入 target 认的配置或 OAuth 槽 | 否；由目标自己使用/刷新 |
-| `local_bridge` | source 与 target 协议不相同，但存在受测转换 | 是；仅 loopback |
-| `unsupported` | 没有 writer、转换器或允许的认证契约 | 否 |
+| `native_endpoint` | 来源 API 已能对上目标端点，只改地址/模型 | 否 |
+| `config_sync` | 写进目标认的配置或 OAuth 位置 | 否；目标自己使用和续期 |
+| `local_bridge` | 协议不同但有受测转换 | 是；只监听本机 |
+| `unsupported` | 没有写入实现、转换器或允许的登录契约 | 否 |
 
-`support`、`maturity` 和 `canApply` 分别表达矩阵信心、边的成熟度和今天能否写。预览可存在但不能因此偷偷执行写入。这些字段由 `AdapterRouteService::plan()` 决定；browser mock 只查 golden，未命中 fail-closed。见 [Adapter 路线内核](../architecture/adapter-route-kernel.md)。产品三路说明见 [connections-and-routing](connections-and-routing.md)。
+`support`、`maturity` 和 `canApply` 分别表示矩阵信心、这条边的成熟度、今天能不能写。三者由 `AdapterRouteService::plan()` 算出；浏览器 mock 只查 golden 用例，未命中就 fail closed。细节见 [Adapter 路线内核](../architecture/adapter-route-kernel.md)。
 
-## Profile 与 generated Provider
+## Profile 与自动生成的 Provider
 
-Adapter profile 是一条“source connection → target Agent”的受管投影，保存 source/target、route、mode、rule、状态、端口和 autoStart 等元数据；它不保存 credential。bridge 可能生成一个 Provider 作为 target 的配置投影，但这个 Provider 只引用真实 Connection secret：
+Adapter profile 是一条“来源登录 → 目标 Agent”的受管记录，保存来源、目标、路线、模式、规则、状态、端口和 autoStart 等元数据，不保存登录信息。本机转发可能为目标生成一个 Provider 配置，它只引用真实登录：
 
 - 不进入 Connections 登录列表；
-- 不可作为下一次 `bind` 的 source；
-- 解绑时由 binding/host saga 清理或恢复；
-- 不代表用户新增了一份 API Key 或 OAuth 登录。
+- 不能当下一次 `bind` 的来源；
+- 解绑时由 binding / 桌面端 saga（带回滚的多步写入）清理或恢复；
+- 不代表用户新增了一份 API Key 或官方登录。
 
-## 当前 local_bridge
+## 当前本机转发
 
-当前实现是 Tauri 进程内 host：`AppState` 持有 `BridgeRuntimeHost`、bridge controller 和控制协调器，core 的 bridge 服务负责 admission、listener、transport、stream 与协议转换。运行面只绑定 `127.0.0.1`/`localhost`/`::1`，目标客户端使用本机令牌；上游 secret 不写进目标配置。
+- 运行在 Tauri 桌面进程内：`AppState` 持有 `BridgeRuntimeHost`、bridge controller 和控制协调器；core 的 bridge 服务负责准入、监听、传输、流和协议转换。
+- 只绑定 `127.0.0.1` / `localhost` / `::1`。目标客户端拿到的是本机入口 Key，上游登录信息不写进目标配置。
+- 每个目标 Agent / 接口一个默认连接池，共用一个本机端口；`GET /models` 与实际请求共用同一个模型解析器。
+- 混合供应商复合路由和 Codex↔Grok 双向 Responses 转换是实验开关，默认关闭。
 
-默认每个目标 Agent/surface 一个授权池：listener 共用 loopback 口，令牌挂在池上，成员引用 Connections 里的登录。`GET /models` 与 dispatch 共用 resolver。混合供应商复合路由和 Codex↔Grok 双向 Responses 仍是实验开关、默认关闭。
+## sidecar 是提案，不是现状
 
-本机入口包括 Messages、Responses、Chat Completions；同协议直接转发，或转成上游协议。Codex 与 Grok 都走 Responses 口，格式跟路由一起保存，由本机令牌选中，不根据请求正文猜测。接到本机路由的 Codex / Grok 用本机令牌当 API Key 调 `POST /v1/responses`。Kiro 登录可作为上游接到这三家；完整 endpoint、SSE 与转换表在 [本机路由 API](../reference/local-route-api.md)，本文不重复维护厂商端点清单。
-
-## sidecar 是方向，不是现状
-
-未来可以把 `local_bridge` runtime 移到用户级 `agenthub-adapterd`：Tauri/CLI control client 通过本地 IPC 请求它，sidecar 成为 listener、drain、恢复和 bridge mutation 的单一 owner。该方向不改变领域边界：Account、Provider、Connection、ActiveBinding 仍由 core service 管理，sidecar 不直接写数据库表或 live 配置。
-
-在 IPC handshake、schema lease、single-instance、升级/恢复和 host unavailable 语义落地前，不得宣称已存在 sidecar，也不能让 GUI 和 sidecar 同时拥有 bridge saga。
+未来可以把本机转发移到用户级进程 `agenthub-adapterd`，由它独占监听、排空、恢复和转发相关写入；Account、Provider、Connection、ActiveBinding 仍由 core service 管理，sidecar 不直接写数据库或本机配置。在 IPC 握手、schema lease、单实例、升级/恢复和“host 不可用”语义落地前，不得宣称 sidecar 已存在，也不能让 GUI 和 sidecar 同时拥有转发 saga。见 [Sidecar 提案](../proposals/adapter-sidecar.md)。
 
 ## 相关页面
 
-- [Connections and routing](connections-and-routing.md)
+- [Connections、Routes 与绑定](connections-and-routing.md)
 - [Adapter 路线内核](../architecture/adapter-route-kernel.md)
 - [Core and runtime](../architecture/core-runtime.md)
 - [Frontend and backend boundary](../architecture/frontend-backend.md)
-- [Sidecar proposal](../proposals/adapter-sidecar.md)
 - [本机同口授权池（归档）](../archive/unified-loopback-pool.md)

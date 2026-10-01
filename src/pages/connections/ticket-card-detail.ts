@@ -12,7 +12,16 @@ import {
   extractProviderCredentialFiles,
   type CredentialFileView,
 } from '@/lib/credential-files';
+import type { AuthHealth } from '@/lib/backend/contracts/auth-state';
+import {
+  acceptedIdentityLabel,
+  presentLoginIdentity,
+  presentLoginStatus,
+  type LoginIdentityInput,
+  type LoginStatusInput,
+} from '@/components/login-kernel';
 import type { Account, AgentKey, AuthStatus, Provider } from '@/lib/types';
+import { translate, type MessageKey, type MessageParams } from '@/lib/i18n';
 import type {
   BindingRoute,
   BindingView,
@@ -36,6 +45,10 @@ import {
 import type { TranslateFn } from '@/lib/i18n';
 import { localizeStoredUiCopy } from '@/lib/i18n/stored-copy';
 import { connectionStateRouteLabel } from '@/lib/ticket-wallet-labels';
+
+function zhT(key: MessageKey, params?: MessageParams): string {
+  return translate('zh', key, params);
+}
 
 function bindingDashboardRouteLabel(route: BindingRoute, t?: TranslateFn): string {
   return connectionStateRouteLabel(route, t);
@@ -232,64 +245,49 @@ export function humanizeTicketAuthLabel(label: string, t?: TranslateFn): string 
   return t ? localizeStoredUiCopy(stripped, t) : stripped;
 }
 
-const CONFIGURED_HEALTH = new Set([
-  '可续期',
-  '已配置',
-  '已验证',
-  'Renewable',
-  'Configured',
-  'Verified',
-]);
+function healthFromAuthLabel(label?: string): AuthHealth | undefined {
+  if (!label) return undefined;
+  const human = humanizeTicketAuthLabel(label);
+  if (human === '已验证' || human === 'Verified') return 'verified';
+  if (human === '可续期' || human === 'Renewable') return 'renewable';
+  if (human === '已配置' || human === 'Configured') return 'configured';
+  if (human === '需要重新登录' || human === '需重新登录') return 'needs_login';
+  if (human === '未登录' || human === '尚未获取') return 'missing';
+  if (human === '状态未知') return 'unknown';
+  return undefined;
+}
 
-const AUTH_CHIP_FALLBACK = {
-  authConfigured: '已配置',
-  authNeedsRelogin: '需重新登录',
-  authExpiring: '即将过期',
-  authUnknown: '尚未获取',
-} as const;
+function ticketStatusInput(extras: TicketDetailExtras): LoginStatusInput {
+  const deferToLegacy = extras.authStatus === 'expired'
+    || extras.authStatus === 'none'
+    || extras.authStatus === 'expiring';
+  const fromLabel = deferToLegacy ? undefined : healthFromAuthLabel(extras.authLabel);
+  const authHealth = fromLabel
+    ?? (!deferToLegacy && (extras.secretTail?.trim() || extras.authStatus === 'valid')
+      ? 'configured'
+      : undefined);
+  return {
+    authHealth,
+    authStatus: extras.authStatus,
+    credentialKind: 'oauth',
+  };
+}
 
-/** List status: configured / needs login / unknown — never a secret tail. */
+/** List status from the shared login kernel. Never includes a secret tail. */
 export function ticketAuthChip(
   extras?: TicketDetailExtras | null,
   t?: TranslateFn,
-): { label: string; tone: 'default' | 'warning' } | null {
+): { label: string; tone: 'success' | 'warning' | 'danger' | 'muted' } | null {
   if (!extras) return null;
-  const labelOf = (key: keyof typeof AUTH_CHIP_FALLBACK) => {
-    if (!t) return AUTH_CHIP_FALLBACK[key];
-    switch (key) {
-      case 'authConfigured':
-        return t('connections.list.authConfigured');
-      case 'authNeedsRelogin':
-        return t('connections.list.authNeedsRelogin');
-      case 'authExpiring':
-        return t('connections.list.authExpiring');
-      case 'authUnknown':
-        return t('connections.list.authUnknown');
-    }
-  };
-
-  if (extras.authStatus === 'expired') {
-    return { label: labelOf('authNeedsRelogin'), tone: 'warning' };
-  }
-  if (extras.authStatus === 'expiring') {
-    return { label: labelOf('authExpiring'), tone: 'warning' };
-  }
-  if (extras.authStatus === 'none') {
-    return { label: labelOf('authUnknown'), tone: 'default' };
-  }
-
-  const healthKey = extras.authLabel ? humanizeTicketAuthLabel(extras.authLabel) : '';
-  if (
-    extras.authStatus === 'valid'
-    || CONFIGURED_HEALTH.has(healthKey)
-    || Boolean(extras.secretTail?.trim())
-  ) {
-    return { label: labelOf('authConfigured'), tone: 'default' };
-  }
-  if (extras.authLabel) {
-    return { label: humanizeTicketAuthLabel(extras.authLabel, t), tone: 'default' };
-  }
-  return { label: labelOf('authUnknown'), tone: 'default' };
+  const status = ticketStatusInput(extras);
+  const hasSignal = Boolean(
+    status.authHealth
+    || extras.authStatus
+    || extras.authLabel
+    || extras.secretTail?.trim(),
+  );
+  if (!hasSignal) return null;
+  return presentLoginStatus(status, t ?? zhT);
 }
 
 export type TicketSwitchChip = {
@@ -297,35 +295,34 @@ export type TicketSwitchChip = {
   label: string;
 };
 
-function isPlaceholderOAuthLabel(label: string): boolean {
-  const t = label.trim().toLowerCase();
-  return (
-    !t
-    || t === '官方未提供账号信息'
-    || t === '官方未提供登录信息'
-    || t === 'codex-oauth'
-    || t === 'codex oauth'
-    || t === 'grok-oauth'
-    || t === 'kimi-oauth'
-    || t === 'claude-oauth'
-    || t === 'pi-auth'
-    || /\(oauth\)$/i.test(t)
-    || / · oauth$/i.test(t)
-    || / oauth$/i.test(t)
-    || /-oauth$/i.test(t)
-  );
+export function ticketLoginInput(
+  ticket: Pick<TicketView, 'label'> & Partial<Pick<TicketView, 'sourceKind' | 'sourceId' | 'agentId' | 'credentialClass'>>,
+  extras?: TicketDetailExtras | null,
+): LoginIdentityInput & LoginStatusInput {
+  const kind = ticket.credentialClass === 'api_key' ? 'apikey' : 'oauth';
+  const identityLabel = kind === 'oauth'
+    ? acceptedIdentityLabel(extras?.identity) ?? acceptedIdentityLabel(extras?.accountLabel)
+    : undefined;
+  return {
+    sourceKind: ticket.sourceKind ?? 'account',
+    sourceId: ticket.sourceId ?? 'ticket',
+    agentId: ticket.agentId ?? '',
+    kind,
+    label: ticket.label,
+    identityLabel,
+    endpointHost: extras?.endpointHost,
+    endpointMode: extras?.endpointMode,
+    ...ticketStatusInput(extras ?? {}),
+    credentialKind: kind,
+  };
 }
 
-/** Card title prefers healed account email over placeholder ticket labels. */
+/** Card title prefers a known official identity over the safe label. */
 export function ticketCardTitle(
-  ticket: Pick<TicketView, 'label'>,
+  ticket: Pick<TicketView, 'label'> & Partial<Pick<TicketView, 'sourceKind' | 'sourceId' | 'agentId' | 'credentialClass'>>,
   extras?: TicketDetailExtras | null,
 ): string {
-  const identity = extras?.identity?.trim();
-  if (identity && identity.includes('@')) return identity;
-  const fromAccount = extras?.accountLabel?.trim();
-  if (fromAccount && !isPlaceholderOAuthLabel(fromAccount)) return fromAccount;
-  return ticket.label;
+  return presentLoginIdentity(ticketLoginInput(ticket, extras), zhT).primary;
 }
 
 export function cursorLoginKindLabel(
@@ -505,10 +502,10 @@ function formatTokenRemainingLabel(sec: number | undefined, t?: TranslateFn): st
 export function ticketBindingStatus(binding: BindingView, t?: TranslateFn): string {
   if (binding.route === 'bridge') {
     if (binding.bridge?.running) {
-      return t ? t('connections.list.bridgeRunning') : '本机路由运行中';
+      return t ? t('connections.list.bridgeRunning') : '本机转发运行中';
     }
     if (binding.bridge && !binding.bridge.running) {
-      return t ? t('connections.list.bridgeStopped') : '本机路由已停止';
+      return t ? t('connections.list.bridgeStopped') : '本机转发已停止';
     }
   }
   if (binding.active) return t ? t('connections.list.currentlyUsed') : '当前使用';
@@ -787,7 +784,7 @@ export function buildTicketDetailFields(
   const agentSurface = localRouteSurface(bindings);
   if (agentSurface) {
     advanced.push({
-      label: t ? t('kind.route.localRoute') : '本机路由',
+      label: t ? t('kind.route.localRoute') : '本机转发',
       value: agentSurface,
       mono: true,
     });

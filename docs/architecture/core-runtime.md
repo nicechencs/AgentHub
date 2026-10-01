@@ -5,93 +5,92 @@ status: current
 owner: maintainers
 audience: core, Tauri, CLI, and runtime contributors
 source-of-truth: crates/agenthub-core, src-tauri, and current adapter control/bridge code
-updated: 2026-08-29
+updated: 2026-09-29
 ---
 
 # Core 与 Runtime
 
+本页说明 `agenthub-core` 怎样被桌面和命令行复用、主要写路径怎么走，以及本机转发跑在哪个进程里。
+
 ## Core 组合
 
-GUI 和 CLI 都组合同一个 `agenthub-core`。core 不依赖 Tauri；它拥有路径解析、SQLite、脱敏、进程、协议和领域服务，使同一条规则能被桌面和命令行复用并单测。
+桌面壳和 CLI 组合同一个 `agenthub-core`。core 不依赖 Tauri，所以同一条规则能被两端复用并单测。启动组合在 `crates/agenthub-core/src/startup.rs`，由 `AgentHub::open` 调用。
 
 ```text
 入口壳（Tauri command / CLI）
   → core service
-  → domain / adapter / platform port
-  → repository + filesystem + process + HTTP
+  → domain / adapter / platform
+  → repository + 文件 + 进程 + HTTP
 ```
 
-主要边界：
-
-| 区域 | 责任 |
+| 区域 | 负责 |
 | --- | --- |
-| `services` | 组合读写、锁、备份、current/binding 一致性和对外 use case |
-| `domain/protocol_graph` | Agent 能力与协议路线的规划矩阵，不执行写入 |
-| `adapters` / `integrations` | Agent 特有的检测、配置、账号、运行和流解析 |
-| `platform` | Agent catalog、AgentKey、configuration、lifecycle、skills、usage 等可复用平台能力 |
+| `services` | 对外 use case：读写组合、锁、备份、current 指针一致性 |
+| `domain/protocol_graph` | Agent 能力与路线的规划矩阵，只算不写 |
+| `adapters` / `integrations` | 每个 Agent 的检测、配置、账号、运行和流解析 |
+| `platform` | Agent 目录与 `AgentKey`、配置、安装与生命周期、技能、用量等平台能力 |
 | `storage` | SQLite 事务、迁移和 repository |
-| `bridge` | loopback host、admission、stream 和协议转换 |
+| `bridge` | 本机转发：loopback 监听、准入、流和协议转换 |
+| `adapter_control` | 本机转发写入的串行门（`AdapterSagaCoordinator`） |
 | `runtime` | Node/npm 等共享运行时的检测、引导和缓存 |
 
-`ConnectionService` 协调 active binding 与旧 `is_current` 镜像；Account/Provider service 不能各自 best-effort 写 current。生产写入口走 Ticket/Connection 组合，避免页面或 adapter 各自拼接副作用。
+「current 指针」指每个 Agent 当前生效的登录或供应商。它只由 `ConnectionService` 写入：同一事务里写 `accounts` / `providers` 的旧 `is_current` 字段和 `agent_active_bindings` 表。Account / Provider service 先写本机配置，成功后再调 `ConnectionService`，不各自尽力写 current。
 
 ## 典型写路径
 
 ### 连接绑定
 
+「绑定」指把一份登录接到某个 Agent。
+
 ```text
 ticket.plan(source, target)
-  → protocol graph + capability + private write gate
-  → safe preview（route / maturity / changes / canApply）
+  → AdapterRouteService::plan()：路线矩阵 + 能力 + 私有写入门
+  → 只读预览（route / maturity / changes / canApply）
 
 ticket.bind(source, target)
-  → re-plan and reject if not writable
-  → native/config_sync: service + adapter write
-  → local_bridge: desktop host saga
-  → ConnectionService records active binding
+  → 重新 plan，不可写则拒绝
+  → native_endpoint / config_sync：TicketBindService + adapter 写配置
+  → local_bridge：桌面 host 的 saga
+  → ConnectionService 记录生效连接
 ```
 
-`plan` 只读，`bind`/`unbind` 是产品写入口。`AdapterRouteService::plan()` 是路线、gate 和 `canApply` 的唯一决策者；browser mock 只解释它对冻结入参的 golden 投影。桥接 bind 不由 core 的普通 `TicketBindService` 偷开 listener，而由桌面 host 的 saga 负责启动、写目标配置和失败逆序恢复。详见 [Adapter 路线内核](adapter-route-kernel.md)。
+`plan` 只读，`bind` / `unbind` 是唯一写入口。`AdapterRouteService::plan()` 是路线和 `canApply` 的唯一决策者，详见 [Adapter 路线内核](adapter-route-kernel.md)。
+
+`local_bridge` 的 bind 不由 `TicketBindService` 启动监听，而由桌面 host 负责：`src-tauri/src/adapter_control_host.rs` 接收请求，`src-tauri/src/adapter_bridge_controller.rs` 启动监听，再调 core 的 `adapter_bridge_service`（含 `persist_saga.rs`）写配置；失败时逆序恢复。
 
 ### Agent 安装与运行
 
-Agent 安装先由 runtime service 检测 Node/npm 等共享前置环境，再由 lifecycle/adapter 执行白名单命令并刷新 detect。Chat 运行由 `ChatService` 组合 `RunService`、adapter run spec、`StreamingProcessRunner` 和对应 stream parser；阻塞进程从 Tauri command 的异步边界隔离出去。
+- 安装：runtime service 先检测 Node/npm 等前置环境，再由 lifecycle / adapter 执行白名单命令并刷新检测结果。
+- Chat 旧发送方式：`ChatService` 组合 `RunService`、adapter 的运行参数、`StreamingProcessRunner` 和对应流解析器。
+- Chat 持续对话：`services/chat_runtime` 为每个会话保持一个 Agent 进程（如 Codex app-server），命令串行执行，事件先写 SQLite 再给页面读快照。哪些 Agent 走哪种方式见 [Chat 与 Agent](../concepts/chat-and-agents.md)。
 
-## local_bridge：当前态与方向
+阻塞进程都在 Tauri command 的异步边界之外运行。
 
-当前态：
+## 本机转发的进程边界
 
 ```text
 Tauri AppState
-  ├─ BridgeRuntimeHost
-  ├─ DesktopAdapterControl / saga coordinator
-  └─ core services
-       └─ 127.0.0.1 listener + protocol conversion
+  ├─ BridgeRuntimeHost（core bridge/host）
+  ├─ DesktopAdapterControl + AdapterSagaCoordinator
+  └─ AgentHub（core services）
+       └─ 127.0.0.1 监听 + 协议转换
 ```
 
-当前 listener 是 Tauri 进程内 `local_bridge`，只听 loopback。默认每个目标 Agent/surface 一个授权池：本机令牌挂在池上，成员引用 Connections 登录；`GET /models` 与 dispatch 共用 resolver。Codex 与 Grok 共用 Responses 入口，格式跟路由一起保存，由本机令牌选中，不根据请求正文猜测。生成的本机令牌是运行时材料，不是用户登录，也不进入 Connections 登录列表。`native_endpoint`/`config_sync` 不依赖 bridge，也不会自动入池。
+当前监听跑在 Tauri 进程内，只听 loopback。授权池、本机令牌和 Codex / Grok 共用 Responses 入口等行为见 [Connections、Routes 与绑定](../concepts/connections-and-routing.md#登录列表与-routes)。`native_endpoint` / `config_sync` 不依赖本机转发，也不会自动入池。
 
-方向态（提案，不是当前部署）：
+把监听拆到独立 sidecar 进程（`agenthub-adapterd`）只是[提案](../proposals/adapter-sidecar.md)，不是当前部署。
 
-```text
-Tauri/CLI control client
-  → local IPC
-  → agenthub-adapterd（每 canonical data dir 单实例）
-  → AdapterRuntimeApplication + BridgeRuntimeHost
-```
+## Agent 目录与能力
 
-sidecar 只承接 `local_bridge` runtime 和它的 lifecycle；Account、Provider、Connection/ActiveBinding 仍由既有 core owner 管理，sidecar 不直接拥有表或 live 配置。IPC、schema lease、升级和恢复完成前，不能把 sidecar 文档当作已实施事实。
+平台 registry 逐步以 `AgentKey`（小写 kebab-case 字符串）为主；旧 `AgentId` / `AgentAdapter` 保留兼容。
 
-## Agent catalog 与能力
-
-平台 registry 逐步以稳定 `AgentKey`（小写 kebab-case 字符串）为主路径；旧 `AgentId`/`AgentAdapter` façade 保留用于兼容。能力等级 `Full`、`Partial`、`Planned`、`Unsupported` 是调用门禁，不是商品白名单：Planned/Unsupported 必须返回 typed unsupported，不能伪装成可调用功能。
+能力等级 `CapabilityLevel` 有四档：`Full`、`Partial`、`Planned`、`Unsupported`。它是调用门禁，不是商品白名单：`Planned` / `Unsupported` 必须返回明确的不支持错误，不能伪装成可用。
 
 ## 相关页面
 
-- [Architecture overview](overview.md)
+- [架构总览](overview.md)
 - [Adapter 路线内核](adapter-route-kernel.md)
-- [Adapters and bridges](../concepts/adapters-and-bridges.md)
-- [Chat and agents](../concepts/chat-and-agents.md)
-- [Sidecar proposal](../proposals/adapter-sidecar.md)
+- [Adapters 与本机 Bridge](../concepts/adapters-and-bridges.md)
+- [Chat 与 Agent](../concepts/chat-and-agents.md)
+- [Sidecar 提案](../proposals/adapter-sidecar.md)
 - [本机同口授权池（归档）](../archive/unified-loopback-pool.md)
-- [Legacy document index](../archive/legacy-document-index.md)

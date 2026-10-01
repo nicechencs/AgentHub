@@ -145,6 +145,95 @@ fn startup_entry_restore_starts_default_pools_without_legacy_profiles() {
 }
 
 #[test]
+fn startup_entry_restore_starts_demoted_manual_dsh_pool() {
+    tauri::async_runtime::block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
+        hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        let profiles = AdapterProfileRepo::new(hub.db().clone());
+        let manual_profile = AdapterProfile {
+            id: "manual-dsh-pool".into(),
+            name: "manual-dsh-pool".into(),
+            source_kind: AdapterSourceKind::Account,
+            source_id: "acc-manual-ds".into(),
+            target_agent_id: AgentId::Dsh,
+            route: AdapterRoute::LocalBridge,
+            mode: agenthub_core::models::AdapterProfileMode::Api,
+            status: AdapterProfileStatus::Active,
+            rule_id: "test-rule".into(),
+            rule_version: "v1".into(),
+            generated_provider_id: None,
+            local_port: Some(43121),
+            auto_start: true,
+            last_error_code: None,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        };
+        profiles.create(&manual_profile).unwrap();
+        let manual = hub
+            .route_pools()
+            .create_legacy_pool(&manual_profile, "ahb_hub_z7cc", true)
+            .unwrap();
+        let extra = hub
+            .route_pools()
+            .create_local_token(&manual.id, "kimi-chat")
+            .unwrap();
+        assert!(extra.token.starts_with("ahb_"));
+        for member in hub.route_pools().list_members(&manual.id).unwrap() {
+            hub.route_pools().remove_member(&member.id).unwrap();
+        }
+
+        let mut adapter_profile = manual_profile.clone();
+        adapter_profile.id = "codex-dsh-pool".into();
+        adapter_profile.name = "codex-dsh-pool".into();
+        adapter_profile.source_id = "acc-codex-dsh".into();
+        profiles.create(&adapter_profile).unwrap();
+        let adapter = hub
+            .route_pools()
+            .create_legacy_pool(&adapter_profile, "ahb_hub_F9FE", false)
+            .unwrap();
+        for member in hub.route_pools().list_members(&adapter.id).unwrap() {
+            hub.route_pools().remove_member(&member.id).unwrap();
+        }
+        let bind = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = bind.local_addr().unwrap().port();
+        drop(bind);
+        hub.route_pools()
+            .enroll_unified_gateway_as_default(&adapter.id, port)
+            .unwrap();
+        assert!(
+            !hub.route_pools()
+                .get(&manual.id)
+                .unwrap()
+                .unwrap()
+                .is_default
+        );
+
+        let host = Arc::new(BridgeRuntimeHost::new());
+        let status = start_local_gateway_entries(hub.clone(), host.clone(), true, true)
+            .await
+            .unwrap();
+        sync_extra_local_bearers(hub.clone(), host.as_ref())
+            .await
+            .unwrap();
+
+        assert!(status.running);
+        assert!(host.status(&adapter.id).unwrap().is_some());
+        assert!(
+            host.status(&manual.id).unwrap().is_some(),
+            "demoted manual DSH pool must still get a live edge"
+        );
+        assert_eq!(
+            host.local_token(&manual.id).unwrap().as_deref(),
+            Some("ahb_hub_z7cc")
+        );
+        assert!(status.port.is_some(), "shared listener must bind");
+
+        host.shutdown().await.unwrap();
+    });
+}
+
+#[test]
 fn startup_entry_restore_keeps_legacy_edge_and_starts_other_pools() {
     tauri::async_runtime::block_on(async {
         let dir = tempfile::tempdir().unwrap();

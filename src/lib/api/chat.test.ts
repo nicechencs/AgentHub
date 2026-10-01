@@ -168,14 +168,14 @@ describe('chat API (browser mock)', () => {
   });
 
   it('opens a new conversation when the official session is not already in Chat', async () => {
-    const createdP = createConversation(['claude'], 'D:\\demo\\chen\\2026\\AgentHub');
+    const createdP = createConversation(['claude'], 'D:\\demo\\user\\2026\\AgentHub');
     await vi.runAllTimersAsync();
     const created = await createdP;
 
     const openP = openConversationFromSession({
       agentId: 'claude',
       sessionId: 'sess-history',
-      cwd: 'D:\\demo\\chen\\2026\\AgentHub',
+      cwd: 'D:\\demo\\user\\2026\\AgentHub',
       title: '历史里的那场',
       history: [{ role: 'user', content: '接着改登录页' }],
     });
@@ -187,7 +187,7 @@ describe('chat API (browser mock)', () => {
     const againP = openConversationFromSession({
       agentId: 'claude',
       sessionId: 'sess-history',
-      cwd: 'D:\\demo\\chen\\2026\\AgentHub',
+      cwd: 'D:\\demo\\user\\2026\\AgentHub',
       title: '忽略',
       history: [],
     });

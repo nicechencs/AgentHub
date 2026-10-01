@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  loginResultFromOauthPoolSave,
   poolAuthorizationCopyOnSave,
   poolAuthorizationOauthEditable,
   saveOauthPoolLogin,
@@ -43,6 +44,23 @@ describe('pool-authorization-edit', () => {
     expect(forkConnectionAuthorization).toHaveBeenCalledWith('account', 'grok-1');
     expect(setSourceCustomModels).toHaveBeenCalledWith('account', 'grok-copy', ['grok-2']);
     expect(setRouteAuthorizationPriority).toHaveBeenCalledWith('account', 'grok-copy', 3);
+    const login = loginResultFromOauthPoolSave({
+      sourceKind: 'account',
+      sourceId: 'grok-copy',
+      copied: true,
+    }, 'grok');
+    expect(login).toEqual({
+      kind: 'oauth',
+      mutation: 'created',
+      source: { sourceKind: 'account', sourceId: 'grok-copy', agentId: 'grok' },
+    });
+    expect(login).not.toHaveProperty('priority');
+    expect(forkConnectionAuthorization.mock.invocationCallOrder[0]).toBeLessThan(
+      setSourceCustomModels.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(setSourceCustomModels.mock.invocationCallOrder[0]).toBeLessThan(
+      setRouteAuthorizationPriority.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it('does not copy a pool-owned official login', async () => {
@@ -55,5 +73,10 @@ describe('pool-authorization-edit', () => {
     )).resolves.toMatchObject({ sourceId: 'grok-1', copied: false });
     expect(forkConnectionAuthorization).not.toHaveBeenCalled();
     expect(setRouteAuthorizationPriority).not.toHaveBeenCalled();
+  });
+
+  it('does not fork an API key', () => {
+    expect(poolAuthorizationCopyOnSave({ kind: 'apikey', addedHere: false })).toBe(false);
+    expect(poolAuthorizationOauthEditable({ kind: 'apikey', sourceKind: 'provider' })).toBe(false);
   });
 });

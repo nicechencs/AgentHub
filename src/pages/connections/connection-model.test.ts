@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { connectSourceKey, type ConnectionUsage, type ConnectionUsageMap } from '@/lib/connect-flow/types';
-import type { Account, Provider } from '@/lib/types';
+import type { Account, AgentKey, Provider } from '@/lib/types';
 import {
   accountToEntry,
   authStatusOfAccount,
   countByKind,
   deleteConnectionDialogDescription,
   deleteConnectionToastDescription,
+  deleteCurrentSwitchTargets,
   filterConnectionEntries,
   beginExclusiveBusyIds,
   endExclusiveBusyIds,
@@ -209,13 +210,31 @@ describe('connection-model', () => {
       const dialog = deleteConnectionDialogDescription({ isCurrent: current });
       const toast = deleteConnectionToastDescription({ isCurrent: current });
       expect(dialog).toContain('移入回收站');
-      expect(dialog).toContain(current ? '当前连接可能仍继续生效' : '不会修改本机配置文件');
+      expect(dialog).toContain(current ? '直到你切换到别的登录' : '不会修改本机配置文件');
+      expect(dialog).not.toContain('可能');
       expect(toast).toContain('已移入回收站');
-      expect(toast).toContain(current ? '当前连接可能仍继续生效' : '本机配置未修改');
+      expect(toast).toContain(current ? '直到你切换到别的登录' : '本机配置未修改');
+      expect(toast).not.toContain('可能');
     }
+    expect(deleteConnectionDialogDescription({ isCurrent: true, agentName: 'Claude Code' }))
+      .toContain('Claude Code 本机正在用这份登录');
   });
 
-  it('shows a Chinese empty reason when 导入授权 has no live probe', () => {
+  it('offers other logins of the same Agent before deleting the current one', () => {
+    const tickets: Array<{ id: string; agentId: AgentKey }> = [
+      { id: 'a', agentId: 'claude' },
+      { id: 'b', agentId: 'claude' },
+      { id: 'c', agentId: 'codex' },
+      { id: 'd', agentId: 'claude' },
+    ];
+    const current = new Set(['a']);
+    expect(deleteCurrentSwitchTargets(tickets[0], tickets, (x) => current.has(x.id)).map((x) => x.id))
+      .toEqual(['b', 'd']);
+    expect(deleteCurrentSwitchTargets({ id: 'z', agentId: 'cursor' }, tickets, () => false))
+      .toEqual([]);
+  });
+
+  it('shows a Chinese empty reason when 导入本机登录 has no live probe', () => {
     expect(liveAuthImportGate(null, false, 'claude')).toEqual({
       enabled: false,
       reason: '没法确认这台电脑上的登录，暂时不能导入',
@@ -392,7 +411,7 @@ describe('connection-model', () => {
       });
       expect(liveApiKeyImportGate(oauthAlsoApiKey, false, 'claude')).toEqual({
         enabled: false,
-        reason: '这台电脑上是官方登录。请改用「导入授权」。',
+        reason: '这台电脑上是官方登录。请改用「导入本机登录」。',
       });
     });
 
@@ -451,7 +470,7 @@ describe('connection-model', () => {
     });
     expect(
       liveApiKeyImportGate({ agentId: 'claude', kind: 'oauth', hasCredentials: true }, false, 'claude'),
-    ).toEqual({ enabled: false, reason: '这台电脑上是官方登录。请改用「导入授权」。' });
+    ).toEqual({ enabled: false, reason: '这台电脑上是官方登录。请改用「导入本机登录」。' });
     expect(
       liveApiKeyImportGate({ agentId: 'claude', kind: 'api_key', hasCredentials: false }, false, 'claude')
         .enabled,

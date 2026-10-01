@@ -579,7 +579,7 @@ describe('TicketWalletList details', () => {
     expect(allMarkup).toContain('2 份登录');
   });
 
-  it('does not put 添加授权 in the list chrome when logins exist', () => {
+  it('does not put 添加登录 in the list chrome when logins exist', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
@@ -591,12 +591,12 @@ describe('TicketWalletList details', () => {
         onImportLogin() {},
       }),
     );
-    expect(markup).not.toContain('添加授权');
+    expect(markup).not.toContain('添加登录');
     expect(markup).not.toContain('aria-label="登录类型筛选"');
     expect(markup).not.toContain('新 API Key');
   });
 
-  it('keeps 添加授权 on the empty-wallet next action', () => {
+  it('keeps 添加登录 on the empty-wallet next action', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: { tickets: [], bindings: [], surfaceGroups: [] },
@@ -608,7 +608,7 @@ describe('TicketWalletList details', () => {
         onImportLogin() {},
       }),
     );
-    expect(markup).toContain('添加授权');
+    expect(markup).toContain('添加登录');
     expect(markup).toContain('还没有登录');
   });
 
@@ -846,7 +846,7 @@ describe('TicketDetailPanel', () => {
         onDelete() {},
       }),
     );
-    expect(markup).toContain('续期凭证');
+    expect(markup).toContain('续期用的登录信息');
     expect(markup).toContain('rt--••••wxyz');
     expect(markup).not.toContain(secret);
     expect(markup).not.toContain('导入自');
@@ -934,7 +934,7 @@ describe('TicketDetailPanel', () => {
     expect(markup).toContain('编辑配置');
     expect(markup).not.toContain('谁在用');
     expect(markup).toContain('Codex');
-    expect(markup).toContain('本机路由运行中');
+    expect(markup).toContain('本机转发运行中');
     expect(markup).toContain('http://127.0.0.1:43121');
     expect(markup).toContain('接口');
     expect(markup).toContain('Claude');
@@ -1310,7 +1310,7 @@ describe('TicketWalletList switch action', () => {
 });
 
 describe('TicketWalletList header health chip', () => {
-  it('shows 已配置 and never 未验证', () => {
+  it('shows the shared renewable status and never 未验证', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
@@ -1320,13 +1320,14 @@ describe('TicketWalletList header health chip', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('已配置');
+    expect(markup).toContain('可续期');
     expect(markup).not.toContain('尚未验证');
     expect(markup).not.toContain('未验证');
-    expect(markup).not.toContain('可续期');
+    expect(markup).not.toContain('优先级');
+    expect(markup).not.toContain('priority');
   });
 
-  it('shows 已配置 instead of the refresh-token tail', () => {
+  it('shows renewable status instead of the refresh-token tail', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
@@ -1336,9 +1337,8 @@ describe('TicketWalletList header health chip', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('已配置');
+    expect(markup).toContain('可续期');
     expect(markup).not.toContain('**JF6Q');
-    expect(markup).not.toContain('可续期');
     expect(markup).not.toContain('未验证');
   });
 

@@ -1,14 +1,16 @@
 ---
 title: 通用表单与侧栏 owner
-type: proposal
-status: proposed
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-08-30
+updated: 2026-09-29
 ---
 
 # 通用表单与侧栏 owner
 
-> 提案，不是现行契约。针对审查 [O-23](../archive/objectization-encapsulation-audit.md)：给 `GenericConfigForm` 和 `Sidebar` 各定唯一 owner。不改 `plan` / `bind` / `unbind` / `switch` / 补偿。O-22（`SecretInput` 接收 `disabled`/`readOnly`）和 O-24（缺少 `SidebarProvider` 时 `useSidebar()` 抛错）已经落地，本系列不重做。日常合入 GitHub `dev`。
+> **落地核对（2026-09-29）：** 表单三件（渲染器只用 `fieldControlKind`，Connections 文案全在 `src/components/shared/config-field-copy.ts`）、导航模型（`NAV_WORKSPACE` / `NAV_MANAGE` 在 `src/components/layout/sidebar-nav.ts`）、统计模型（`src/components/layout/sidebar-stats.ts`，由 `AgentStatusStrip.tsx` 使用）均已落地。本页保留为设计记录，不是现行契约；现行事实以源码和 [架构总览](../architecture/overview.md) 为准。
+
+> 提案，不是现行契约。针对审查 [O-23](../archive/objectization-encapsulation-audit.md)：给 `GenericConfigForm` 和 `Sidebar` 各定唯一 owner。不改 `plan` / `bind` / `unbind` / `switch` / 补偿。O-22（`SecretInput` 接收 `disabled`/`readOnly`）和 O-24（缺少 `SidebarProvider` 时 `useSidebar()` 抛错）已经落地，本系列不重做。
 
 ## Overview
 
@@ -229,7 +231,7 @@ pnpm typecheck
 - [对象化与封装审查](../archive/objectization-encapsulation-audit.md) — O-22、O-23、O-24
 - [读模型 owner 与兼容策略](read-model-owners.md) — O-15 宽行切片；本页不改 `AgentStatus` 字段
 - [Service 内部 owner 拆分](service-internal-owners.md) — 内部 owner、不改 switch/补偿 的同一约束
-- [前端与 Backend Adapter 边界](frontend-backend.md)
+- [前端与 Backend Adapter 边界](../architecture/frontend-backend.md)
 - [UI 页面模式](../ui/page-patterns.md) — 导航分组、路由/插件入口可藏仍可达
 - [UI 设计系统](../ui/design-system.md) — 不在本系列重画 chrome
 - [测试参考](../reference/testing.md)

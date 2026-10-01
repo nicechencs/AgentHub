@@ -580,7 +580,8 @@ pub(crate) fn restore_adapter_bridges(
             }
         };
         if !desired_running {
-            tracing::info!(target: "gui", op = "adapter_bridge_restore", "local gateway left off; skip restore");
+            observe_local_gateway_lifecycle(hub.clone(), host.as_ref(), false, &Ok(())).await;
+            tracing::info!(target: "gui", op = "adapter_bridge_restore", desired_running = false, "local gateway left off; skip restore");
             return;
         }
 
@@ -768,18 +769,39 @@ pub(crate) fn restore_adapter_bridges(
             )
             .await;
             let bearer_sync = sync_extra_local_bearers(hub.clone(), &host).await;
-            status?;
-            bearer_sync?;
-            Ok::<(), String>(())
+            Ok::<_, String>((status, bearer_sync))
         }
         .await;
-        if let Err(error) = shared_restore {
-            tracing::warn!(
-                target: "gui",
-                op = "adapter_bridge_restore",
-                error = %error,
-                "shared local gateway could not be restored"
-            );
+        match shared_restore {
+            Ok((status, bearer_sync)) => {
+                observe_local_gateway_lifecycle(hub.clone(), host.as_ref(), true, &bearer_sync)
+                    .await;
+                if let Err(error) = status.and(bearer_sync) {
+                    tracing::warn!(
+                        target: "gui",
+                        op = "adapter_bridge_restore",
+                        error = %error,
+                        "shared local gateway could not be restored"
+                    );
+                    surface_shared_restore_failure(hub.clone(), &error).await;
+                }
+            }
+            Err(error) => {
+                observe_local_gateway_lifecycle(
+                    hub.clone(),
+                    host.as_ref(),
+                    true,
+                    &Err(error.clone()),
+                )
+                .await;
+                tracing::warn!(
+                    target: "gui",
+                    op = "adapter_bridge_restore",
+                    error = %error,
+                    "shared local gateway could not be restored"
+                );
+                surface_shared_restore_failure(hub.clone(), &error).await;
+            }
         }
     });
 }
@@ -1615,7 +1637,9 @@ pub(crate) async fn start_local_gateway(
     if remember {
         write_local_gateway_desired_running(hub.clone(), true).await;
     }
-    sync_extra_local_bearers(hub, &host).await?;
+    let bearer_sync = sync_extra_local_bearers(hub.clone(), &host).await;
+    observe_local_gateway_lifecycle(hub, host.as_ref(), true, &bearer_sync).await;
+    bearer_sync?;
     drop(_restarting_guard);
     status.restarting = restarting.load(Ordering::SeqCst);
     Ok(status)
@@ -1629,8 +1653,8 @@ async fn start_local_gateway_entries(
 ) -> Result<LocalGatewayStatus, String> {
     let pools = with_hub_blocking(hub.clone(), move |hub| {
         hub.route_pools()
-            .list_default_pools()
-            .map_err(|error| map_err_string("list_default_pools", error))
+            .list_gateway_listener_pools()
+            .map_err(|error| map_err_string("list_gateway_listener_pools", error))
     })
     .await?;
     let flags = with_hub_blocking(hub.clone(), move |hub| {
@@ -1774,11 +1798,11 @@ pub(crate) async fn set_local_gateway_token(
         })
         .await?
     };
-    if !record.primary {
-        sync_extra_local_bearers(hub, &host).await?;
-        return Ok(record);
+    if record.primary {
+        restart_pool_listener_if_running(hub.clone(), &host, record.pool_id.clone()).await?;
     }
-    restart_pool_listener_if_running(hub, &host, record.pool_id.clone()).await?;
+    // Primary rotate used to skip this; live extras then still held the old hub.
+    sync_extra_local_bearers(hub, &host).await?;
     Ok(record)
 }
 
@@ -1905,8 +1929,8 @@ pub(crate) async fn restart_pool_listener_if_running(
 ) -> Result<(), String> {
     let pools = with_hub_blocking(hub.clone(), move |hub| {
         hub.route_pools()
-            .list_default_pools()
-            .map_err(|error| map_err_string("list_default_pools", error))
+            .list_gateway_listener_pools()
+            .map_err(|error| map_err_string("list_gateway_listener_pools", error))
     })
     .await?;
     let Some(pool) = pools.into_iter().find(|pool| pool.id == pool_id) else {
@@ -1954,8 +1978,66 @@ pub(crate) async fn stop_local_gateway(
     }
     let status =
         local_gateway_status_from_host(&host, Vec::new(), restarting.load(Ordering::SeqCst))?;
-    write_local_gateway_desired_running(hub, false).await;
+    write_local_gateway_desired_running(hub.clone(), false).await;
+    observe_local_gateway_lifecycle(hub, host.as_ref(), false, &Ok(())).await;
     Ok(status)
+}
+
+async fn observe_local_gateway_lifecycle(
+    hub: Arc<AgentHub>,
+    host: &BridgeRuntimeHost,
+    desired_running: bool,
+    bearer_sync: &Result<(), String>,
+) {
+    let extra_count = with_hub_blocking(hub, move |hub| {
+        hub.route_pools()
+            .list_extra_local_bearers()
+            .map(|rows| rows.len())
+            .map_err(|error| map_err_string("list_extra_local_bearers", error))
+    })
+    .await
+    .unwrap_or(0);
+    let runtime_up = host.running_ids().unwrap_or_default();
+    tracing::info!(
+        target: "gui",
+        op = "local_gateway_lifecycle",
+        desired_running,
+        extra_count,
+        runtime_up = ?runtime_up,
+        runtime_up_count = runtime_up.len(),
+        bearer_sync_ok = bearer_sync.is_ok(),
+        bearer_sync_error = bearer_sync.as_ref().err().map(String::as_str),
+        "local gateway lifecycle"
+    );
+}
+
+async fn surface_shared_restore_failure(hub: Arc<AgentHub>, error: &str) {
+    let pools = with_hub_blocking(hub.clone(), move |hub| {
+        hub.route_pools()
+            .list_default_pools()
+            .map_err(|err| map_err_string("list_default_pools", err))
+    })
+    .await
+    .unwrap_or_default();
+    if pools.is_empty() {
+        let _ = mark_retryable(hub, "local-gateway", CODE_BRIDGE_RESTORE_START).await;
+        tracing::warn!(
+            target: "gui",
+            op = "adapter_bridge_restore",
+            error,
+            "shared restore failed; marked local-gateway retryable"
+        );
+        return;
+    }
+    for pool in pools {
+        let _ = mark_retryable(hub.clone(), &pool.id, CODE_BRIDGE_RESTORE_START).await;
+    }
+    tracing::warn!(
+        target: "gui",
+        op = "adapter_bridge_restore",
+        error,
+        "shared restore failed; marked default pools retryable"
+    );
 }
 
 pub(crate) async fn sync_extra_local_bearers(
@@ -1964,8 +2046,8 @@ pub(crate) async fn sync_extra_local_bearers(
 ) -> Result<(), String> {
     let rows = with_hub_blocking(hub, move |hub| {
         hub.route_pools()
-            .list_extra_local_bearers()
-            .map_err(|error| map_err_string("list_extra_local_bearers", error))
+            .list_accepted_local_bearers()
+            .map_err(|error| map_err_string("list_accepted_local_bearers", error))
     })
     .await?;
     host.set_extra_local_bearers(rows)

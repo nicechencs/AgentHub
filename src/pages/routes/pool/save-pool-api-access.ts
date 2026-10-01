@@ -1,3 +1,4 @@
+import { toLoginBatchSaveResult, type LoginBatchSaveResult } from '@/components/login-kernel';
 import type { AgentConfigSchemaDto, ConfigValidationResultDto } from '@/lib/api/config';
 import { runProviderSaveFlow } from '@/lib/api/provider-save';
 import type { AdapterSourceKind, RoutePoolSurface } from '@/lib/backend/contracts';
@@ -50,6 +51,8 @@ export type SavePoolApiAccessDeps = {
 export type SavePoolApiAccessResult = {
   saved: number;
   errors: string[];
+  /** One login result per saved key. Priority and secrets stay out of this list. */
+  batch: LoginBatchSaveResult;
 };
 
 function formVarsForItem(item: PoolApiSaveItem, apiKey: string): ProviderFormVars {
@@ -74,6 +77,13 @@ export async function savePoolApiAccess(
   deps: SavePoolApiAccessDeps,
 ): Promise<SavePoolApiAccessResult> {
   const errors: string[] = [];
+  const records: Array<{
+    kind: 'apikey';
+    mutation: 'created' | 'updated';
+    sourceKind: 'provider';
+    sourceId: string;
+    agentId: Provider['agentId'];
+  }> = [];
   let saved = 0;
   const models = [...new Set((input.models ?? []).map((model) => model.trim()).filter(Boolean))];
   const priority = input.priority ?? null;
@@ -143,6 +153,13 @@ export async function savePoolApiAccess(
         if (priority !== null && deps.setAuthorizationPriority) {
           await deps.setAuthorizationPriority('provider', result.provider.id, priority);
         }
+        records.push({
+          kind: 'apikey',
+          mutation: editProvider ? 'updated' : 'created',
+          sourceKind: 'provider',
+          sourceId: result.provider.id,
+          agentId: result.provider.agentId,
+        });
         saved += 1;
       } catch (error) {
         errors.push(error instanceof Error ? error.message : String(error));
@@ -150,5 +167,9 @@ export async function savePoolApiAccess(
     }
   }
 
-  return { saved, errors };
+  return {
+    saved,
+    errors,
+    batch: toLoginBatchSaveResult({ records, errors }),
+  };
 }

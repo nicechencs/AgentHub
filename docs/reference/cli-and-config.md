@@ -4,7 +4,7 @@ description: agenthub-cli 的当前命令树、全局参数、退出码和数据
 type: reference
 audience: user-and-contributor
 status: current
-updated: 2026-09-06
+updated: 2026-09-29
 ---
 
 # CLI 与配置参考
@@ -24,9 +24,9 @@ CLI 二进制名称为 `agenthub`，实现位于 `crates/agenthub-cli`，业务�
 | `-v`, `--verbose` | 本次进程文件/控制台至少使用 debug |
 | `-q`, `--quiet` | 等同 `--output quiet` |
 
-当前 Agent id 由 `AgentId::ALL` 提供，通常包含 `claude`、`codex`、`kimi`、`grok`、`pi`、`workbuddy`、`cursor`、`dsh`、`zcode`、`kiro`。以 `agenthub agent list` 和 CLI help 为准。
+当前 Agent id 来自 `AgentId::ALL`：`claude`、`codex`、`kimi`、`grok`、`pi`、`workbuddy`、`cursor`、`dsh`、`zcode`、`kiro`。以 `agenthub agent list` 为准。
 
-**UI store-stamp**（`agent_visibility.json` 的 `store_stamp_version`，当前为 `1`）默认软隐藏 **Cursor Agent**：侧栏、Connections、Chat 等页面不展示，CLI/detect 仍可看到；Agents 管理页可取消隐藏。这是界面偏好，在进程启动时写入用户数据目录，不是卸载。
+**界面软隐藏**：`agent_visibility.json` 的 `store_stamp_version`（当前 `1`，见 `agent_visibility_service.rs`）默认隐藏 **Cursor Agent**。侧栏、Connections、Chat 等页面不展示，CLI 和探测仍可看到；Agents 管理页可取消隐藏。这是界面偏好，不是卸载。
 
 ## 命令树
 
@@ -35,7 +35,7 @@ CLI 二进制名称为 `agenthub`，实现位于 `crates/agenthub-cli`，业务�
 | `doctor` | runtimes、Agent、路径、数据库和 locks 的健康总览 |
 | `env` | `list`、`install <runtime> [--channel]` |
 | `agent` | `list`、`capabilities [--markdown]`、`install`、`upgrade`、`outdated`、`uninstall [--purge-config]` |
-| `run` | 以 headless 模式运行 prompt；支持 `--agents`、`--all`、`--mode`、`--timeout`、`--cwd`、`--dry-run` |
+| `run` | 以 headless 模式运行 prompt；支持 `--agents`、`--all`、`--mode parallel\|sequential`、`--timeout`、`--cwd`、`--dry-run`、`--allow-dangerous` |
 | `provider` | `list`、`show`、`presets`、`import-live`、`switch`、`undo`、`test-latency` |
 | `account` | `list`、`import`、`add-apikey`、`switch`、`delete`、`oauth-url`、`refresh`、`undo` |
 | `skill` | `list`、`list-installed`、`sync`、`enable`、`disable`、`install`、`import-private`、`uninstall`、`update`、`project`、`market` |
@@ -52,7 +52,7 @@ CLI 二进制名称为 `agenthub`，实现位于 `crates/agenthub-cli`，业务�
 | `0` | 成功 |
 | `1` | 运行期失败、IO、解析或 core 错误 |
 | `2` | 用法错误、未知命令、非法参数或 Agent id |
-| `3` | 业务拒绝或能力不支持，例如 Runtime 未就绪 |
+| `3` | 业务拒绝：Runtime 未就绪、能力不支持、对象不存在，或 `run` 失败 |
 | `4` | 需要确认但未提供 `-y`，或用户取消 |
 | `5` | 部分成功；JSON 中包含失败项 |
 
@@ -72,27 +72,34 @@ CLI 二进制名称为 `agenthub`，实现位于 `crates/agenthub-cli`，业务�
 
 ```text
 {data_dir}/
-├── agenthub.db
+├── agenthub.db          业务数据（SQLite）
+├── cache.db
 ├── backups/
 │   ├── db/
 │   └── live/<agent>/<timestamp>/
 ├── exports/
 ├── logs/
-└── cache/
+├── cache/
+└── usage-gateway/
 ```
 
-SQLite 是 AgentHub 业务真源，live 文件由各 Agent adapter 管理。写 live 前应 backfill 当前状态并创建 backup；备份、日志和路径信息由 core service 统一处理。
+目录由 `crates/agenthub-core/src/utils/paths.rs` 的 `ensure_data_layout` 创建。SQLite 是 AgentHub 的业务数据来源；各 Agent 实际读取的配置文件由对应 adapter 管理。写这些文件前先回填当前状态并备份，备份、日志和路径由 core service 统一处理。
 
 ## `config` 白名单
 
-可写 key：`theme`、`language`、`log_level`、`log_retention_days`、`skill_market_source`、`close_to_tray`、`usage_collect_interval_min`、`keep_live_file_copies`。只读 key：`app_version`。
+白名单在 `crates/agenthub-core/src/services/settings_service.rs`（`SETTINGS_WHITELIST` / `SETTINGS_READONLY`）。
+
+可写 key：`theme`、`language`、`log_level`、`log_retention_days`、`skill_market_source`、`close_to_tray`、`usage_collect_interval_min`、`keep_live_file_copies`、`warn_duplicate_route_credential`、`update_duplicate_route_url`、`auto_import_local_login`。只读 key：`app_version`。
 
 - `log_level`：`error|warn|info|debug|trace`，下次进程启动生效。
 - `log_retention_days`：`1..=365`，默认 14，下次启动清理。
 - `skill_market_source`：`auto|skills.sh|skillhub.cn`。
-- `close_to_tray`：布尔值。
+- `close_to_tray`：布尔值，默认 `true`（关窗时隐藏到托盘）。
 - `usage_collect_interval_min`：`0..=1440`；0 表示仅手动。
 - `keep_live_file_copies`：布尔值，默认 `true`。切换或导入当前配置时，把各家本机配置文件原样拷到备份目录；关掉后不再堆积历史副本，当次切换仍留一份以便失败回滚。手动备份不受影响。
+- `warn_duplicate_route_credential`：布尔值，默认 `true`。Routes 里添加已用过的 API Key / 登录时提示，不阻止创建或导入。
+- `update_duplicate_route_url`：布尔值，默认 `true`。同一 Agent 下用相同地址新建路由时更新已有那条，而不是再插一条。
+- `auto_import_local_login`：布尔值，默认 `true`。连接页自动导入本机已有登录；关掉后才显示手动「导入本机登录」。
 - `data_dir` 只能用 `--data-dir` 或 `AGENTHUB_HOME` 定位，不能用 `config set` 修改。
 
 ## 常见例子
@@ -106,5 +113,5 @@ agenthub provider switch --agent claude my-provider --yes
 agenthub usage stats --days 30 --agent codex
 ```
 
-命令的详细参数以 `agenthub <command> --help` 和 `crates/agenthub-cli/src/main.rs` 为准。
+命令的详细参数以 `agenthub <command> --help` 和 `crates/agenthub-cli/src/main.rs` 为准；退出码映射在同文件的 `map_exit`。
 

@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import { agentDisplayName } from '@/config/agents';
 import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
 import {
   agentSupportsLocalEndpointKind,
   buildCreateTokenEndpointCards,
+  buildCreateTokenTargets,
+  createTokenPoolLabel,
   buildLocalTokenGroups,
   buildLocalTokenRows,
   defaultCreateTokenName,
   firstCreateTokenPoolId,
   generateLocalToken,
+  resolveCreateTokenPoolId,
   localTokenDeleteGate,
   localTokenEditKeyGate,
   localTokenEmptyCreateGate,
@@ -607,10 +611,109 @@ describe('tokens-model', () => {
       expect(cards[3]).toMatchObject({
         path: '/v1/chat/completions',
         poolId: 'pool-kimi',
+        pools: [{ id: 'pool-kimi', name: '', last4: '', targetAgentId: '' }],
       });
       expect(firstCreateTokenPoolId(cards)).toBe('pool-claude');
       expect(firstCreateTokenPoolId([])).toBe('');
     });
+
+  it('keeps every eligible pool for a kind so 新建 can pick Kimi or DSH', () => {
+    const cards = buildCreateTokenEndpointCards([
+      { id: 'pool-dsh', kind: 'chat_completions', name: 'DSH', last4: 'z7cc', targetAgentId: 'dsh' },
+      { id: 'pool-kimi', kind: 'chat_completions', name: 'Kimi', last4: 'QByg', targetAgentId: 'kimi' },
+    ]);
+    const chat = cards.find((card) => card.kind === 'chat_completions');
+    expect(chat?.poolId).toBeNull();
+    expect(chat?.pools).toEqual([
+      { id: 'pool-dsh', name: 'DSH', last4: 'z7cc', targetAgentId: 'dsh' },
+      { id: 'pool-kimi', name: 'Kimi', last4: 'QByg', targetAgentId: 'kimi' },
+    ]);
+    expect(createTokenPoolLabel(chat!.pools[1]!)).toBe('Kimi · …QByg');
+    expect(firstCreateTokenPoolId(cards)).toBe('');
+    expect(resolveCreateTokenPoolId(chat)).toBe('');
+    expect(resolveCreateTokenPoolId(chat, 'pool-kimi')).toBe('pool-kimi');
+    expect(resolveCreateTokenPoolId(chat, 'missing')).toBe('');
+  });
+
+  it('labels the chat picker with pool name + last4, including pools with no key', () => {
+    const targets = buildCreateTokenTargets(
+      [
+        pool({
+          id: 'pool-dsh',
+          targetAgentId: 'dsh',
+          surface: 'chat_completions',
+          dialect: 'dsh',
+        }),
+        pool({
+          id: 'pool-kimi',
+          targetAgentId: 'kimi',
+          surface: 'chat_completions',
+          dialect: 'kimi',
+        }),
+      ],
+      [
+        {
+          id: 'key-dsh',
+          poolId: 'pool-dsh',
+          token: 'ahb_xxxxxxxxF9FE',
+          name: '',
+          primary: true,
+        },
+      ],
+    );
+    const cards = buildCreateTokenEndpointCards(targets);
+    const chat = cards.find((card) => card.kind === 'chat_completions');
+    expect(chat?.poolId).toBeNull();
+    expect(chat?.pools.map((pool) => createTokenPoolLabel(pool))).toEqual([
+      `${agentDisplayName('dsh')} · …F9FE`,
+      agentDisplayName('kimi'),
+    ]);
+    expect(resolveCreateTokenPoolId(chat)).toBe('');
+  });
+
+  it('lists persisted extras when the pool is not a visible default row', () => {
+    const rows = buildLocalTokenRows(
+      [],
+      {},
+      {},
+      [],
+      false,
+      {},
+      [
+        {
+          id: 'extra-orphaned',
+          poolId: 'gone-pool',
+          token: 'ahb_orphaned1234',
+          name: '家里',
+          primary: false,
+          lifecycle: 'orphaned',
+        },
+        {
+          id: 'inactive-pool',
+          poolId: 'inactive-pool',
+          token: 'ahb_inactive5678',
+          name: '',
+          primary: true,
+          lifecycle: 'inactive',
+          targetAgentId: 'kimi',
+          surface: 'chat_completions',
+        },
+      ],
+    );
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'extra-orphaned',
+        lifecycle: 'orphaned',
+        token: 'ahb_orphaned1234',
+      }),
+      expect.objectContaining({
+        id: 'inactive-pool',
+        lifecycle: 'inactive',
+        kind: 'chat_completions',
+        targetAgentId: 'kimi',
+      }),
+    ]));
+  });
 
   it('enables 为此端点新建 on pool-backed empty rows and uses pool hints otherwise', () => {
     expect(localTokenEmptyCreateGate({ poolBacked: true, kind: 'messages' }).enabled).toBe(true);

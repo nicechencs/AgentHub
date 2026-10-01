@@ -28,6 +28,11 @@ import type { RuntimeRequest, RuntimeSnapshot } from '@/lib/api/chat';
 import type { ProcessMap } from '@/lib/chat-process';
 import type { AgentKey, ChatEvent, ChatMessage, Conversation } from '@/lib/types';
 import { localizeChatFailure } from './chat-format';
+import {
+  shouldToastRuntimeError,
+  snapshotErrorToastSource,
+  type RuntimeErrorToastSource,
+} from './chat-runtime-error-toast';
 import { busyAgentsForSends, incomingSendingIds, liveSendingIds, sendBlockers, titleFromPrompt, withConversationTitle } from './chat-model';
 import { isCurrentChatRequest } from './chat-request';
 import {
@@ -306,6 +311,9 @@ export function useChatPageSend(input: {
     ) return;
     const sequence = runtimeSequence(conversationId);
     const previousPhase = runtimeRecordsRef.current.get(conversationId)?.phase;
+    const errorToastSource = snapshotErrorToastSource(
+      runtimeSequenceRef.current.has(conversationId),
+    );
     recordRuntimeSnapshot(snapshot);
     const canRender =
       applyUi &&
@@ -317,7 +325,9 @@ export function useChatPageSend(input: {
       setMessages((previous) => upsertRuntimeMessage(previous, snapshot.currentMessage!));
     }
     for (const item of snapshot.events) {
-      if (item.sequence > sequence) applyEvent(item.event, conversationId, generation, applyUi, 'runtime');
+      if (item.sequence > sequence) {
+        applyEvent(item.event, conversationId, generation, applyUi, 'runtime', errorToastSource);
+      }
     }
     advanceRuntimeWatermark(runtimeSequenceRef.current, conversationId, snapshot.lastSequence);
     const activePhase = isRuntimeActive(snapshot.phase);
@@ -491,6 +501,7 @@ export function useChatPageSend(input: {
     sendGeneration: number,
     render = true,
     mode: 'runtime' | 'legacy' = 'legacy',
+    errorToastSource: RuntimeErrorToastSource = 'live',
   ) {
     const isCurrent = isCurrentChatRequest(
       activeIdRef.current,
@@ -589,7 +600,9 @@ export function useChatPageSend(input: {
       return;
     }
     if (ev.type === 'error') {
-      toast({ title: ev.message, variant: 'danger' });
+      if (shouldToastRuntimeError({ source: errorToastSource, message: ev.message })) {
+        toast({ title: localizeChatFailure(ev.message, t), variant: 'danger' });
+      }
     }
   }
 

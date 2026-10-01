@@ -5,7 +5,7 @@
 //! single validated skill directory under an adapter's `skills_dir`.
 //!
 //! Pure YAML / hash / classify / lock helpers live in [`crate::platform::skills`].
-//! This module is the orchestration façade (P2-6).
+//! This module is the orchestration façade.
 
 mod catalog;
 mod install;

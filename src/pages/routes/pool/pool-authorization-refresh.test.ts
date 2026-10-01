@@ -121,7 +121,7 @@ describe('runPoolAuthorizationRefresh', () => {
     );
     expect(importCurrentLogin).toHaveBeenCalledWith('codex');
     expect(refreshQuota).toHaveBeenCalledWith('codex', 'imported');
-    expect(result.toast.title).toBe('已导入授权');
+    expect(result.toast.title).toBe('已导入本机登录');
     expect(result.reload).toBe(true);
   });
 

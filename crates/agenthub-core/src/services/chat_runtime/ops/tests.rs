@@ -558,3 +558,23 @@ fn claude_user_message_embeds_base64_image() {
     assert_eq!(content[1]["source"]["media_type"], "image/png");
     assert!(content[1]["source"]["data"].as_str().unwrap().len() > 0);
 }
+
+#[cfg(unix)]
+#[test]
+fn path_inside_cwd_rejects_links_that_can_write_outside() {
+    let cwd = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let dangling = cwd.path().join("dangling");
+    std::os::unix::fs::symlink(outside.path().join("not-yet"), &dangling).unwrap();
+    assert!(!path_is_inside_cwd(&dangling, cwd.path()));
+
+    let target = outside.path().join("victim.txt");
+    std::fs::write(&target, "keep").unwrap();
+    let hard = cwd.path().join("hard.txt");
+    std::fs::hard_link(&target, &hard).unwrap();
+    assert!(!path_is_inside_cwd(&hard, cwd.path()));
+
+    let plain = cwd.path().join("plain.txt");
+    std::fs::write(&plain, "ok").unwrap();
+    assert!(path_is_inside_cwd(&plain, cwd.path()));
+}

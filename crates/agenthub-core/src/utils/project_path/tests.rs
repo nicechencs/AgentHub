@@ -35,11 +35,11 @@ fn recover_encoded_segments_prefers_underscore_over_split() {
     let dir = tempfile::tempdir().unwrap();
     let decoy = dir.path().join("demo");
     fs::create_dir_all(&decoy).unwrap();
-    let real = dir.path().join("demo_chen").join("2026").join("AgentHub");
+    let real = dir.path().join("demo_user").join("2026").join("AgentHub");
     fs::create_dir_all(&real).unwrap();
-    let got = recover_encoded_segments(dir.path(), &["demo", "chen", "2026", "AgentHub"]).unwrap();
+    let got = recover_encoded_segments(dir.path(), &["demo", "user", "2026", "AgentHub"]).unwrap();
     assert_eq!(got, real);
-    assert_ne!(got, decoy.join("chen").join("2026").join("AgentHub"));
+    assert_ne!(got, decoy.join("user").join("2026").join("AgentHub"));
 }
 
 #[test]

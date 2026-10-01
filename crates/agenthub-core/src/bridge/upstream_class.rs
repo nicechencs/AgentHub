@@ -87,8 +87,22 @@ pub fn classify_http(
     body: Option<&str>,
     grok_reasoning_recoverable: bool,
 ) -> UpstreamErrorClass {
+    classify_http_for_request(status, body, grok_reasoning_recoverable, None)
+}
+
+/// Same as [`classify_http`], but a `previous_response_id` / missing-store 404
+/// stays request-scoped so failover does not sticky-exclude that member+model.
+pub fn classify_http_for_request(
+    status: StatusCode,
+    body: Option<&str>,
+    grok_reasoning_recoverable: bool,
+    request_body: Option<&Value>,
+) -> UpstreamErrorClass {
     if grok_reasoning_recoverable && status == StatusCode::BAD_REQUEST {
         return UpstreamErrorClass::GrokReasoningRecoverable;
+    }
+    if is_previous_response_id_miss(status, request_body, body) {
+        return UpstreamErrorClass::Request;
     }
     match status.as_u16() {
         401 => UpstreamErrorClass::Auth,
@@ -113,6 +127,29 @@ pub fn classify_connect_unavailable() -> UpstreamErrorClass {
 
 fn haystack(body: Option<&str>) -> String {
     body.unwrap_or("").to_ascii_lowercase()
+}
+
+pub fn is_previous_response_id_miss(
+    status: StatusCode,
+    request_body: Option<&Value>,
+    response_body: Option<&str>,
+) -> bool {
+    if status != StatusCode::NOT_FOUND {
+        return false;
+    }
+    if request_body
+        .and_then(crate::bridge::protocol::pair::previous_response_id)
+        .is_some()
+    {
+        return true;
+    }
+    let hay = haystack(response_body);
+    hay.contains("previous_response_id")
+        || hay.contains("response not found")
+        || hay.contains("no such response")
+        || hay.contains("unknown response")
+        || (hay.contains("response_id")
+            && (hay.contains("not found") || hay.contains("not exist") || hay.contains("unknown")))
 }
 
 fn is_entitlement_body(body: Option<&str>) -> bool {

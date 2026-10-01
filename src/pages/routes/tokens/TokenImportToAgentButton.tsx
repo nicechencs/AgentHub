@@ -1,6 +1,15 @@
+import { useState } from 'react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,6 +45,7 @@ export function TokenImportToAgentButton({
   const { t } = useI18n();
   const { toast } = useToast();
   const gate = tokenImportGate(row, installedAgents, t);
+  const [confirmAgentId, setConfirmAgentId] = useState<AgentKey | null>(null);
 
   const runImport = (agentId: AgentKey) => {
     const choice = tokenImportAgentChoice(row.kind, { id: agentId, name: agentId }, t);
@@ -51,6 +61,11 @@ export function TokenImportToAgentButton({
     }
     onImport(agentId, draft);
   };
+
+  const confirmName = confirmAgentId
+    ? (installedAgents.find((agent) => agent.id === confirmAgentId)?.name
+      || agentDisplayName(confirmAgentId))
+    : '';
 
   const label = t('routes.tokens.importToAgent');
   const blockedReason = !gate.enabled ? (gate.reason ?? label) : null;
@@ -108,7 +123,7 @@ export function TokenImportToAgentButton({
               disabled={!agent.enabled}
               onSelect={() => {
                 if (!agent.enabled) return;
-                runImport(agent.id);
+                setConfirmAgentId(agent.id);
               }}
             >
               <AgentDot agentId={agent.id} size="md" title={null} />
@@ -120,6 +135,31 @@ export function TokenImportToAgentButton({
           );
         })}
       </DropdownMenuContent>
+      <Dialog open={confirmAgentId != null} onOpenChange={(open) => { if (!open) setConfirmAgentId(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('routes.tokens.importConfirmTitle', { name: confirmName })}</DialogTitle>
+            <DialogDescription>
+              {t('routes.tokens.importConfirmDescription', { name: confirmName })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setConfirmAgentId(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              onClick={() => {
+                if (!confirmAgentId) return;
+                const agentId = confirmAgentId;
+                setConfirmAgentId(null);
+                runImport(agentId);
+              }}
+            >
+              {t('routes.tokens.importToAgent')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DropdownMenu>
   );
 }

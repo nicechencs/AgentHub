@@ -4,16 +4,16 @@ description: AgentHub 进程内 Gateway 的 loopback HTTP endpoint、鉴权和�
 type: reference
 audience: integrator
 status: current
-updated: 2026-09-09
+updated: 2026-09-30
 ---
 
 # 本机 Routes API
 
-本机 Routes 是 AgentHub 进程内 Gateway，监听 `127.0.0.1:<port>`。它面向本机 Agent 客户端，不是公网 API；上游凭据不会通过下游响应返回。UI 称为 Routes/路由，`bridge` 是内部实现名。
+本机 Routes 是 AgentHub 进程内的网关，监听 `127.0.0.1:<port>`，只给本机 Agent 客户端用，不是公网 API；上游登录信息不会出现在下游响应里。界面叫 Routes / 路由，`bridge` 是内部实现名。路由定义在 `crates/agenthub-core/src/bridge/host/http.rs`。
 
 ## 鉴权
 
-所有 endpoint 都要求该 Route 的本机令牌：
+所有 endpoint 都要求本机令牌（界面叫「入口 Key」）：
 
 ```text
 Authorization: Bearer <local-token>
@@ -25,7 +25,7 @@ Authorization: Bearer <local-token>
 {"error":{"code":"invalid_api_key","message":"Invalid local bearer token.","type":"invalid_request_error"}}
 ```
 
-本机令牌是 AgentHub 生成的 Route 凭据，不等于上游 provider/API key。默认池按 route/surface 持有一把令牌：往池里增删登录不会改客户端要写的口和令牌。不要把它提交到日志、Issue 或 fixture。
+入口 Key 由 AgentHub 生成，不等于上游 API Key。每个默认池有一把主 Key，也可以在 Routes「入口 Key」页另建具名 Key，都指向同一个池；往池里增删登录不会改客户端要写的端口和 Key。Kimi 与 DSH 可以设置为共用一把 Chat Completions 入口 Key（`chat_completions_shared`）。不要把 Key 提交到日志、Issue 或 fixture。
 
 ## Endpoint
 
@@ -34,12 +34,24 @@ Authorization: Bearer <local-token>
 | `GET` | `/health` | 返回 listener 状态和最近观察到的上游状态；不会发起新的 provider 探测 |
 | `GET` | `/v1/models`、`/models` | 返回当前默认池可服务的模型并集；由本机 resolver 合成，不代理上游目录 |
 | `POST` | `/v1/responses` | Responses surface；是否可用取决于该 Route 的 downstream surface |
-| `POST` | `/v1/messages` | Anthropic Messages surface |
+| `POST` | `/v1/messages` | Anthropic Messages surface。默认连接池目前只接 Claude，不会把现有 Claude 池改成多 Agent Messages |
 | `POST` | `/v1/chat/completions`、`/chat/completions` | OpenAI Chat Completions surface |
 
 `/models` 与 `/chat/completions` 是兼容别名。其余对话路径使用 `/v1/messages`、`/v1/responses`、`/v1/chat/completions`。对这些对话路径发 `GET`/`PUT` 等非 POST 方法返回 `405` `method_not_allowed`（双语 JSON + `Allow: POST`），不会返回空 body。
 
-目标客户端：Claude 用 `/v1/messages`；Codex 和 Grok 用 `/v1/responses`（配置里写本机令牌，按 API Key 方式）；Kimi / DSH 用 `/v1/chat/completions`。Kiro 登录可作为上游接到 Claude / Codex / Grok。Kiro 本机路由按请求正文 `stream` 返回 JSON 或 SSE：`stream=true` 时上游 AWS event-stream 帧一完成就把文本块编成下游 SSE 发出（单测用分块 reader；真窗 TTFT 未验）；`stream=false` 仍收齐再返回 JSON。使用连接池里当前登录的访问令牌，并带上该登录的区域、profile 与请求来源，不在本机路由里刷新令牌。带上这些字段不等于企业 IdC 已验收。Chat 侧已有 HTTP 会话失败时的 fail-closed 见 [STATUS](../STATUS.md)，不是本页的 loopback 契约。
+目标客户端用哪个路径：
+
+| 目标 | 路径 |
+|---|---|
+| Claude | `/v1/messages`（目前只接 Claude） |
+| Codex、Grok | `/v1/responses`（配置里按 API Key 方式写入口 Key） |
+| Kimi、DSH | `/v1/chat/completions` |
+
+Kiro 登录可作为上游接到 Claude / Codex / Grok（规则 `kiro-to-*-v1`）：
+
+- 按请求正文的 `stream` 返回 JSON 或 SSE；`stream=true` 时上游 AWS event-stream 帧一完成就转成下游 SSE（单测覆盖，真窗首字延迟未验），`stream=false` 收齐后返回 JSON。
+- 使用连接池里当前登录的访问令牌，带上该登录的区域、profile 与请求来源；不在本机路由里刷新令牌。带上这些字段不等于企业 IdC 已验收。
+- 上游是 Kiro 的一轮文本回复，不会在目标 Agent 的工作目录执行工具。
 
 ## Models 响应
 
@@ -66,8 +78,9 @@ Authorization: Bearer <local-token>
 | Responses | OpenAI Chat Completions | 转换请求和响应 |
 | Responses | Anthropic Messages | 转换（Anthropic Key → Codex） |
 | Messages | xAI Responses | 转换（Grok 订阅 → Claude） |
-| Chat Completions | OpenAI Chat Completions | 同协议 `chat/completions` |
+| Chat Completions | OpenAI Chat Completions | 同协议 `chat/completions`（OpenAI Key → Kimi / DSH） |
 | Chat Completions | Codex Responses | 转换（Codex 订阅 → Kimi / DSH） |
+| Messages / Responses | Kiro 登录 | 转换（Kiro → Claude / Codex / Grok） |
 | 任一支持 surface | 其它已注册协议 | 按 Route profile 的转换器处理 |
 
 Codex 与 Grok 都使用 `POST /v1/responses`。具体 Responses 格式（Codex 或 Grok）跟这条路由一起保存，由本机令牌选中，**不**根据请求正文或 URL 猜测。Messages 与 Chat Completions 不会继承这份 Responses 格式。接到 Codex 时写入 `wire_api = "responses"` 和 `preferred_auth_method = "apikey"`，本机令牌进 `auth.json` 的 `OPENAI_API_KEY`；接到 Grok 时写入 `api_backend = "responses"`，本机令牌进 `config.toml` 的 `api_key`。这与 Codex↔Grok 双向转换开关无关。
@@ -90,7 +103,8 @@ Codex 与 Grok 都使用 `POST /v1/responses`。具体 Responses 格式（Codex 
 | `503` | `bridge_stopping` | listener 正在停止 |
 | `503` | `pool_exhausted` | 默认池当前没有可服务该请求的成员；可能带 `Retry-After` |
 | `503` | `route_unavailable` | 已打开 Codex↔Grok Responses 转换，但当前边未授权；不会退回直通 |
-| `502` | `upstream_error` | 上游不可用、认证失败或返回无效响应 |
+| `502` | `upstream_error` | 上游返回错误、认证失败或无效响应 |
+| `502` | `upstream_unavailable` | 连不上上游（传输层失败） |
 | `504` | `upstream_timeout` | 上游非流式请求超时 |
 
 上游短错误只写入 AgentHub 脱敏日志，不原样转发给下游客户端。流式错误以 SSE error frame 返回，具体转换能力由协议测试覆盖。

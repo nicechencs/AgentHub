@@ -1,5 +1,52 @@
+use std::collections::BTreeMap;
+
 use super::*;
+use crate::platform::config::AgentConfigProjector;
 use serde_json::json;
+
+#[test]
+fn materialize_official_scaffold_does_not_invent_model_provider() {
+    let mut desired = BTreeMap::new();
+    desired.insert("model".into(), json!("gpt-5.1-codex"));
+    desired.insert("providerSlug".into(), json!(""));
+    desired.insert("baseUrl".into(), json!(""));
+    desired.insert("wireApi".into(), json!("responses"));
+    let base = json!({
+        "format": "toml",
+        "content": "model = \"gpt-5.1-codex\"\n",
+    });
+    let raw = CodexConfigProjector
+        .materialize_settings_config(Some(&base), &desired)
+        .unwrap();
+    let content = raw["content"].as_str().unwrap();
+    assert!(!content.contains("model_provider"), "{content}");
+    assert!(content.contains("gpt-5.1-codex"), "{content}");
+}
+
+#[test]
+fn official_config_does_not_reactivate_retained_provider_table() {
+    let dir = tempfile::tempdir().unwrap();
+    let content = "model = \"gpt-5.1-codex\"\n\n[model_providers.old_relay]\nbase_url = \"https://relay.example/v1\"\n";
+    std::fs::write(dir.path().join("config.toml"), content).unwrap();
+
+    let read = CodexConfigProjector.read_normalized(dir.path()).unwrap();
+    assert_eq!(read.values["providerSlug"], "");
+    assert_eq!(read.values["baseUrl"], "");
+    assert_eq!(read.values["wireApi"], "");
+    assert!(live_import_hint(&json!({ "content": content })).is_none());
+
+    let partial_edit = BTreeMap::from([("model".into(), json!("gpt-5.6"))]);
+    let raw = CodexConfigProjector
+        .materialize_settings_config(
+            Some(&json!({ "format": "toml", "content": content })),
+            &partial_edit,
+        )
+        .unwrap();
+    let updated = raw["content"].as_str().unwrap();
+    assert!(!updated.contains("model_provider ="), "{updated}");
+    assert!(updated.contains("[model_providers.old_relay]"), "{updated}");
+    assert!(updated.contains("model = \"gpt-5.6\""), "{updated}");
+}
 
 #[test]
 fn schema_places_model_after_api_key() {

@@ -1,4 +1,4 @@
-// Connections：全局票钱包（docs/connection-binding-model.md §5.2）
+// Connections：全局票钱包（docs/concepts/connections-and-routing.md）
 // AgentTabStrip 筛选；?agent= 高亮并把 Tab 落到该 Agent。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -21,6 +21,10 @@ import {
   type TicketView,
 } from '@/lib/api/tickets';
 import { OAuthFlowDialog } from '@/components/connect/OAuthFlowDialog';
+import { officialLoginDiscovery } from '@/components/connect/official-login-discovery';
+import { officialLoginSuccessView } from '@/lib/backend/contracts/official-login-session';
+import { openExternalLink } from '@/lib/open-external';
+import { createConnectionsOfficialLoginPersistence } from './official-login-persistence';
 import {
   buildResumeConnectUrl,
   consumeConnectIntent,
@@ -67,6 +71,7 @@ import { useConnectionPageActions } from './use-connection-page-actions';
 import { usePiDefaultModel } from './use-pi-default-model';
 import {
   deleteConnectionDialogDescription,
+  deleteCurrentSwitchTargets,
   liveAuthCoexistenceNotice,
   liveAuthImportGate,
   liveApiKeyImportGate,
@@ -99,8 +104,16 @@ import {
 import { listConnectionUsage } from '@/lib/api/usage';
 import type { ConnectionUsageSummary } from '@/lib/backend/contracts/usage-types';
 import { importProviderLive } from '@/lib/api/provider';
+import { getSettings } from '@/lib/api/settings';
 import type { Account, Provider } from '@/lib/types';
 import { StorageKey } from '@/lib/ui-preferences';
+import {
+  canAutoImportProbe,
+  planLocalLoginAutoImport,
+  resolveAutoImportLocalLogin,
+  shouldRememberAutoImportAttempt,
+  showConnectionsImportLoginAction,
+} from './local-login-auto-import';
 
 type ConnectionInspect =
   | { kind: 'provider'; agentId: AgentKey; mode: 'add' | 'edit'; provider: Provider | null }
@@ -207,10 +220,19 @@ export default function ConnectionsPage() {
   );
   const inspect = useSideSplit<ConnectionInspect>({ storageKey: CONNECTIONS_INSPECT_WIDTH_KEY });
   const [oauthOpen, setOauthOpen] = useState(false);
+  const oauthAccountRef = useRef<Account | null>(null);
+  const oauthPersistence = useMemo(() => createConnectionsOfficialLoginPersistence({
+    onAccount: (account) => {
+      oauthAccountRef.current = account;
+    },
+  }), []);
   const [discoveryProbe, setDiscoveryProbe] = useState<LiveAuthProbe | null>(null);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [discoveryDismissed, setDiscoveryDismissed] = useState(false);
   const discoveryProbeGen = useRef(0);
+  const [autoImportLocalLogin, setAutoImportLocalLogin] = useState(true);
+  const autoImportTriedRef = useRef(new Set<string>());
+  const autoImportGen = useRef(0);
   const {
     loginImportOpen,
     setLoginImportOpen,
@@ -271,6 +293,22 @@ export default function ConnectionsPage() {
     );
   }, [discoveryAgentId, pool.state]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void getSettings()
+      .then((settings) => {
+        if (!cancelled) setAutoImportLocalLogin(resolveAutoImportLocalLogin(settings.autoImportLocalLogin));
+      })
+      .catch(() => {
+        if (!cancelled) setAutoImportLocalLogin(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const includeImportLogin = showConnectionsImportLoginAction(autoImportLocalLogin);
+
   const loadWallet = useCallback(async (): Promise<boolean> => {
     try {
       await walletReload();
@@ -310,6 +348,107 @@ export default function ConnectionsPage() {
   }, [tabAgentIds, visibleWallet]);
 
   const poolReload = pool.reload;
+
+  useEffect(() => {
+    if (!resolveAutoImportLocalLogin(autoImportLocalLogin)) return;
+    if (loading) return;
+    if (pool.state !== 'ready' && pool.state !== 'partial') return;
+    if (loginImportOpen || pendingGuide?.intent === 'import-login') return;
+    const pending = planLocalLoginAutoImport({
+      autoImportLocalLogin,
+      agentIds: manageAuthAgentIds,
+      alreadyTried: autoImportTriedRef.current,
+    });
+    if (pending.length === 0) return;
+
+    const generation = ++autoImportGen.current;
+    void (async () => {
+      const importedLabels: string[] = [];
+      let lastError: string | null = null;
+      for (const agentId of pending) {
+        if (autoImportGen.current !== generation) return;
+        if (autoImportTriedRef.current.has(agentId)) continue;
+        let probe: LiveAuthProbe | null = null;
+        let probeOk = false;
+        try {
+          probe = await probeLiveAuth(agentId);
+          probeOk = true;
+        } catch {
+          probe = null;
+        }
+        if (autoImportGen.current !== generation) return;
+        const accountsFailed = Boolean(pool.errors.accounts);
+        const providersFailed = Boolean(pool.errors.providers);
+        if (!shouldRememberAutoImportAttempt({
+          probeOk,
+          poolState: pool.state,
+          probe,
+          accountsFailed,
+          providersFailed,
+        })) {
+          continue;
+        }
+        autoImportTriedRef.current.add(agentId);
+        if (!canAutoImportProbe({
+          agentId,
+          poolState: pool.state,
+          probe,
+          accounts: accountsForAgent(pool.accounts, agentId),
+          providers: providersForAgent(pool.providers, agentId),
+          accountsFailed,
+          providersFailed,
+        })) {
+          continue;
+        }
+        try {
+          const imported =
+            liveImportAction(liveImportDialogMode(probe), agentId) === 'provider'
+              ? await importProviderLive(agentId)
+              : await importCurrentLogin(agentId);
+          if (autoImportGen.current !== generation) return;
+          const label = 'label' in imported ? imported.label : imported.name;
+          importedLabels.push(label);
+        } catch (e) {
+          lastError = e instanceof Error ? e.message : String(e);
+        }
+      }
+      if (autoImportGen.current !== generation) return;
+      if (importedLabels.length > 0) {
+        toast({
+          title: importedLabels.length === 1
+            ? t('connections.import.toastOk')
+            : t('connections.import.toastOkMany', { n: importedLabels.length }),
+          description: importedLabels.length === 1
+            ? t('connections.import.toastOkDesc', { label: importedLabels[0] })
+            : undefined,
+          variant: 'success',
+        });
+        await poolReload().catch(() => {});
+        await loadWallet();
+      } else if (lastError) {
+        toast({
+          title: t('connections.import.toastFail'),
+          description: lastError,
+          variant: 'danger',
+        });
+      }
+    })();
+  }, [
+    autoImportLocalLogin,
+    loading,
+    loginImportOpen,
+    loadWallet,
+    manageAuthAgentIds,
+    pendingGuide,
+    pool.accounts,
+    pool.errors.accounts,
+    pool.errors.providers,
+    pool.providers,
+    pool.state,
+    poolReload,
+    t,
+    toast,
+  ]);
 
   const handleTrashChanged = useCallback(() => {
     void Promise.all([loadWallet(), poolReload().catch(() => {})]);
@@ -595,7 +734,11 @@ export default function ConnectionsPage() {
     providersFailed: Boolean(pool.errors.providers),
   });
   const showDiscoveryBanner =
-    !discoveryLoading && !discoveryDismissed && !loginImportOpen && discoveryKind !== null;
+    includeImportLogin
+    && !discoveryLoading
+    && !discoveryDismissed
+    && !loginImportOpen
+    && discoveryKind !== null;
 
   const confirmImportLogin = async () => {
     if (!activeImportGate.enabled) return;
@@ -795,6 +938,17 @@ export default function ConnectionsPage() {
     );
   }
 
+
+  const deleteIsCurrent = deleteTicket
+    ? extrasForTicket(deleteTicket)?.isCurrent === true
+    : false;
+  const deleteSwitchTargets = deleteTicket && deleteIsCurrent && wallet
+    ? deleteCurrentSwitchTargets(
+      deleteTicket,
+      wallet.tickets,
+      (ticket) => extrasForTicket(ticket)?.isCurrent === true,
+    )
+    : [];
   return (
     <>
     <WorkbenchSplitPage
@@ -833,11 +987,12 @@ export default function ConnectionsPage() {
         />
         <div className={pageRhythm.chromeActions}>
           <TicketAddMenu
-            agents={buildTicketAddMenu(manageAuthAgentIds, oauthLoginAgents)}
+            agents={buildTicketAddMenu(manageAuthAgentIds, oauthLoginAgents, includeImportLogin)}
             focusedAgentId={filterAgent === 'all' ? null : filterAgent}
             onImportLogin={(id) => openTicketAdd('import-login', id)}
             onOauth={(id) => openTicketAdd('oauth', id)}
             onAddKey={(id) => openTicketAdd('api-key', id)}
+            importDetectedAgentId={discoveryKind ? discoveryAgentId : null}
           />
         </div>
       </div>
@@ -921,6 +1076,7 @@ export default function ConnectionsPage() {
             onAddKey={(id) => openTicketAdd('api-key', id)}
             onImportLogin={(id) => openTicketAdd('import-login', id)}
             onOauth={(id) => openTicketAdd('oauth', id)}
+            includeImportLogin={includeImportLogin}
           />
         </>
       )}
@@ -959,7 +1115,15 @@ export default function ConnectionsPage() {
             <Notice tone="warning">{activeImportGate.reason}</Notice>
           ) : null}
           {importCoexistenceNotice ? (
-            <Notice tone="warning">{importCoexistenceNotice}</Notice>
+            <Notice tone="warning">
+              <details>
+                <summary className="cursor-pointer">
+                  {t('connections.list.coexistSummary')}{' '}
+                  <span className="text-muted">{t('connections.list.coexistDetails')}</span>
+                </summary>
+                <p className="mt-1">{importCoexistenceNotice}</p>
+              </details>
+            </Notice>
           ) : null}
           <DialogFooter>
             <Button
@@ -987,7 +1151,14 @@ export default function ConnectionsPage() {
 
       <OAuthFlowDialog
         agentId={addAgentId}
+        agentName={agentDisplayName(addAgentId)}
         open={oauthOpen}
+        persistence={oauthPersistence}
+        discovery={officialLoginDiscovery}
+        openLink={openExternalLink}
+        describeSuccess={() => (
+          oauthAccountRef.current ? officialLoginSuccessView(oauthAccountRef.current) : null
+        )}
         onOpenChange={(open) => {
           if (shouldIgnoreMenuDialogDismiss(ignoreMenuDialogDismissRef.current, open)) return;
           setOauthOpen(open);
@@ -995,11 +1166,11 @@ export default function ConnectionsPage() {
         onStored={() => {
           void loadWallet();
         }}
-        onCompleted={(account) => {
+        onCompleted={(result) => {
           setOauthOpen(false);
           void (async () => {
             try {
-              await switchAccount(account.agentId, account.id);
+              await switchAccount(result.source.agentId, result.source.sourceId);
               toast({ title: t('connect.oauth.success'), variant: 'success' });
               await poolReload().catch(() => {});
               await loadWallet();
@@ -1032,11 +1203,30 @@ export default function ConnectionsPage() {
             <DialogDescription>
               {deleteTicket
                 ? `${deleteTicket.label} · ${deleteConnectionDialogDescription({
-                    isCurrent: extrasForTicket(deleteTicket)?.isCurrent === true,
+                    isCurrent: deleteIsCurrent,
+                    agentName: agentDisplayName(deleteTicket.agentId),
                   }, t)}`
                 : ''}
             </DialogDescription>
           </DialogHeader>
+          {deleteSwitchTargets.length > 0 ? (
+            <div className="space-y-1.5">
+              <p className="text-meta text-secondary">{t('connections.delete.switchFirst')}</p>
+              <div className="flex flex-wrap gap-2">
+                {deleteSwitchTargets.map((target) => (
+                  <Button
+                    key={target.id}
+                    size="sm"
+                    variant="outline"
+                    disabled={deleteBusy || switchingTicketId != null}
+                    onClick={() => void handleSwitchTicket(target)}
+                  >
+                    {t('connections.delete.switchTo', { label: target.label })}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <DialogFooter>
             <Button variant="secondary" disabled={deleteBusy} onClick={() => setDeleteTicket(null)}>
               {t('common.cancel')}

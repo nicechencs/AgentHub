@@ -23,7 +23,7 @@ pub mod pi_auth;
 pub(crate) mod workbuddy;
 pub(crate) mod zcode;
 
-// Free install probes for platform detectors (P1-3) — no AdapterRegistry required.
+// Free install probes for platform detectors — no AdapterRegistry required.
 pub(crate) use claude::detect_installation as detect_claude_installation;
 pub(crate) use codex::detect_installation as detect_codex_installation;
 pub(crate) use cursor::detect_installation as detect_cursor_installation;

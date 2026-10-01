@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { officialApiDefaults } from '@/config/official-api';
 import {
   applyFormVars,
   collapseDoubledModelId,
+  defaultConfigScaffold,
   EMPTY_FORM_VARS,
   extractFormVars,
   formFieldVisibility,
@@ -127,16 +129,82 @@ describe('provider-detect fields', () => {
     expect(next).not.toContain('sk-should-not-land-in-toml');
   });
 
+  it('keeps the Codex official scaffold free of a custom provider pointer', () => {
+    const official = officialApiDefaults('codex');
+    expect(official).toBeTruthy();
+    const scaffold = official?.scaffoldText ?? '';
+    const extracted = extractFormVars('codex', scaffold, 'toml');
+    expect(extracted.providerSlug).toBe('');
+    const next = applyFormVars('codex', scaffold, 'toml', {
+      ...extracted,
+      baseUrl: official?.baseUrl ?? '',
+      model: official?.model ?? '',
+    });
+    expect(next).toContain('model = "gpt-5.1-codex"');
+    expect(next).not.toMatch(/model_provider\s*=/);
+    expect(next).not.toContain('[model_providers.');
+  });
+
+  it('treats a retained Codex provider table without a pointer as official', () => {
+    const toml = [
+      'model = "gpt-5.1-codex"',
+      '',
+      '[model_providers.old_relay]',
+      'base_url = "https://relay.example/v1"',
+      '',
+    ].join('\n');
+    const vars = extractFormVars('codex', toml, 'toml');
+    expect(vars.providerSlug).toBe('');
+    expect(vars.baseUrl).toBe('');
+    const next = applyFormVars('codex', toml, 'toml', vars);
+    expect(next).not.toMatch(/^model_provider\s*=/m);
+    expect(next).toContain('[model_providers.old_relay]');
+  });
+
+  it('starts a blank Codex official config without a custom provider table', () => {
+    const next = applyFormVars('codex', '', 'toml', {
+      ...EMPTY_FORM_VARS,
+      model: 'gpt-5.1-codex',
+      providerSlug: '',
+    });
+    expect(next).not.toMatch(/model_provider\s*=/);
+    expect(next).not.toContain('[model_providers.');
+    expect(extractFormVars('codex', next, 'toml').providerSlug).toBe('');
+  });
+
+  it('uses a custom Codex provider when an address is supplied without a slug', () => {
+    const official = officialApiDefaults('codex')?.scaffoldText ?? '';
+    for (const source of ['', official]) {
+      const next = applyFormVars('codex', source, 'toml', {
+        ...EMPTY_FORM_VARS,
+        model: 'gpt-5.1-codex',
+        baseUrl: 'https://relay.example/v1',
+        providerSlug: '',
+      });
+      expect(next).toContain('model_provider = "custom"');
+      expect(next).toContain('[model_providers.custom]');
+      expect(next).toContain('base_url = "https://relay.example/v1"');
+      expect(extractFormVars('codex', next, 'toml').providerSlug).toBe('custom');
+    }
+  });
+
   it('extracts Grok Build fields from the active nested model table', () => {
     const toml = [
       '[models]',
       'default = "grok"',
       'web_search = "grok"',
       '',
+      '[auth]',
+      'preferred_method = "api_key"',
+      '',
+      '[model_providers.proxy]',
+      'base_url = "https://relay.example.com/v1"',
+      'api_backend = "responses"',
+      '',
       '[model."grok"]',
       'model = "grok-4.5"',
-      'base_url = "https://relay.example.com/v1"',
-      'api_key = "sk-grok-test-abcdefghijklmnop"',
+      'model_provider = "proxy"',
+      'api_key = "sk-grok-fixture-abcdefghijklmnop"',
       'api_backend = "responses"',
       'context_window = 1000000',
       'supports_backend_search = true',
@@ -146,7 +214,7 @@ describe('provider-detect fields', () => {
     const vars = extractFormVars('grok', toml, 'toml');
     expect(vars.model).toBe('grok-4.5');
     expect(vars.baseUrl).toBe('https://relay.example.com/v1');
-    expect(vars.apiKey).toBe('sk-grok-test-abcdefghijklmnop');
+    expect(vars.apiKey).toBe('sk-grok-fixture-abcdefghijklmnop');
 
     const next = applyFormVars('grok', toml, 'toml', {
       ...vars,
@@ -157,11 +225,177 @@ describe('provider-detect fields', () => {
     expect(next).toContain('[models]');
     expect(next).toContain('[model."grok"]');
     expect(next).toContain('model = "grok-4.5-latest"');
+    expect(next).toContain('[model_providers.proxy]');
     expect(next).toContain('base_url = "https://new-relay.example.com/v1"');
+    expect(next).toContain('model_provider = "proxy"');
     expect(next).toContain('api_backend = "responses"');
     expect(next).toContain('context_window = 1000000');
     expect(next).toContain('supports_backend_search = true');
     expect(next).toContain('api_key = "***"');
+    expect(next).not.toMatch(/env_key\s*=/);
+  });
+
+  it('builds the correct Grok provider shape for a new model draft', () => {
+    const scaffold = defaultConfigScaffold('grok');
+    const fixtureKey = 'sk-grok-fixture-new-abcdefghijklmnop';
+    expect(applyFormVars('grok', scaffold.text, scaffold.format, EMPTY_FORM_VARS)).toBe(
+      scaffold.text,
+    );
+    const next = applyFormVars('grok', scaffold.text, scaffold.format, {
+      ...EMPTY_FORM_VARS,
+      model: 'grok-4.7',
+      baseUrl: 'https://api.qooo.io/v1',
+      apiKey: fixtureKey,
+    }, { grokNewDraft: true });
+
+    expect(next).toContain('default = "grok-4.7"');
+    expect(next).toContain('web_search = "grok-4.7"');
+    expect(next).toContain('[auth]');
+    expect(next).toContain('preferred_method = "api_key"');
+    expect(next).toContain('[model_providers.proxy]');
+    expect(next).toContain('base_url = "https://api.qooo.io/v1"');
+    expect(next).toContain('[model."grok-4.7"]');
+    expect(next).toContain('name = "Grok 4.7"');
+    expect(next).toContain('description = "Grok 4.7"');
+    expect(next).toContain('model_provider = "proxy"');
+    expect(next).toContain('api_key = "***"');
+    expect(next).not.toContain('[model."grok-4.5"]');
+    expect(next).not.toContain(fixtureKey);
+    expect(next).not.toMatch(/env_key\s*=/);
+  });
+
+  it('keeps renaming the new Grok alias while the model input is patched character by character', () => {
+    const scaffold = defaultConfigScaffold('grok');
+    let text = scaffold.text;
+    for (const model of ['g', 'gr', 'gro', 'grok', 'grok-', 'grok-4', 'grok-4.7']) {
+      text = applyFormVars('grok', text, 'toml', {
+        ...EMPTY_FORM_VARS,
+        model,
+        baseUrl: 'https://api.qooo.io/v1',
+      }, { grokNewDraft: true });
+    }
+
+    expect(text).toContain('default = "grok-4.7"');
+    expect(text).toContain('web_search = "grok-4.7"');
+    expect(text).toContain('[model."grok-4.7"]');
+    expect(text).not.toContain('default = "g"');
+    expect(text).not.toContain('[model."g"]');
+  });
+
+  it('keeps an edited Grok alias and redacted API Key marker in place', () => {
+    const scaffold = defaultConfigScaffold('grok');
+    const text = applyFormVars('grok', scaffold.text, 'toml', {
+      ...EMPTY_FORM_VARS,
+      model: 'grok-4.7',
+      apiKey: '',
+    });
+
+    expect(text).toContain('default = "grok-4.5"');
+    expect(text).toContain('[model."grok-4.5"]');
+    expect(text).not.toContain('[model."grok-4.7"]');
+    expect(text).toContain('model = "grok-4.7"');
+    expect(text).toContain('api_key = "***"');
+  });
+
+  it('does not replace a custom Grok name while updating the model field', () => {
+    const scaffold = defaultConfigScaffold('grok');
+    const custom = scaffold.text
+      .replace('name = "Grok 4.5"', 'name = "My Grok"')
+      .replace('description = "Grok 4.5"', 'description = "My Grok"');
+    const text = applyFormVars('grok', custom, 'toml', {
+      ...EMPTY_FORM_VARS,
+      model: 'grok-4.7',
+    });
+
+    expect(text).toContain('[model."grok-4.5"]');
+    expect(text).toContain('name = "My Grok"');
+    expect(text).toContain('description = "My Grok"');
+    expect(text).toContain('model = "grok-4.7"');
+  });
+
+  it('does not treat the Grok example key placeholder as a real API Key', () => {
+    const sample = [
+      '[models]',
+      'default = "grok-4.7"',
+      '',
+      '[model_providers.proxy]',
+      'base_url = "https://api.qooo.io/v1"',
+      'api_backend = "responses"',
+      '',
+      '[model."grok-4.7"]',
+      'model = "grok-4.7"',
+      'model_provider = "proxy"',
+      'api_key = "替换成第三方给你的key"',
+      '',
+    ].join('\n');
+    expect(extractFormVars('grok', sample, 'toml').apiKey).toBe('');
+  });
+
+  it('updates only the active provider while preserving other Grok aliases and unknown tables', () => {
+    const toml = [
+      '[models]',
+      'default = "grok-4.7"',
+      'web_search = "grok-4.7"',
+      '',
+      '[auth]',
+      'preferred_method = "api_key"',
+      '',
+      '[model_providers.proxy]',
+      'base_url = "https://old.example.com/v1"',
+      'api_backend = "responses"',
+      'provider_flag = "keep"',
+      '',
+      '[model."grok-4.7"]',
+      'model = "grok-4.7"',
+      'model_provider = "proxy"',
+      'api_key = "***"',
+      'custom_flag = "keep-active"',
+      '',
+      '[model."grok-4.5"]',
+      'model = "grok-4.5"',
+      'model_provider = "proxy"',
+      'api_key = "***"',
+      'sibling_flag = "keep-sibling"',
+      '',
+      '[extra]',
+      'enabled = true',
+      '',
+    ].join('\n');
+    const next = applyFormVars('grok', toml, 'toml', {
+      ...extractFormVars('grok', toml, 'toml'),
+      baseUrl: 'https://new.example.com/v1',
+      apiKey: '',
+    });
+
+    expect(next).toContain('[model."grok-4.7"]');
+    expect(next).toContain('[model."grok-4.5"]');
+    expect(next).toContain('sibling_flag = "keep-sibling"');
+    expect(next).toContain('custom_flag = "keep-active"');
+    expect(next).toContain('[extra]');
+    expect(next).toContain('provider_flag = "keep"');
+    expect(next).toContain('base_url = "https://new.example.com/v1"');
+    expect(next).not.toContain('base_url = "https://old.example.com/v1"');
+  });
+
+  it('migrates a legacy model base_url into the provider table on first write', () => {
+    const legacy = [
+      'model = "grok-4.5"',
+      'base_url = "https://legacy.example.com/v1"',
+      'api_key = "sk-grok-fixture-legacy-abcdefghijklmnop"',
+      'env_key = "XAI_API_KEY"',
+      '',
+    ].join('\n');
+    const next = applyFormVars('grok', legacy, 'toml', {
+      ...extractFormVars('grok', legacy, 'toml'),
+      apiKey: '',
+    });
+
+    expect(next).toContain('[model_providers.proxy]');
+    expect(next).toContain('base_url = "https://legacy.example.com/v1"');
+    expect(next).toContain('model_provider = "proxy"');
+    expect(next).toContain('api_key = "***"');
+    expect(next.match(/^base_url\s*=/gm)).toHaveLength(1);
+    expect(next).not.toMatch(/^env_key\s*=/m);
   });
 
   it('extracts and applies Pi provider fields without falling back to Claude env', () => {
@@ -575,7 +809,31 @@ describe('provider-detect fields', () => {
     expect(maskConfigSecrets('dsh', paste, 'json')).not.toContain('sk-fixture-deepseek-key-bbcd');
   });
 
-  it('keeps grok env_key and does not materialize api_key', () => {
+  it('keeps a Grok env_key when the form has no inline API Key', () => {
+    const toml = [
+      '[models]',
+      'default = "grok"',
+      '',
+      '[model_providers.proxy]',
+      'base_url = "https://relay.example.com/v1"',
+      '',
+      '[model."grok"]',
+      'model = "grok-4.5"',
+      'model_provider = "proxy"',
+      'env_key = "RELAY_KEY"',
+      '',
+    ].join('\n');
+    const next = applyFormVars('grok', toml, 'toml', {
+      ...extractFormVars('grok', toml, 'toml'),
+      baseUrl: 'https://relay.example.com/v1',
+      apiKey: '',
+    });
+    expect(next).toContain('env_key = "RELAY_KEY"');
+    expect(next).not.toContain('api_key = "***"');
+    expect(next).not.toContain('default_reasoning_effort');
+  });
+
+  it('removes legacy grok env_key and writes a redacted model api_key marker', () => {
     const toml = [
       '[models]',
       'default = "grok"',
@@ -590,9 +848,10 @@ describe('provider-detect fields', () => {
       ...extractFormVars('grok', toml, 'toml'),
       apiKey: 'sk-should-not-land-in-toml',
     });
-    expect(next).toContain('env_key = "XAI_API_KEY"');
+    expect(next).not.toContain('env_key = "XAI_API_KEY"');
     expect(next).not.toContain('sk-should-not-land-in-toml');
-    expect(next).not.toMatch(/api_key\s*=/);
+    expect(next).toContain('api_key = "***"');
+    expect(next).toContain('[model_providers.proxy]');
   });
 
   it('does not project Cursor config into Claude env', () => {

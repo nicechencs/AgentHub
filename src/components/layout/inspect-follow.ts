@@ -1,11 +1,11 @@
 /**
  * Name-click lists open inspect from the name.
- * While the pane is already expanded, empty-row selection may switch the target.
- * A closed pane must stay closed.
+ * Row click (non-button) also opens detail when the pane is closed,
+ * and switches the target while it is already expanded.
  */
-export function followInspectOpen<T extends (...args: never[]) => unknown>(
-  expanded: boolean,
-  open: T,
-): T | undefined {
-  return expanded ? open : undefined;
+export function followInspectOpen<Args extends unknown[], Result>(
+  _expanded: boolean,
+  open: (...args: Args) => Result,
+): (...args: Args) => Result {
+  return open;
 }

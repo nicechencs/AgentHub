@@ -507,7 +507,7 @@ impl AgentAdapter for CursorAdapter {
 
     fn build_run_spec(&self, binary: &Path, prompt: &str, opts: &RunOptions) -> Result<RunSpec> {
         // Documented headless text mode; allow_dangerous maps to --force.
-        // Structured stream flags are out of scope for P0.
+        // No structured stream flags yet.
         let mut args = vec![
             "-p".into(),
             prompt.to_string(),

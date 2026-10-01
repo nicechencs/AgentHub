@@ -17,7 +17,8 @@ use crate::bridge::account::PickedMember;
 use crate::bridge::grok_cli::{is_reasoning_decode_failure, strip_encrypted_reasoning};
 use crate::bridge::route_index::DispatchCandidate;
 use crate::bridge::upstream_class::{
-    classify_http, cooldown_for_class, FailoverDecision, UpstreamErrorClass,
+    classify_http_for_request, cooldown_for_class, is_previous_response_id_miss, FailoverDecision,
+    UpstreamErrorClass,
 };
 
 use super::super::admission::AdmittedRequest;
@@ -444,7 +445,25 @@ pub async fn send_upstream_v2(
                 && status == StatusCode::BAD_REQUEST
                 && grok_strip_attempt < 2
                 && is_reasoning_decode_failure(&err_text);
-            let class = classify_http(status, Some(err_text.as_ref()), grok_recoverable);
+            let class = classify_http_for_request(
+                status,
+                Some(err_text.as_ref()),
+                grok_recoverable,
+                Some(&body),
+            );
+            if class == UpstreamErrorClass::Request
+                && status == StatusCode::NOT_FOUND
+                && is_previous_response_id_miss(status, Some(&body), Some(err_text.as_ref()))
+            {
+                tracing::info!(
+                    target: "core.adapter",
+                    profile_id = %state.profile_id,
+                    request_id = %request_id,
+                    account_id = %member.source_id,
+                    model = %public_model,
+                    "previous_response_id 404 is request-scoped; not excluding member+model"
+                );
+            }
             match class.decision(false) {
                 FailoverDecision::RetrySameMember => {
                     let replay_seed = replay_session(cache_seed.as_deref(), account_id);

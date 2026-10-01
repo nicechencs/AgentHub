@@ -29,7 +29,7 @@ import { GenericConfigForm, SuggestableInput } from '@/components/shared/Generic
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
-import { SecretInput } from '@/components/shared/SecretInput';
+import { ApiKeyLoginFields } from '@/components/login-kernel';
 import { Hint, Tip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import type { TranslateFn } from '@/lib/i18n';
@@ -429,6 +429,7 @@ export function ProviderEditDialog({
           provider.configText,
           provider.configFormat,
           nextVars,
+          { grokNewDraft: false },
         ),
         provider.configFormat,
       );
@@ -479,7 +480,9 @@ export function ProviderEditDialog({
       setConfigFormat(scaffold.format);
       setConfigText(maskConfigSecrets(
         agentId,
-        applyFormVars(agentId, scaffold.text, scaffold.format, next),
+        applyFormVars(agentId, scaffold.text, scaffold.format, next, {
+          grokNewDraft: !isEdit,
+        }),
         scaffold.format,
       ));
       setConfigError(null);
@@ -580,7 +583,9 @@ export function ProviderEditDialog({
           : configText;
       const nextConfigText = maskConfigSecrets(
         agentId,
-        applyFormVars(agentId, base, configFormat, next),
+        applyFormVars(agentId, base, configFormat, next, {
+          grokNewDraft: !isEdit,
+        }),
         configFormat,
       );
       setConfigText(nextConfigText);
@@ -1250,55 +1255,44 @@ export function ProviderEditDialog({
                   <span className="text-meta text-muted">{piProviderSlotHint(piSlug, t)}</span>
                 </label>
               ) : null}
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">
-                  {t('connections.providerDialog.endpoint')}
-                  {agentId === 'pi' && !piNeedsUrl ? t('connections.providerDialog.optional') : ''}
-                </span>
-                <Input
-                  value={
-                    useOfficial
-                      ? official?.displayBaseUrl ||
-                        official?.baseUrl ||
-                        vars.baseUrl ||
-                        t('connections.providerDialog.officialDefault')
-                      : vars.baseUrl
-                  }
-                  onChange={(e) => {
-                    if (useOfficial) return;
-                    patchVars({ baseUrl: e.target.value });
-                  }}
-                  onPaste={(e) => {
-                    if (useOfficial) return;
-                    onFieldPaste('baseUrl', e);
-                  }}
-                  placeholder={
-                    agentId === 'pi' && !piNeedsUrl
-                      ? t('connections.providerDialog.officialBuiltinEndpoint')
-                      : 'https://api.example.com'
-                  }
-                  autoComplete="off"
-                  spellCheck={false}
-                  readOnly={useOfficial}
-                  className={useOfficial ? 'cursor-default bg-canvas text-secondary' : undefined}
-                />
-                {piNeedsUrl && !vars.baseUrl.trim() ? (
-                  <span className="text-meta text-danger">{t('connections.providerDialog.customSlotNeedsUrl')}</span>
-                ) : null}
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">
-                  {t('connections.apiKeyDialog.key')}
-                </span>
-                <SecretInput
-                  value={vars.apiKey}
-                  onChange={(v) => patchVars({ apiKey: v })}
-                  placeholder={isEdit
-                    ? t('connections.apiKeyDialog.keyPlaceholderEdit')
-                    : t('connections.apiKeyDialog.keyPlaceholderAdd')}
-                />
-                {keyHint ? <p className="text-meta text-muted">{keyHint}</p> : null}
-              </label>
+              <ApiKeyLoginFields
+                value={{
+                  secret: vars.apiKey,
+                  endpoint: useOfficial
+                    ? official?.displayBaseUrl ||
+                      official?.baseUrl ||
+                      vars.baseUrl ||
+                      t('connections.providerDialog.officialDefault')
+                    : vars.baseUrl,
+                }}
+                onChange={(next) => {
+                  if (useOfficial) return;
+                  if (next.secret !== vars.apiKey) patchVars({ apiKey: next.secret });
+                  if (next.endpoint !== vars.baseUrl) patchVars({ baseUrl: next.endpoint });
+                }}
+                endpointReadOnly={useOfficial}
+                onEndpointPaste={(event) => {
+                  if (useOfficial) return;
+                  onFieldPaste('baseUrl', event);
+                }}
+                secretLabel={t('connections.apiKeyDialog.key')}
+                endpointLabel={`${t('connections.providerDialog.endpoint')}${
+                  agentId === 'pi' && !piNeedsUrl ? t('connections.providerDialog.optional') : ''
+                }`}
+                secretPlaceholder={isEdit
+                  ? t('connections.apiKeyDialog.keyPlaceholderEdit')
+                  : t('connections.apiKeyDialog.keyPlaceholderAdd')}
+                endpointPlaceholder={
+                  agentId === 'pi' && !piNeedsUrl
+                    ? t('connections.providerDialog.officialBuiltinEndpoint')
+                    : 'https://api.example.com'
+                }
+                secretHint={keyHint}
+                fieldOrder="endpoint-first"
+              />
+              {piNeedsUrl && !vars.baseUrl.trim() ? (
+                <span className="text-meta text-danger">{t('connections.providerDialog.customSlotNeedsUrl')}</span>
+              ) : null}
               <label className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">
                   {t('connections.providerDialog.model')}

@@ -4,7 +4,8 @@ use serde_json::Value;
 
 use crate::bridge::grok_cli::{
     apply_grok_cli_identity_with, extract_prompt_cache_seed, grok_cli_request_identity_for_account,
-    inject_prompt_cache_key, normalize_grok_build_tools, GrokCliRequestIdentity,
+    inject_prompt_cache_key, normalize_grok_build_tools, sanitize_grok_responses_request,
+    GrokCliRequestIdentity,
 };
 use crate::bridge::protocol::pair::adapt_codex_request_for_grok_upstream;
 use crate::bridge::protocol::responses::to_grok_responses_request;
@@ -58,6 +59,7 @@ impl UpstreamTransport for GrokTransport {
                     }
                 }
                 normalize_grok_build_tools(&mut body);
+                sanitize_grok_responses_request(&mut body);
                 inject_prompt_cache_key(&mut body, cache_seed.as_deref());
                 Ok(UpstreamPrepare {
                     path: self.path(),

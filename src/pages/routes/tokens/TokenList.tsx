@@ -222,6 +222,12 @@ function renderColumn(
         {showDefaultMark ? (
           <span className="shrink-0 text-meta text-muted">{t('routes.tokens.defaultName')}</span>
         ) : null}
+        {row.lifecycle === 'inactive' ? (
+          <span className="shrink-0 text-meta text-warning">{t('routes.tokens.lifecycleInactive')}</span>
+        ) : null}
+        {row.lifecycle === 'orphaned' ? (
+          <span className="shrink-0 text-meta text-warning">{t('routes.tokens.lifecycleOrphaned')}</span>
+        ) : null}
       </div>
     );
   }

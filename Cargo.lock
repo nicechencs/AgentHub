@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "agenthub-cli"
-version = "0.4.22"
+version = "0.4.23"
 dependencies = [
  "agenthub-core",
  "clap",
@@ -24,7 +24,7 @@ dependencies = [
 
 [[package]]
 name = "agenthub-core"
-version = "0.4.22"
+version = "0.4.23"
 dependencies = [
  "async-stream",
  "axum",
@@ -34,6 +34,7 @@ dependencies = [
  "dunce",
  "futures-util",
  "getrandom 0.2.17",
+ "jsonc-parser",
  "libc",
  "reqwest 0.12.28",
  "rusqlite",
@@ -63,7 +64,7 @@ dependencies = [
 
 [[package]]
 name = "agenthub-gui"
-version = "0.4.22"
+version = "0.4.23"
 dependencies = [
  "agenthub-core",
  "base64 0.22.1",
@@ -2419,6 +2420,15 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "jsonc-parser"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ecded084f9b9a718d39668a42657c32253663d1f6afb3fbb9134f0305f73f48"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

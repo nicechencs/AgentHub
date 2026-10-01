@@ -1,24 +1,22 @@
 ---
 title: Usage 与模型切换 owner 拆分
-type: proposal
-status: proposed
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-08-27
+updated: 2026-09-29
 ---
 
 # Usage 与模型切换 owner 拆分
 
-> 状态：提案（Draft）。作者：maintainers。日期：2026-08-27。
->
-> 本文是 [对象化与封装审查](../archive/objectization-encapsulation-audit.md) O-31–O-34 的落地设计：只拆 Bridge `Usage` 协议映射、Usage 查询过滤、Usage 存储/解析/计费角色、以及 `decide_model_switch` 的内部 owner。不是现行契约，不得按已实施理解。日常 PR 合入 GitHub `dev`。
+> **落地核对（2026-09-29）：** PR1–PR4 均已落地：`storage/usage_repo.rs` 的 `UsageQuery` + `append_usage_filter`、`bridge/usage.rs`（`Usage` IR 单独成文件）、`models/usage.rs` 角色注释与 `services/usage_service/cost.rs`、`bridge/model_switch.rs`（`decide_model_switch`）。之后查询又加了 `until` 与模型别名过滤，下文口径以源码测试为准。本页保留为设计记录，不是现行契约；现行事实以源码和 [架构总览](../architecture/overview.md) 为准。
+
+> 本文是 [对象化与封装审查](../archive/objectization-encapsulation-audit.md) O-31–O-34 的落地设计：只拆 Bridge `Usage` 协议映射、Usage 查询过滤、Usage 存储/解析/计费角色、以及 `decide_model_switch` 的内部 owner。不是现行契约，不得按已实施理解。
 >
 > **冻结写入路径：** 不改 `switch` / `switch_with_guard` / `undo_switch`、不改票夹 `plan` / `bind` / `unbind`、不改 `AdapterRouteService::plan`。本系列是文件与角色边界，不是统计口径或切换策略迁移。
 
 ## Overview
 
 四件事现在都是「一个类型或一个模块里叠了多个角色」。调用方（CLI `crates/agenthub-cli/src/commands/usage.rs`、桌面 `src-tauri/src/commands/usage.rs`、本机转发 `Gateway::switch_edge_for_model`）已经走稳定门面：`hub.usage().query/trend/overview/collect`、invoke `usage_query` / `usage_trend` / `usage_overview`、gateway 在鉴权后按 body model 做**本次请求**的 edge 挑选。缺的是门面背后的职责边界：协议字段映射、SQL 过滤、落盘行、日志解析、计费、以及模型表 vs 运行时切边，互相缠在同一文件里。
-
-审查行号已部分过期：O-32 的 `query` / `trend` / `overview` **不在** `usage_service.rs:130-160`（那是 `collect`），SQL 在 `usage_repo.rs`；Service 只转发。O-31 的 Chat/Responses 解析在 `types.rs:154-203`，Anthropic 解析/生成在同文件第二段 `impl Usage`（约 660–719）。本文以当前源码为准。
 
 本提案：**不改公开类型和方法名，不改 totals / `reasoning_tokens` / 过滤口径，不改 `switch` / `bind` / `plan`，不新开计费产品。** 内部按 Account 的方式用 **private `mod` 或同文件 owner 函数** 切开（不是新的 crate 可见类型）。第一刀只收口 Usage 查询过滤，四个对象不得一次拆完。
 
@@ -351,6 +349,6 @@ cargo test -p agenthub-core --locked custom_openai_passthroughs_only_stealth_ox_
 - [对象化与封装审查](../archive/objectization-encapsulation-audit.md) — O-31、O-32、O-33、O-34
 - [Service 内部 owner 拆分](service-internal-owners.md) — 同类内部 owner 拆法（门面冻结、第一刀局部）
 - [模块化与边界收紧](../proposals/modularity.md)
-- [Core 与 Runtime](core-runtime.md)
-- [架构总览](overview.md)（本提案不改其当前态表述）
+- [Core 与 Runtime](../architecture/core-runtime.md)
+- [架构总览](../architecture/overview.md)（本提案不改其当前态表述）
 - 源码：`bridge/types.rs`、`bridge/protocol/{chat,responses,anthropic_messages}.rs`、`bridge/host/gateway.rs`、`services/usage_service.rs`、`storage/usage_repo.rs`、`models/usage.rs`、`models/adapter_model_mapping.rs`、`models/adapter_model_mapping/switch_tests.rs`、`platform/usage/tests.rs`、`usage/grok.rs`、`src-tauri/src/commands/usage.rs`、`crates/agenthub-cli/src/commands/usage.rs`、`src/lib/usage-tokens.ts`

@@ -1,4 +1,4 @@
-// Settings（docs/ui-design.md §4.8）
+// Settings（docs/ui/page-patterns.md §2.3）
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';

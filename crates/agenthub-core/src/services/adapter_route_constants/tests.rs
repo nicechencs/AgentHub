@@ -50,6 +50,62 @@ fn other_vendor_urls_are_not_openai_compat() {
 }
 
 #[test]
+fn anthropic_messages_upstream_base_url_appends_v1_once() {
+    assert_eq!(
+        anthropic_messages_upstream_base_url(&json!({
+            "env": { "ANTHROPIC_BASE_URL": "https://mytokens.cc" }
+        }))
+        .as_deref(),
+        Some("https://mytokens.cc/v1")
+    );
+    assert_eq!(
+        anthropic_messages_upstream_base_url(&json!({
+            "env": { "ANTHROPIC_BASE_URL": "https://mytokens.cc/" }
+        }))
+        .as_deref(),
+        Some("https://mytokens.cc/v1")
+    );
+    assert_eq!(
+        anthropic_messages_upstream_base_url(&json!({
+            "env": { "ANTHROPIC_BASE_URL": "https://mytokens.cc/v1" }
+        }))
+        .as_deref(),
+        Some("https://mytokens.cc/v1")
+    );
+    assert_eq!(
+        anthropic_messages_upstream_base_url(&json!({
+            "env": { "ANTHROPIC_BASE_URL": "https://mytokens.cc/v1/" }
+        }))
+        .as_deref(),
+        Some("https://mytokens.cc/v1")
+    );
+    assert_eq!(
+        anthropic_messages_upstream_base_url(&json!({
+            "env": { "ANTHROPIC_BASE_URL": "https://api.anthropic.com" }
+        }))
+        .as_deref(),
+        Some(ANTHROPIC_MESSAGES_BASE_URL)
+    );
+    assert!(anthropic_messages_upstream_base_url(&json!({
+        "env": { "ANTHROPIC_BASE_URL": "not a url" }
+    }))
+    .is_none());
+    assert!(anthropic_messages_upstream_base_url(&json!({})).is_none());
+    assert!(claude_settings_have_anthropic_key_and_base(&json!({
+        "env": {
+            "ANTHROPIC_BASE_URL": "https://mytokens.cc",
+            "ANTHROPIC_AUTH_TOKEN": "sk-fixture"
+        }
+    })));
+    assert!(!claude_settings_have_anthropic_key_and_base(&json!({
+        "env": { "ANTHROPIC_BASE_URL": "https://mytokens.cc" }
+    })));
+    assert!(!claude_settings_have_anthropic_key_and_base(&json!({
+        "env": { "ANTHROPIC_AUTH_TOKEN": "sk-fixture" }
+    })));
+}
+
+#[test]
 fn upstream_models_health_probe_skips_deepseek_glm_and_anthropic_relays() {
     assert!(!upstream_models_health_probe_supported(
         "https://api.deepseek.com"

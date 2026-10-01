@@ -10,7 +10,9 @@ import type {
   RoutePoolDialect,
   RoutePoolSurface,
 } from '@/lib/backend/contracts/adapter';
-import { authHealthLabel, type AuthHealth } from '@/lib/backend/contracts/auth-state';
+import type { AuthHealth } from '@/lib/backend/contracts/auth-state';
+import { presentLogin } from '@/components/login-kernel';
+import { translate as translateMessage } from '@/lib/i18n';
 import type { TicketView } from '@/lib/backend/contracts/ticket';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { ConnectionKind } from '@/lib/connection-kind';
@@ -159,6 +161,9 @@ export type PoolAuthorizationItem = {
   sourceKind: AdapterSourceKind;
   sourceId: string;
   agentId: AgentKey;
+  catalogEmpty?: boolean;
+  inTrash?: boolean;
+  memberUnhealthy?: boolean;
   title: string;
   /** OAuth displays the authorized account when the provider exposed one. */
   identityLabel?: string;
@@ -270,23 +275,26 @@ function poolAuthorizationItem(
 
 /** Login-status chip for one authorization row. */
 export function poolAuthorizationStatusView(
-  item: Pick<PoolAuthorizationItem, 'authHealth' | 'authStatus'>,
+  item: Pick<PoolAuthorizationItem, 'authHealth' | 'authStatus'> & Partial<
+    Pick<PoolAuthorizationItem, 'sourceKind' | 'sourceId' | 'agentId' | 'title' | 'kind' | 'catalogEmpty' | 'inTrash' | 'memberUnhealthy'>
+  >,
   t?: TranslateFn,
-): { label: string; tone: 'success' | 'warning' | 'danger' | 'info' | 'muted' } {
-  const health: AuthHealth = item.authHealth
-    ?? (item.authStatus === 'expired'
-      ? 'needs_login'
-      : item.authStatus === 'none'
-        ? 'missing'
-        : item.authStatus === 'expiring'
-          ? 'unknown'
-          : 'unknown');
-  const tone = health === 'needs_login'
-    ? 'danger'
-    : health === 'missing' || health === 'unknown'
-      ? 'muted'
-      : 'success';
-  return { label: authHealthLabel(health, t), tone };
+): { label: string; tone: 'success' | 'warning' | 'danger' | 'muted' } {
+  const translate = t ?? ((key, params) => translateMessage('zh', key, params));
+  const kind = item.kind ?? 'oauth';
+  return presentLogin({
+    sourceKind: item.sourceKind === 'provider' ? 'provider' : 'account',
+    sourceId: item.sourceId ?? 'login',
+    agentId: item.agentId ?? '',
+    kind,
+    label: item.title ?? '',
+    authHealth: item.authHealth,
+    authStatus: item.authStatus,
+    credentialKind: kind,
+    catalogEmpty: item.catalogEmpty,
+    inTrash: item.inTrash,
+    memberUnhealthy: item.memberUnhealthy,
+  }, translate).status;
 }
 
 export type PoolAuthorizationDeleteStep = 'removeMembership' | 'deleteSource' | 'recycleMembership';
@@ -326,12 +334,35 @@ export function poolAuthorizationTicketView(
   };
 }
 
+/** Enabled pool member that is cooling or isolated — not merely disabled. */
+export function poolMemberUnhealthy(
+  member: Pick<RouteMemberOverview, 'enabled' | 'availability'>,
+): boolean {
+  if (!member.enabled) return false;
+  return member.availability === 'cooling' || member.availability === 'isolated';
+}
+
+/** Source ids sitting in Connections or the connection-pool trash. */
+export function trashSourceIdsFromItems(
+  items: readonly { sourceId?: string; membership?: { sourceId?: string } | null }[],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const item of items) {
+    const sourceId = item.sourceId?.trim();
+    if (sourceId) ids.add(sourceId);
+    const membershipId = item.membership?.sourceId?.trim();
+    if (membershipId) ids.add(membershipId);
+  }
+  return ids;
+}
+
 /** Every OAuth / API authorization visible on the auth-pool page. */
 export function collectPoolAuthorizations(
   pools: readonly DefaultRoutePoolOverview[],
   entries: readonly ConnectionEntry[],
   bindingCounts: ReadonlyMap<string, number> = new Map(),
   unavailableLabel = '未提供登录',
+  trashSourceIds: ReadonlySet<string> = new Set(),
 ): PoolAuthorizationItem[] {
   const items = new Map<string, PoolAuthorizationItem>();
   const entryBySource = new Map<string, ConnectionEntry>(
@@ -349,7 +380,7 @@ export function collectPoolAuthorizations(
         : member.priority == null
           ? existing.priority
           : Math.min(existing.priority, member.priority);
-      items.set(key, poolAuthorizationItem(
+      const next = poolAuthorizationItem(
         key,
         member.sourceKind,
         member.sourceId,
@@ -368,7 +399,13 @@ export function collectPoolAuthorizations(
           canToggle: true,
           priority,
         },
-      ));
+      );
+      items.set(key, {
+        ...next,
+        catalogEmpty: (existing?.catalogEmpty !== false) && (pool.listedModels?.length ?? 0) === 0,
+        inTrash: existing?.inTrash === true || trashSourceIds.has(member.sourceId),
+        memberUnhealthy: existing?.memberUnhealthy === true || poolMemberUnhealthy(member),
+      });
     }
   }
   for (const entry of entries) {
@@ -376,20 +413,23 @@ export function collectPoolAuthorizations(
     const key = `${entry.source}:${entry.id}`;
     if (items.has(key)) continue;
     const endpointKind = localEndpointKindForTargetAgent(entry.agentId);
-    items.set(key, poolAuthorizationItem(
-      key,
-      entry.source,
-      entry.id,
-      entry,
-      {
-        agentId: entry.agentId,
-        kind: entry.kind,
-        title: entry.id,
-        surface: poolSurfaceForAgent(entry.agentId),
-        endpointKind,
-        addedHere: true,
-      },
-    ));
+    items.set(key, {
+      ...poolAuthorizationItem(
+        key,
+        entry.source,
+        entry.id,
+        entry,
+        {
+          agentId: entry.agentId,
+          kind: entry.kind,
+          title: entry.id,
+          surface: poolSurfaceForAgent(entry.agentId),
+          endpointKind,
+          addedHere: true,
+        },
+      ),
+      inTrash: trashSourceIds.has(entry.id),
+    });
   }
   return [...items.values()]
     .map((item) => {

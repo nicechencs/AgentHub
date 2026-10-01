@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { ApiKeyLoginFields } from '@/components/login-kernel';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { RouteEndpointTypeText } from '@/components/shared/RouteEndpointUrl';
 import { Button } from '@/components/ui/button';
@@ -481,9 +482,9 @@ export function ApiAccessForm({
           {selectedVendor && !editing ? (
             <p className="text-meta text-muted">{t('routes.pool.page.apiMatchedVendor')}</p>
           ) : null}
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-muted">{t('connections.providerDialog.endpoint')}</span>
-            {vendorUrls.length > 1 ? (
+          {vendorUrls.length > 1 ? (
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted">{t('connections.providerDialog.endpoint')}</span>
               <Select value={baseUrl || undefined} onValueChange={setBaseUrl} disabled={!vendorId}>
                 <SelectTrigger>
                   <SelectValue placeholder={t('routes.pool.page.apiUrlPlaceholder')} />
@@ -496,35 +497,32 @@ export function ApiAccessForm({
                   ))}
                 </SelectContent>
               </Select>
-            ) : (
-              <Input
-                value={baseUrl}
-                onChange={(event) => {
-                  setBaseUrl(event.target.value);
-                  setDetectNone(false);
-                }}
-                placeholder="https://api.example.com/v1"
-                autoComplete="off"
-                spellCheck={false}
-                disabled={!vendorId}
-              />
-            )}
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-muted">{t('routes.pool.page.apiKeysLabel')}</span>
-            <textarea
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-              placeholder={editing
-                ? t('routes.pool.page.apiKeysPlaceholderEdit')
-                : t('routes.pool.page.apiKeysPlaceholder')}
-              rows={3}
-              autoComplete="off"
-              spellCheck={false}
+            </label>
+          ) : (
+            <ApiKeyLoginFields
+              mode="single"
+              showSecret={false}
+              value={{ secret: apiKey, endpoint: baseUrl }}
+              onChange={(next) => {
+                setBaseUrl(next.endpoint);
+                setDetectNone(false);
+              }}
+              endpointLabel={t('connections.providerDialog.endpoint')}
+              endpointPlaceholder="https://api.example.com/v1"
               disabled={!vendorId}
-              className="min-h-[4.5rem] w-full resize-y rounded-btn border border-border-strong bg-panel px-2.5 py-2 font-mono text-body text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/60 disabled:opacity-50"
             />
-          </label>
+          )}
+          <ApiKeyLoginFields
+            mode="multiline"
+            showEndpoint={false}
+            value={{ secret: apiKey, endpoint: baseUrl }}
+            onChange={(next) => setApiKey(next.secret)}
+            secretLabel={t('routes.pool.page.apiKeysLabel')}
+            secretPlaceholder={editing
+              ? t('routes.pool.page.apiKeysPlaceholderEdit')
+              : t('routes.pool.page.apiKeysPlaceholder')}
+            disabled={!vendorId}
+          />
           {isUnknownVendor && !editing ? (
             <p className="text-meta text-muted">
               {detecting ? t('routes.pool.page.apiDetecting') : t('routes.pool.page.apiDetectHint')}

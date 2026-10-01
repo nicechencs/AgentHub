@@ -1184,11 +1184,11 @@ fn unsupported_and_missing_sources_have_no_changes() {
     assert!(unsupported.analysis.reason.contains("api.kimi.com/coding"));
     assert_eq!(
         unsupported.analysis.evidence[0].url,
-        "https://github.com/nicechencs/AgentHub/blob/release/docs/provider-api-oauth-adaptation.md"
+        "https://github.com/nicechencs/AgentHub/blob/release/docs/reference/route-compatibility.md"
     );
     assert_eq!(
         unsupported.analysis.evidence[0].label,
-        "AgentHub：厂商、API 与 OAuth 适配规则"
+        "AgentHub：路由兼容性参考"
     );
 
     let codex_to_claude = service

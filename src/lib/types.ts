@@ -1,4 +1,4 @@
-// TS 类型 —— 手写同步自 agenthub-core 的 models(见 docs/architecture.md §2 models/)
+// TS 类型 —— 手写同步自 agenthub-core 的 models(crates/agenthub-core/src/models/)
 // Agent 列表与能力以运行时 Catalog 为准（见 platform agent_catalog）；本文件不再封闭 Agent 集合。
 
 /**
@@ -444,6 +444,11 @@ export interface AppSettings {
    * a new one. Default on.
    */
   updateDuplicateRouteUrl: boolean;
+  /**
+   * Connections: automatically import this computer's detected official / local
+   * logins. Default on. Manual import UI shows only when this is off.
+   */
+  autoImportLocalLogin: boolean;
   appVersion: string;
 }
 

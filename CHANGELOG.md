@@ -17,6 +17,30 @@
 
 ## [Unreleased]
 
+## [0.4.23] - 2026-10-01
+
+### 新增
+- 对话：Codex 改为常驻 app-server 进程，减少反复拉起开销
+- 设置：偏好默认自动导入本机登录
+- 登录：登录内核共享展示逻辑，各供应商登录页口径一致
+
+### 改进
+- CI：cargo 包测试并行，并在 ETXTBSY 时自动重试（Playwright 仍串行）
+- 测试：isolate 用量记录改用相对时间，避开 30 日窗口边界 flake
+- 路由：本机路由投影让 Codex、Grok、DSH 命令行走通
+- 文档：精简文档与注释，并与代码对齐
+
+### 修复
+- 路由：OpenAI 源钥匙兼容 `auth.OPENAI_API_KEY`，避免桥目录空
+- 路由：Anthropic→Codex 使用源站 BASE；mytokens 形 Claude 源可解析密钥
+- 路由：Grok→Claude 非流式转换，并兼容 Grok TOML campaigns 旧模板
+- 路由：官方 DSH 凭据文件 Key 仍列出 DeepSeek 模型；被降级的手工 DSH 池 Key 也能通过本机鉴权
+- 路由：本机转发同时接受入口 Key 与投影 Key；选池标签 / temperature / stop observe 等 QA 修复
+- 对话：收紧「一直允许」范围，修复各 Agent 持续通道衔接
+- 对话：切到 Chat 或换会话时不再弹出历史中断红条
+- 对话：新手 UX 修复包（P0–P1）
+- 登录：官方登录切换时停用残留供应商路由；Grok 供应商切换保留登录设置并按别名恢复端点
+
 ## [0.4.22] - 2026-09-27
 
 ### 改进

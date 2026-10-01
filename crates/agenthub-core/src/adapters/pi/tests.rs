@@ -705,6 +705,295 @@ fn pi_live_chat_model_keeps_catalog_current_without_rewriting() {
 }
 
 #[test]
+fn apply_official_slot_drops_models_json_endpoint_override() {
+    with_pi_config_dir(|dir| {
+        std::fs::write(
+            dir.join("settings.json"),
+            serde_json::to_vec_pretty(&json!({ "defaultProvider": "openai" })).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+        std::fs::write(
+            dir.join("models.json"),
+            serde_json::to_vec_pretty(&json!({
+                "providers": {
+                    "openai": {
+                        "baseUrl": "https://relay.example/v1",
+                        "apiKey": "sk-relay"
+                    },
+                    "custom": { "baseUrl": "https://keep.example/v1", "apiKey": "sk-keep" }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        PiAdapter
+            .apply_account(&LiveAccount {
+                agent: AgentId::Pi,
+                kind: crate::models::AccountKind::Oauth,
+                credentials: json!({
+                    "format": "auth_json",
+                    "provider": "openai",
+                    "body": { "openai": { "type": "oauth", "access": "at", "refresh": "rt" } }
+                }),
+                label_hint: None,
+                extra: json!({ "provider": "openai" }),
+            })
+            .unwrap();
+        let models: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("models.json")).unwrap())
+                .unwrap();
+        assert!(models["providers"].get("openai").is_none(), "{models}");
+        assert_eq!(
+            models["providers"]["custom"]["baseUrl"],
+            "https://keep.example/v1"
+        );
+    });
+}
+
+#[test]
+fn apply_official_slot_preserves_unrelated_jsonc_models() {
+    with_pi_config_dir(|dir| {
+        let models_path = dir.join("models.json");
+        std::fs::write(
+            dir.join("settings.json"),
+            br#"{"defaultProvider":"openai","defaultModel":"relay-only"}"#,
+        )
+        .unwrap();
+        std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+        std::fs::write(
+            &models_path,
+            r#"{
+  // Keep this provider and its comment.
+  "providers": {
+    "openai": {
+      "baseUrl": "https://relay.example/v1",
+      "models": [{ "id": "relay-only", }],
+    },
+    // Custom endpoint remains available.
+    "custom": { "baseUrl": "https://keep.example/v1", },
+  },
+  "providers": {
+    "openai": { "baseUrl": "https://relay-two.example/v1", },
+    "openai": { "baseUrl": "https://relay-three.example/v1", },
+    "custom": { "baseUrl": "https://keep.example/v1", },
+  },
+}
+"#,
+        )
+        .unwrap();
+        with_pi_official_catalog(vec![], || {
+            PiAdapter
+                .apply_account(&LiveAccount {
+                    agent: AgentId::Pi,
+                    kind: crate::models::AccountKind::Oauth,
+                    credentials: json!({
+                        "format": "auth_json",
+                        "provider": "openai",
+                        "body": { "openai": { "type": "oauth", "access": "at", "refresh": "rt" } }
+                    }),
+                    label_hint: None,
+                    extra: json!({ "provider": "openai" }),
+                })
+                .unwrap();
+        });
+        let text = std::fs::read_to_string(&models_path).unwrap();
+        assert!(!text.contains("\"openai\""), "{text}");
+        assert!(!text.contains("relay.example"), "{text}");
+        assert!(
+            text.contains("// Custom endpoint remains available."),
+            "{text}"
+        );
+        assert!(
+            text.contains("\"custom\": { \"baseUrl\": \"https://keep.example/v1\", }"),
+            "{text}"
+        );
+        let config = PiAdapter.read_config().unwrap();
+        assert_eq!(
+            config.raw["models"]["providers"]["custom"]["baseUrl"],
+            "https://keep.example/v1"
+        );
+        assert!(
+            config.raw["settings"].get("defaultModel").is_none(),
+            "{}",
+            config.raw["settings"]
+        );
+    });
+}
+
+#[test]
+fn apply_xai_oauth_drops_relay_override_and_its_default_model() {
+    with_pi_config_dir(|dir| {
+        std::fs::write(
+            dir.join("settings.json"),
+            serde_json::to_vec_pretty(&json!({
+                "defaultProvider": "xai",
+                "defaultModel": "relay-only"
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+        std::fs::write(
+            dir.join("models.json"),
+            serde_json::to_vec_pretty(&json!({
+                "providers": {
+                    "xai": {
+                        "baseUrl": "https://relay.example/v1",
+                        "models": [{ "id": "relay-only" }]
+                    },
+                    "custom": { "baseUrl": "https://keep.example/v1" }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        with_pi_official_catalog(vec![], || {
+            PiAdapter
+                .apply_account(&LiveAccount {
+                    agent: AgentId::Pi,
+                    kind: crate::models::AccountKind::Oauth,
+                    credentials: json!({
+                        "format": "auth_json",
+                        "provider": "xai",
+                        "body": { "xai": { "type": "oauth", "access": "at", "refresh": "rt" } }
+                    }),
+                    label_hint: None,
+                    extra: json!({ "provider": "xai" }),
+                })
+                .unwrap();
+        });
+        let models: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("models.json")).unwrap())
+                .unwrap();
+        let settings: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                .unwrap();
+        assert!(models["providers"].get("xai").is_none(), "{models}");
+        assert!(models["providers"].get("custom").is_some(), "{models}");
+        assert_eq!(settings["defaultProvider"], "xai");
+        assert!(settings.get("defaultModel").is_none(), "{settings}");
+    });
+}
+
+#[test]
+fn apply_imported_builtin_api_key_drops_same_slot_relay_override() {
+    for slot in [
+        "mistral",
+        "xiaomi-token-plan-cn",
+        "qwen-token-plan-individual",
+    ] {
+        with_pi_config_dir(|dir| {
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            std::fs::write(
+                dir.join("models.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "providers": {
+                        (slot): { "baseUrl": "https://relay.example/v1" },
+                        "custom": { "baseUrl": "https://keep.example/v1" }
+                    }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            with_pi_official_catalog(vec![], || {
+                PiAdapter
+                    .apply_account(&LiveAccount {
+                        agent: AgentId::Pi,
+                        kind: crate::models::AccountKind::ApiKey,
+                        credentials: json!({
+                            "format": "auth_json",
+                            "provider": slot,
+                            "body": { (slot): { "type": "api_key", "key": "sk-official" } }
+                        }),
+                        label_hint: None,
+                        extra: json!({ "provider": slot }),
+                    })
+                    .unwrap();
+            });
+            let models: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(dir.join("models.json")).unwrap())
+                    .unwrap();
+            assert!(models["providers"].get(slot).is_none(), "{slot}: {models}");
+            assert!(models["providers"].get("custom").is_some(), "{models}");
+        });
+    }
+}
+
+#[test]
+fn apply_extension_auth_slot_keeps_required_models_provider() {
+    with_pi_config_dir(|dir| {
+        std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+        std::fs::write(
+            dir.join("models.json"),
+            serde_json::to_vec_pretty(&json!({
+                "providers": {
+                    "qwen": {
+                        "baseUrl": "https://custom.example/v1",
+                        "models": [{ "id": "extension-model" }]
+                    }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        with_pi_official_catalog(vec![], || {
+            PiAdapter
+                .apply_account(&LiveAccount {
+                    agent: AgentId::Pi,
+                    kind: crate::models::AccountKind::ApiKey,
+                    credentials: json!({
+                        "format": "auth_json",
+                        "provider": "qwen",
+                        "body": { "qwen": { "type": "api_key", "key": "sk-custom" } }
+                    }),
+                    label_hint: None,
+                    extra: json!({ "provider": "qwen" }),
+                })
+                .unwrap();
+        });
+        let models: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("models.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            models["providers"]["qwen"]["baseUrl"],
+            "https://custom.example/v1"
+        );
+    });
+}
+
+#[test]
+fn apply_oauth_restores_auth_and_settings_when_model_cleanup_fails() {
+    with_pi_config_dir(|dir| {
+        let auth_path = dir.join("auth.json");
+        let settings_path = dir.join("settings.json");
+        let models_path = dir.join("models.json");
+        let auth_before = b"{\"xai\":{\"type\":\"oauth\",\"access\":\"old\"}}\n";
+        let settings_before = b"{\"defaultProvider\":\"xai\",\"defaultModel\":\"grok-4\"}\n";
+        let models_before = b"{ invalid json";
+        std::fs::write(&auth_path, auth_before).unwrap();
+        std::fs::write(&settings_path, settings_before).unwrap();
+        std::fs::write(&models_path, models_before).unwrap();
+
+        let result = PiAdapter.apply_account(&LiveAccount {
+            agent: AgentId::Pi,
+            kind: crate::models::AccountKind::Oauth,
+            credentials: json!({
+                "format": "auth_json",
+                "provider": "xai",
+                "body": { "xai": { "type": "oauth", "access": "new", "refresh": "rt" } }
+            }),
+            label_hint: None,
+            extra: json!({ "provider": "xai" }),
+        });
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&auth_path).unwrap(), auth_before);
+        assert_eq!(std::fs::read(&settings_path).unwrap(), settings_before);
+        assert_eq!(std::fs::read(&models_path).unwrap(), models_before);
+    });
+}
+
+#[test]
 fn apply_oauth_pins_slot_and_drops_leftover_stealth_model() {
     with_pi_config_dir(|dir| {
         std::fs::write(

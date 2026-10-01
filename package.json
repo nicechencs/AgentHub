@@ -1,7 +1,7 @@
 {
   "name": "agenthub",
   "private": true,
-  "version": "0.4.22",
+  "version": "0.4.23",
   "description": "Multi-agent desktop hub: install runtimes, manage providers/accounts, skills, usage, and chat",
   "license": "MIT",
   "repository": {
@@ -44,7 +44,7 @@
     "release:check": "node scripts/release-metadata.mjs --require-changelog",
     "release:sync-version": "node scripts/release-sync-version.mjs",
     "release:preflight": "pnpm release:sync-version && pnpm release:check && pnpm release:test && pnpm typecheck && pnpm typecheck:test && pnpm test && cargo test --workspace --locked",
-    "release:test": "node --test scripts/release-metadata.test.mjs scripts/release-bump.test.mjs scripts/build-latest-json.test.mjs scripts/check-linux-prereqs.test.mjs scripts/pick-github-release.test.mjs scripts/rewrite-latest-json-mirror.test.mjs",
+    "release:test": "node --test scripts/release-metadata.test.mjs scripts/release-bump.test.mjs scripts/build-latest-json.test.mjs scripts/check-linux-prereqs.test.mjs scripts/pick-github-release.test.mjs scripts/rewrite-latest-json-mirror.test.mjs scripts/cargo-ci.test.mjs",
     "release:update": "node scripts/release-update.mjs",
     "release:bump": "node scripts/release-bump.mjs --patch",
     "release:bump:minor": "node scripts/release-bump.mjs --minor",

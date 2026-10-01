@@ -1562,6 +1562,9 @@ fn invalidate_catalogs_drops_warmed_idle_cache() {
     let run = Arc::new(RunService::new(AdapterRegistry::default()));
     let runtime = Arc::new(ChatRuntime::new(db, run));
     runtime.store.enable_if_new("stale").unwrap();
+    runtime.set_codex_program_for_test(std::path::PathBuf::from(
+        "/definitely-missing/codex-for-invalidate-test",
+    ));
     runtime.seed_catalog_cache_for_test(
         "stale",
         vec![super::types::RuntimeModelOption {
@@ -1572,8 +1575,84 @@ fn invalidate_catalogs_drops_warmed_idle_cache() {
         vec![],
     );
     assert!(runtime.has_catalog_cache_for_test("stale"));
+    let before = runtime.peek_catalog("stale").unwrap().catalog_epoch;
     runtime.invalidate_catalogs();
-    assert!(!runtime.has_catalog_cache_for_test("stale"));
+    let cache = runtime.peek_catalog("stale").unwrap();
+    assert!(cache.models.is_empty());
+    assert!(!cache.from_codex);
+    assert!(cache.catalog_epoch > before);
+    // Idle options() must refetch rather than serve the cleared cache.
+    let options = runtime.options("stale").unwrap();
+    assert!(options
+        .models
+        .iter()
+        .all(|model| model.id != "gpt-old-login"));
+    let refetched = runtime.peek_catalog("stale").unwrap();
+    assert!(!refetched.stale);
+    assert!(refetched.catalog_epoch > before);
+}
+
+#[test]
+fn invalidate_catalogs_keeps_the_running_plan_and_always_allow() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "plan-kept", false);
+    let run = Arc::new(RunService::new(AdapterRegistry::default()));
+    let runtime = Arc::new(ChatRuntime::new(db, run));
+    runtime.store.enable_if_new("plan-kept").unwrap();
+    let plan = vec![super::types::RuntimePlanEntry {
+        content: "写测试".into(),
+        status: Some("in_progress".into()),
+        priority: None,
+        id: Some("task-1".into()),
+    }];
+    runtime.catalogs.lock().unwrap().insert(
+        "plan-kept".into(),
+        CatalogCache {
+            models: vec![super::types::RuntimeModelOption {
+                id: "gpt-old-login".into(),
+                efforts: vec!["low".into()],
+                default_effort: Some("low".into()),
+            }],
+            image_input: Some(true),
+            catalog_epoch: 3,
+            plan: plan.clone(),
+            pending_plan_creates: vec![("toolu-1".into(), "写文档".into())],
+            plan_tool_use_ids: vec!["toolu-1".into()],
+            session_allow_always: true,
+            ..CatalogCache::default()
+        },
+    );
+
+    runtime.invalidate_catalogs();
+
+    let cache = runtime.peek_catalog("plan-kept").unwrap();
+    assert!(cache.models.is_empty());
+    assert_eq!(cache.image_input, None);
+    assert_eq!(cache.catalog_epoch, 4);
+    assert_eq!(cache.plan, plan);
+    assert_eq!(
+        cache.pending_plan_creates,
+        vec![("toolu-1".to_string(), "写文档".to_string())]
+    );
+    assert_eq!(cache.plan_tool_use_ids, vec!["toolu-1".to_string()]);
+    assert!(cache.session_allow_always);
+    let snapshot = runtime.snapshot("plan-kept", None).unwrap();
+    assert_eq!(snapshot.plan, plan);
+    assert_eq!(snapshot.catalog_epoch, 4);
+    assert!(snapshot.session_allow_always);
+}
+
+#[test]
+fn runtime_store_reads_one_message_by_id_within_its_conversation() {
+    let db = Database::open_in_memory().unwrap();
+    conversation(&db, "by-id", true);
+    conversation(&db, "elsewhere", false);
+    let store = super::store::RuntimeStore::new(db);
+    let message = store.message("by-id", "legacy-user").unwrap().unwrap();
+    assert_eq!(message.content, "legacy");
+    assert_eq!(message.role, ChatRole::User);
+    assert!(store.message("elsewhere", "legacy-user").unwrap().is_none());
+    assert!(store.message("by-id", "missing").unwrap().is_none());
 }
 
 #[test]

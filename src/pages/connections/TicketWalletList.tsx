@@ -87,7 +87,9 @@ import {
   formatCreditAmount,
   hasCreditWindow,
   hasOfficialQuotaWindow,
+  ticketAddActionDescription,
   ticketAddActionLabel,
+  ticketAddImportHighlighted,
   ticketAuthChip,
   cursorLoginKindLabel,
   ticketCardTitle,
@@ -408,12 +410,16 @@ function detailAvailabilityChip(
   t: TranslateFn,
 ) {
   if (!extras) return null;
-  if (extras.authStatus || extras.secretTail?.trim()) return ticketAuthChip(extras, t);
-  if (!extras.authLabel) return null;
-  const chip = ticketAuthChip(extras, t);
-  if (!chip) return null;
-  if (chip.tone === 'warning' || chip.label === t('connections.list.authConfigured')) return chip;
-  return null;
+  return ticketAuthChip(extras, t);
+}
+
+function ticketAuthBadgeVariant(
+  tone: 'success' | 'warning' | 'danger' | 'muted',
+): 'success' | 'warning' | 'danger' | 'default' {
+  if (tone === 'success') return 'success';
+  if (tone === 'danger') return 'danger';
+  if (tone === 'warning') return 'warning';
+  return 'default';
 }
 
 function TicketDetailBody({
@@ -487,7 +493,7 @@ function TicketDetailBody({
           {authChip ? (
             <DetailTableRow label={t('connections.list.table.status')}>
               <DetailTableCell>
-                <Badge variant={authChip.tone === 'warning' ? 'warning' : 'default'}>
+                <Badge variant={ticketAuthBadgeVariant(authChip.tone)}>
                   {authChip.label}
                 </Badge>
               </DetailTableCell>
@@ -773,7 +779,7 @@ function TicketRow({
       ) : null}
       <TableCell data-col="status" className="whitespace-nowrap">
         {authChip ? (
-          <Badge variant={authChip.tone === 'warning' ? 'warning' : 'default'}>
+          <Badge variant={ticketAuthBadgeVariant(authChip.tone)}>
             {authChip.label}
           </Badge>
         ) : (
@@ -899,9 +905,12 @@ export function TicketAddMenu({
   onOauth,
   onAddKey,
   variant = 'default',
+  importDetectedAgentId = null,
 }: {
   agents: TicketAddMenuAgent[];
   focusedAgentId?: AgentKey | null;
+  /** Discovery found a login on this computer for this Agent; highlight the import item. */
+  importDetectedAgentId?: AgentKey | null;
   onImportLogin?: (agentId: AgentKey) => void;
   onOauth?: (agentId: AgentKey) => void;
   onAddKey?: (agentId: AgentKey) => void;
@@ -926,9 +935,12 @@ export function TicketAddMenu({
   }, [open]);
 
   const renderActions = (agent: TicketAddMenuAgent) =>
-    agent.actions.map((action) => (
+    agent.actions.map((action) => {
+      const highlighted = ticketAddImportHighlighted(action.kind, agent.id, importDetectedAgentId);
+      return (
       <DropdownMenuItem
         key={action.kind}
+        className={cn('flex-col items-start gap-0.5', highlighted && 'bg-accent-subtle')}
         disabled={
           action.kind === 'import-login'
             ? !onImportLogin
@@ -945,9 +957,18 @@ export function TicketAddMenu({
           })
         }
       >
-        {ticketAddActionLabel(action.kind, t)}
+        <span className={cn('flex items-center gap-2', highlighted && 'font-medium text-accent')}>
+          {ticketAddActionLabel(action.kind, t)}
+          {highlighted ? (
+            <Badge variant="accent" className="px-1.5 py-0 text-meta">
+              {t('connections.list.importLoginDetected')}
+            </Badge>
+          ) : null}
+        </span>
+        <span className="text-meta text-muted">{ticketAddActionDescription(action.kind, t)}</span>
       </DropdownMenuItem>
-    ));
+      );
+    });
 
   return (
     <DropdownMenu
@@ -965,7 +986,7 @@ export function TicketAddMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        className="min-w-[12rem]"
+        className="min-w-[16rem]"
         onCloseAutoFocus={(event) => event.preventDefault()}
         onEscapeKeyDown={(event) => {
           event.preventDefault();
@@ -1046,6 +1067,7 @@ export function TicketWalletList({
   onAddKey,
   onImportLogin,
   onOauth,
+  includeImportLogin = true,
   onClearAgentFilter,
   installedAgentIds,
   oauthLoginAgents: oauthLoginAgentsProp,
@@ -1066,6 +1088,7 @@ export function TicketWalletList({
   onAddKey?: (agentId: AgentKey) => void;
   onImportLogin?: (agentId: AgentKey) => void;
   onOauth?: (agentId: AgentKey) => void;
+  includeImportLogin?: boolean;
   onClearAgentFilter?: () => void;
   installedAgentIds?: readonly AgentKey[];
   oauthLoginAgents?: readonly AgentKey[] | null;
@@ -1137,8 +1160,8 @@ export function TicketWalletList({
   );
   const oauthLoginAgents = oauthLoginAgentsProp ?? fetchedOauthLoginAgents;
   const addAgents = React.useMemo(
-    () => buildTicketAddMenu(installedAgentIds, oauthLoginAgents),
-    [installedAgentIds, oauthLoginAgents],
+    () => buildTicketAddMenu(installedAgentIds, oauthLoginAgents, includeImportLogin),
+    [installedAgentIds, oauthLoginAgents, includeImportLogin],
   );
 
   const renderAddMenu = (variant?: 'default' | 'outline' | 'secondary') => (

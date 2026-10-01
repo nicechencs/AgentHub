@@ -304,6 +304,102 @@ fn rejects_invalid_reference_without_leaking_secret_or_raw() {
 }
 
 #[test]
+fn is_anthropic_mytokens_claude_resolves_and_empty_custom_stays_closed() {
+    let source = provider(
+        "mytokens-claude",
+        AgentId::Claude,
+        json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": "https://mytokens.cc",
+                "ANTHROPIC_AUTH_TOKEN": "sk-fixture-mytokens"
+            }
+        }),
+        json!({"preset": "custom"}),
+    );
+    let (_dir, resolver) = resolver_with(source);
+    let auth = resolver
+        .resolve_anthropic_auth(AdapterSourceKind::Provider, "mytokens-claude")
+        .unwrap();
+    assert_eq!(auth.token(), "sk-fixture-mytokens");
+
+    let api_key_source = provider(
+        "mytokens-api-key",
+        AgentId::Claude,
+        json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": "https://mytokens.cc/v1",
+                "ANTHROPIC_API_KEY": "sk-fixture-api"
+            }
+        }),
+        json!({"preset": "custom"}),
+    );
+    let (_dir, resolver) = resolver_with(api_key_source);
+    assert_eq!(
+        resolver
+            .resolve_anthropic_auth(AdapterSourceKind::Provider, "mytokens-api-key")
+            .unwrap()
+            .token(),
+        "sk-fixture-api"
+    );
+
+    for (id, agent, settings, meta) in [
+        (
+            "custom-empty",
+            AgentId::Claude,
+            json!({"env": {}}),
+            json!({"preset": "custom"}),
+        ),
+        (
+            "custom-key-only",
+            AgentId::Claude,
+            json!({"env": { "ANTHROPIC_AUTH_TOKEN": "sk-fixture-only" }}),
+            json!({"preset": "custom"}),
+        ),
+        (
+            "custom-base-only",
+            AgentId::Claude,
+            json!({"env": { "ANTHROPIC_BASE_URL": "https://mytokens.cc" }}),
+            json!({"preset": "custom"}),
+        ),
+        (
+            "glm-not-anthropic",
+            AgentId::Claude,
+            json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
+                    "ANTHROPIC_AUTH_TOKEN": "sk-glm"
+                }
+            }),
+            json!({"preset": "glm-coding-plan"}),
+        ),
+        (
+            "codex-not-claude",
+            AgentId::Codex,
+            json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://mytokens.cc",
+                    "ANTHROPIC_AUTH_TOKEN": "sk-fixture-mytokens"
+                }
+            }),
+            json!({"preset": "custom"}),
+        ),
+    ] {
+        let source = provider(id, agent, settings, meta);
+        let (_dir, resolver) = resolver_with(source);
+        let error = resolver
+            .resolve_anthropic_auth(AdapterSourceKind::Provider, id)
+            .unwrap_err();
+        assert_eq!(error.code(), "invalid_arg", "{id}");
+        assert!(
+            error
+                .to_string()
+                .contains("invalid adapter secret reference"),
+            "{id}"
+        );
+    }
+}
+
+#[test]
 fn ordinary_provider_passes_through_unchanged() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("adapter-secret-resolver.db")).unwrap();
@@ -916,6 +1012,89 @@ fn grok_native_reference_materializes_and_scrubs_toml_api_key() {
     let persisted = scrubbed["content"].as_str().unwrap();
     assert!(persisted.contains(&format!("api_key = \"{CONNECTION_SECRET_MARKER}\"")));
     assert!(!persisted.contains("sk-grok-secret"));
+}
+
+#[test]
+fn extract_explicit_openai_key_accepts_auth_openai_api_key() {
+    let auth_only = json!({
+        "format": "toml",
+        "auth": { (OPENAI_API_KEY_ENV): "sk-auth-only" },
+    });
+    assert_eq!(
+        extract_explicit_provider_api_key(OPENAI_TO_PI_RULE, &auth_only).unwrap(),
+        "sk-auth-only"
+    );
+    assert_eq!(
+        extract_explicit_provider_api_key(OPENAI_TO_GROK_RULE, &auth_only).unwrap(),
+        "sk-auth-only"
+    );
+    for rule in [
+        ANTHROPIC_TO_PI_RULE,
+        XAI_TO_PI_RULE,
+        GLM_TO_PI_RULE,
+        DEEPSEEK_TO_PI_RULE,
+    ] {
+        assert!(extract_explicit_provider_api_key(rule, &auth_only).is_err());
+    }
+
+    let env_wins = json!({
+        "env": { (OPENAI_API_KEY_ENV): "sk-env" },
+        "apiKey": "sk-camel",
+        "api_key": "sk-snake",
+        "auth": { (OPENAI_API_KEY_ENV): "sk-auth" },
+    });
+    assert_eq!(
+        extract_explicit_provider_api_key(OPENAI_TO_PI_RULE, &env_wins).unwrap(),
+        "sk-env"
+    );
+
+    let top_level_wins = json!({
+        "apiKey": "***",
+        "api_key": "sk-snake",
+        "auth": { (OPENAI_API_KEY_ENV): "sk-auth" },
+    });
+    assert_eq!(
+        extract_explicit_provider_api_key(OPENAI_TO_PI_RULE, &top_level_wins).unwrap(),
+        "sk-snake"
+    );
+
+    let masked_auth = json!({
+        "auth": { (OPENAI_API_KEY_ENV): "  ***  " },
+    });
+    assert!(extract_explicit_provider_api_key(OPENAI_TO_PI_RULE, &masked_auth).is_err());
+}
+
+#[test]
+fn openai_auth_only_source_validates_and_materializes() {
+    let source = provider(
+        "openai-auth-source",
+        AgentId::Codex,
+        json!({
+            "format": "toml",
+            "auth": { (OPENAI_API_KEY_ENV): "sk-auth-only-secret" },
+        }),
+        json!({"preset": "openai"}),
+    );
+    let (_dir, resolver) = resolver_with(source.clone());
+    resolver
+        .validate_explicit_api_source(
+            OPENAI_TO_PI_RULE,
+            AdapterSourceKind::Provider,
+            "openai-auth-source",
+        )
+        .unwrap();
+    let resolved = resolver
+        .resolve_openai_auth(AdapterSourceKind::Provider, "openai-auth-source")
+        .unwrap();
+    assert!(resolved.has_token());
+    assert_eq!(resolved.token(), "sk-auth-only-secret");
+
+    let target = pi_openai_target(&source.id);
+    let materialized = resolver.materialize_for_live(&target).unwrap();
+    assert_eq!(
+        materialized.settings_config["models"]["providers"][OPENAI_PI_PROVIDER_SLOT]["apiKey"],
+        "sk-auth-only-secret"
+    );
 }
 
 fn pi_custom_target(

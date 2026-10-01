@@ -12,8 +12,8 @@ describe('localizeStoredUiCopy', () => {
     expect(localizeStoredUiCopy('已配置，尚未验证', tEn)).toBe('Configured');
     expect(localizeStoredUiCopy('未配置', tEn)).toBe('Not configured');
     expect(localizeStoredUiCopy('已登录', tEn)).toBe('Signed in');
-    expect(localizeStoredUiCopy('本机路由', tEn)).toBe('Local route');
-    expect(localizeStoredUiCopy('本机路由 · Kimi', tEn)).toBe('Local route · Kimi');
+    expect(localizeStoredUiCopy('本机路由', tEn)).toBe('Local forwarding');
+    expect(localizeStoredUiCopy('本机路由 · Kimi', tEn)).toBe('Local forwarding · Kimi');
     expect(localizeStoredUiCopy('未检测登录态', tEn)).toBe('Unknown');
     expect(localizeStoredUiCopy('未配置', tEn)).not.toMatch(/[\u4e00-\u9fff]/);
   });

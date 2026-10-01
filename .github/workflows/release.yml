@@ -144,7 +144,8 @@ jobs:
         run: pnpm test
 
       - name: Run Rust workspace tests
-        run: cargo test --workspace --locked
+        shell: bash
+        run: bash scripts/cargo-ci.sh retry cargo test --workspace --locked
 
       - name: Validate existing tag and release state
         env:

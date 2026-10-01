@@ -9,8 +9,9 @@ use std::collections::HashSet;
 use serde_json::{json, Map, Value};
 
 use crate::bridge::types::{
-    BridgeContent, BridgeEvent, BridgeMessage, BridgeRequest, BridgeTool, IrEvent, MessageRole,
-    ProtocolError, ProtocolResult, StopReason, ToolCallMap, ToolChoice, Usage,
+    is_reported_upstream_error, BridgeContent, BridgeEvent, BridgeMessage, BridgeRequest,
+    BridgeTool, IrEvent, MessageRole, ProtocolError, ProtocolResult, StopReason, ToolCallMap,
+    ToolChoice, Usage,
 };
 
 /// Translate one non-streaming Kimi Chat Completions response to an OpenAI Responses object.
@@ -817,7 +818,7 @@ fn legacy_function_call_item(value: &Value) -> ProtocolResult<Value> {
 }
 
 fn reject_upstream_error(value: &Value) -> ProtocolResult<()> {
-    if value.get("error").is_some() {
+    if is_reported_upstream_error(value.get("error")) {
         return Err(ProtocolError::upstream());
     }
     Ok(())

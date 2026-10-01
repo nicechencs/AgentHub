@@ -131,16 +131,72 @@ env_key = "OPENROUTER_API_KEY"
 }
 
 #[test]
-fn official_oauth_keeps_custom_provider_without_env_key() {
+fn official_oauth_deactivates_relay_without_env_key_but_keeps_the_table() {
     let custom = r#"model_provider = "custom"
 model = "gpt-5.1-codex"
+preferred_auth_method = "apikey"
+
+[model_providers.custom]
+name = "custom"
+base_url = "https://relay.example.com/v1"
+wire_api = "responses"
+"#;
+    let mut doc = custom.parse::<DocumentMut>().unwrap();
+    assert!(strip_env_key_provider_leftovers_in_doc(&mut doc));
+    let stored = doc.to_string();
+    assert!(
+        !stored.contains("model_provider ="),
+        "relay pointer must not win over official login: {stored}"
+    );
+    assert!(!stored.contains("preferred_auth_method"), "{stored}");
+    assert!(stored.contains("gpt-5.1-codex"), "{stored}");
+    assert!(stored.contains("[model_providers.custom]"), "{stored}");
+    assert!(stored.contains("https://relay.example.com/v1"), "{stored}");
+    assert!(!toml_has_competing_api_key_pointer(&stored));
+}
+
+#[test]
+fn official_oauth_deactivates_provider_pointer_that_has_no_base_url() {
+    let custom = r#"model_provider = "custom"
+model = "gpt-5.1-codex"
+
+[model_providers.custom]
+wire_api = "responses"
+"#;
+    let mut doc = custom.parse::<DocumentMut>().unwrap();
+    assert!(strip_env_key_provider_leftovers_in_doc(&mut doc));
+    let stored = doc.to_string();
+    assert!(!stored.contains("model_provider ="), "{stored}");
+    assert!(stored.contains("[model_providers.custom]"), "{stored}");
+    assert!(stored.contains("gpt-5.1-codex"), "{stored}");
+}
+
+#[test]
+fn official_oauth_drops_grok_model_after_custom_pointer_is_deactivated() {
+    let custom = r#"model_provider = "custom"
+model = "grok-4"
+review_model = "grok-4"
+model_reasoning_effort = "high"
 
 [model_providers.custom]
 base_url = "https://relay.example.com/v1"
 "#;
     let mut doc = custom.parse::<DocumentMut>().unwrap();
+    assert!(strip_env_key_provider_leftovers_in_doc(&mut doc));
+    let stored = doc.to_string();
+    assert!(!stored.contains("model_provider ="), "{stored}");
+    assert!(!stored.contains("grok-4"), "{stored}");
+    assert!(!stored.contains("review_model"), "{stored}");
+    assert!(!stored.contains("model_reasoning_effort"), "{stored}");
+    assert!(stored.contains("[model_providers.custom]"), "{stored}");
+}
+
+#[test]
+fn official_oauth_keeps_apikey_pref_when_no_provider_pointer_exists() {
+    let official = "model = \"gpt-5.1-codex\"\npreferred_auth_method = \"apikey\"\n";
+    let mut doc = official.parse::<DocumentMut>().unwrap();
     assert!(!strip_env_key_provider_leftovers_in_doc(&mut doc));
-    assert_eq!(doc.to_string(), custom);
+    assert_eq!(doc.to_string(), official);
 }
 
 #[test]

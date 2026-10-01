@@ -1,15 +1,20 @@
 ---
 title: MCP inventory
-description: AgentHub 只读 MCP 扫描的路径、格式、片段和已知缺口。
+description: AgentHub MCP 扫描与写入的路径、格式、片段和已知缺口。
 type: reference
 audience: contributor
 status: current
-updated: 2026-09-17
+updated: 2026-09-29
 ---
 
 # MCP inventory
 
-本页是 MCP 扫描与写入的现行契约。只读扫描仍由 `list_mcp_inventory` 提供；写入流为 `list_mcp_catalog` → `probe_mcp_server` → `upsert_mcp_server` / `set_mcp_server_enabled`（实现见 `mcp_manage.rs`）。实现在 `crates/agenthub-core/src/services/mcp_inventory.rs`，Tauri command 为 `list_mcp_inventory`。这是 **MCP server 条目** 的检查，不是插件（extension / plugin）包，也不是 `Capability::Mcp` 管理。插件包见 [Agent 插件表面](agent-plugin-surfaces.md) 与 [插件管理提案](../proposals/plugin-management.md)。
+本页是 `/mcp` 页扫描与写入的现行契约。对象是 **MCP server 条目**，不是插件包（见 [Agent 插件表面](agent-plugin-surfaces.md)），也不等于 `Capability::Mcp` 的完整管理。
+
+| 用途 | Tauri command | 实现（`crates/agenthub-core/src/services/`） |
+|---|---|---|
+| 只读扫描 | `list_mcp_inventory` | `mcp_inventory.rs` |
+| 写入 / 启用 | `list_mcp_catalog` → `probe_mcp_server` → `upsert_mcp_server` / `set_mcp_server_enabled` | `mcp_manage.rs` |
 
 ## 返回结构
 
@@ -35,10 +40,10 @@ updated: 2026-09-17
 | Cursor | `<cursor-home>/mcp.json`（与上一行相同则合并，只保留第一份） | JSON | Cursor agent mcp.json |
 | Pi | `<pi-config>/mcp.json` | JSON | Pi mcp.json |
 | Pi | `<pi-config>/.mcp.json` | JSON | Pi .mcp.json |
-| Grok / Kimi / DSH / ZCode | `<agent-home>/mcp.json` | JSON | 探测 mcp.json |
-| Grok / Kimi / DSH / ZCode | `<agent-home>/.mcp.json` | JSON | 探测 .mcp.json |
+| Grok / Kimi / DSH / ZCode / Kiro | `<agent-home>/mcp.json` | JSON | 探测 mcp.json |
+| Grok / Kimi / DSH / ZCode / Kiro | `<agent-home>/.mcp.json` | JSON | 探测 .mcp.json |
 
-默认 home：Claude `~/.claude`，Codex `~/.codex`，Cursor `~/.cursor`，Pi config `~/.pi/agent`，Grok `~/.grok`，Kimi `~/.kimi-code`（否则 `~/.kimi`），DSH `~/.dsh`，WorkBuddy `~/.workbuddy`，ZCode `~/.zcode`。
+默认 home：Claude `~/.claude`，Codex `~/.codex`，Cursor `~/.cursor`，Pi config `~/.pi/agent`，Grok `~/.grok`，Kimi `~/.kimi-code`（否则 `~/.kimi`），DSH `~/.dsh`，WorkBuddy `~/.workbuddy`，ZCode `~/.zcode`，Kiro `~/.kiro`。
 
 ## 解析形状
 
@@ -58,13 +63,13 @@ TOML **只**读根表 `mcp_servers`（Codex / Grok 形状 `[mcp_servers.name]`�
 
 片段最多 16KiB，内容与本机文件一致，不按字段名打码。这是用户自己的配置；列表、日志和密钥输入框仍走原有遮罩。
 
-## 写入 / 启用（首片）
+## 写入 / 启用
 
-可写 Agent：Claude（`~/.claude.json`）、Codex（`config.toml` 的 `mcp_servers`）、Grok（`config.toml` 的 `mcp_servers`）、Cursor、WorkBuddy。本地模板目录，无远程市场、无 OAuth。stdio 探测查 PATH；HTTP/SSE 做连通性检查。Codex 无独立 enabled：关闭 = 删除该条目。Grok 关闭写 `enabled = false`，保留条目和 `env`。Grok 可写 stdio 与 HTTP/SSE。
+可写 Agent（`writable_mcp_agents`）：Claude（`~/.claude.json`）、Codex（`<codex-home>/config.toml` 的 `mcp_servers`）、Grok（`<grok-home>/config.toml` 的 `mcp_servers`）、Cursor（`~/.cursor/mcp.json`）、WorkBuddy（`<workbuddy-config>/.mcp.json`）。模板目录是本地内置的，没有远程市场，也没有 OAuth。stdio 探测查 PATH；HTTP/SSE 做连通性检查。Codex 无独立 enabled：关闭 = 删除该条目。Grok 关闭写 `enabled = false`，保留条目和 `env`。Grok 可写 stdio 与 HTTP/SSE。
 
 ## 当前缺口（实现事实，不是待办承诺）
 
-这些是 scanner 今天做不到、但厂商文档已经存在的形状。补齐属于提案切片，见 [插件管理](../proposals/plugin-management.md)。
+以下是扫描今天做不到、但厂商已有的形状。补齐属于提案范围，见 [插件管理提案](../proposals/plugin-management.md)。
 
 | 缺口 | 证据 |
 |---|---|
@@ -72,12 +77,11 @@ TOML **只**读根表 `mcp_servers`（Codex / Grok 形状 `[mcp_servers.name]`�
 | 不枚举 Claude `enabledPlugins` / `~/.claude/plugins/` | 那是 Plugin 包，不是 `mcpServers` 条目 |
 | 不枚举 Codex `~/.codex/plugins/cache/` 或 `codex plugin` | Plugin 市场与 `[mcp_servers]` 分离 |
 | 不枚举 Grok `~/.grok/plugins/` 或 `grok plugin` | Plugin 与 `[mcp_servers]` 分离 |
-| 不调用各家 CLI（`claude mcp`、`codex mcp`、`grok mcp`） | 只读文件，不启停、不 doctor |
-| Kimi / DSH / ZCode 仅探测 JSON | 没有已验证的稳定 MCP 契约 |
+| 不调用各家 CLI（`claude mcp`、`codex mcp`、`grok mcp`） | 直接读写配置文件，不走 CLI 的启停或 doctor |
+| Kimi / DSH / ZCode / Kiro 仅探测 JSON | 没有已验证的稳定 MCP 契约 |
 
 ## 相关页面
 
 - [插件、MCP 与技能](../concepts/plugins-and-mcp.md)
-- [Agent 插件表面](../reference/agent-plugin-surfaces.md)
-- [能力参考](../reference/capabilities.md)
----
+- [Agent 插件表面](agent-plugin-surfaces.md)
+- [能力参考](capabilities.md)

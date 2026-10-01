@@ -25,9 +25,7 @@ use crate::bridge::request_fsm::{RequestDecision, RequestFsm, SwitchClass};
 use crate::bridge::runtime::BridgeUpstreamProtocol;
 
 use super::admission::AdmittedRequest;
-use super::http::{
-    error_response, log_protocol_error, protocol_error_response, stopping_response, EdgeState,
-};
+use super::http::{error_response, protocol_error_response, stopping_response, EdgeState};
 use super::route_trace::RouteTraceBuilder;
 use super::stream::UpstreamBodyError;
 use super::surface::DownstreamSurface;
@@ -671,11 +669,13 @@ fn parse_bridge_request(
     match surface.parse_request(&admitted.body) {
         Ok(request) => Ok(request),
         Err(error) => {
-            log_protocol_error(
+            super::http::log_protocol_error_at(
                 &admitted.state,
                 &admitted.request_id,
                 admitted.started,
                 &error,
+                "request_conversion",
+                None,
             );
             Err(protocol_error_response(error))
         }

@@ -1,5 +1,5 @@
 /**
- * Ticket / Binding read model + bind/unbind write (docs/connection-binding-model.md §2 / §4).
+ * Ticket / Binding read model + bind/unbind write (docs/concepts/connections-and-routing.md).
  * Wire shapes match Tauri `list_ticket_wallet` / `plan_ticket` / `bind_ticket` / `unbind_ticket`.
  */
 import type { TranslateFn } from '@/lib/i18n';
@@ -468,7 +468,7 @@ export function bindingRouteUsageLabel(route: BindingRoute, t?: TranslateFn): st
 /** Route label for Dashboard card meta. */
 export function bindingRouteDashboardLabel(route: BindingRoute, t?: TranslateFn): string {
   if (route === 'reshape') return t ? t('connections.list.routeReshape') : 'Rewrite config';
-  if (route === 'bridge') return t ? t('kind.route.localRoute') : 'Local route';
+  if (route === 'bridge') return t ? t('kind.route.localRoute') : 'Local forwarding';
   return '';
 }
 

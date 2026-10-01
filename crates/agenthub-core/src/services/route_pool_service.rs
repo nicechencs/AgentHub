@@ -9,7 +9,9 @@ use chrono::Utc;
 use rusqlite::{params, Transaction, TransactionBehavior};
 use uuid::Uuid;
 
-use super::adapter_projection::{classify_account_live, generated_provider_is_adapter_owned};
+use super::adapter_projection::{
+    classify_account_live, generated_provider_is_adapter_owned, projected_local_bearer,
+};
 use super::AdapterRouteService;
 use crate::bridge::BridgeRuntimeHost;
 use crate::error::{AppError, Result};
@@ -21,11 +23,11 @@ use crate::models::{
     set_authorization_route_pool_home, Account, AccountKind, AdapterApplyPlan, AdapterProfile,
     AdapterProfileFilter, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
     AdapterSourceProduct, AgentId, ConnectionTrashKind, DefaultRoutePoolList,
-    DefaultRoutePoolOverview, ForkedConnectionAuthorization, LocalTokenRecord, ModelRouteRule,
-    RouteDownstreamDialect, RouteDownstreamSurface, RouteMember, RouteMemberOverview,
-    RouteMembershipTrashMember, RouteMembershipTrashPayload, RoutePool, RouteSchedulePolicy,
-    SyncConnectionAuthorizationsResult, SyncConnectionSource, TicketProtocol, TicketSurface,
-    FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
+    DefaultRoutePoolOverview, ForkedConnectionAuthorization, LocalTokenLifecycle, LocalTokenRecord,
+    ModelRouteRule, RouteDownstreamDialect, RouteDownstreamSurface, RouteMember,
+    RouteMemberOverview, RouteMembershipTrashMember, RouteMembershipTrashPayload, RoutePool,
+    RouteSchedulePolicy, SyncConnectionAuthorizationsResult, SyncConnectionSource, TicketProtocol,
+    TicketSurface, FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
     FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
     LOCAL_GATEWAY_DESIRED_RUNNING, SHARE_CHAT_COMPLETIONS,
 };
@@ -168,7 +170,42 @@ impl RoutePoolService {
             .collect())
     }
 
+    /// Pools that must have a live loopback edge so Tokens-page keys authenticate.
+    ///
+    /// Enrolling a later Codex→DSH / Kimi / Grok profile as the default for the
+    /// same Agent/surface clears `is_default` on the earlier manual pool. The
+    /// Tokens page still lists that pool's hub and named extras. Start those
+    /// edges too: extras resolve by pool id, and a missing runtime is 401.
+    pub fn list_gateway_listener_pools(&self) -> Result<Vec<RoutePool>> {
+        if !self.enabled()? {
+            return Ok(Vec::new());
+        }
+        let extra_ids = extra_pool_ids(&self.list_extra_local_bearers()?);
+        let pools = self.pools.list_pools(None, None)?;
+        let default_surfaces = default_pool_surfaces(&pools);
+        let mut pools: Vec<RoutePool> = pools
+            .into_iter()
+            .filter(|pool| pool_needs_listener(pool, &extra_ids, &default_surfaces))
+            .collect();
+        pools.sort_by(|left, right| {
+            right
+                .is_default
+                .cmp(&left.is_default)
+                .then_with(|| {
+                    right
+                        .unified_gateway_enrolled
+                        .cmp(&left.unified_gateway_enrolled)
+                })
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        Ok(pools)
+    }
+
     /// Loopback bearers for the tokens page. Empty when the pool flag is off.
+    ///
+    /// Persisted extras for non-default or missing pools stay visible with an
+    /// explicit inactive / orphaned status. Hiding them made the table look
+    /// wiped after a restart even though `local_entry_keys` still had rows.
     pub fn list_local_tokens(&self) -> Result<Vec<LocalTokenRecord>> {
         let stored = self.entry_keys.list()?;
         let mut name_by_pool = HashMap::new();
@@ -180,32 +217,53 @@ impl RoutePoolService {
                 extras.push(row);
             }
         }
-        let default_pools = self.list_default_pools()?;
-        let default_ids: HashSet<String> =
-            default_pools.iter().map(|pool| pool.id.clone()).collect();
+        let all_pools = if self.enabled()? {
+            self.pools.list_pools(None, None)?
+        } else {
+            Vec::new()
+        };
+        let default_ids: HashSet<String> = all_pools
+            .iter()
+            .filter(|pool| pool.is_default)
+            .map(|pool| pool.id.clone())
+            .collect();
         let mut records = Vec::new();
-        for pool in default_pools {
+        for pool in &all_pools {
             let name = name_by_pool.remove(&pool.id).unwrap_or_default();
-            if name == HIDDEN_PRIMARY_ENTRY_NAME {
+            if pool.is_default && name == HIDDEN_PRIMARY_ENTRY_NAME {
                 continue;
             }
-            records.push(LocalTokenRecord {
-                id: pool.id.clone(),
-                pool_id: pool.id.clone(),
-                token: pool.hub_token,
-                name,
-                primary: true,
-            });
+            if !pool.is_default && pool.hub_token.trim().is_empty() {
+                continue;
+            }
+            records.push(with_token_lifecycle(
+                named_primary_record(pool, name),
+                Some(pool),
+                if pool.is_default {
+                    LocalTokenLifecycle::Active
+                } else {
+                    LocalTokenLifecycle::Inactive
+                },
+            ));
         }
         for extra in extras {
-            if default_ids.contains(&extra.pool_id) {
-                records.push(to_extra_record(extra));
-            }
+            let pool = all_pools.iter().find(|pool| pool.id == extra.pool_id);
+            let lifecycle = match pool {
+                None => LocalTokenLifecycle::Orphaned,
+                Some(pool) if default_ids.contains(&pool.id) => LocalTokenLifecycle::Active,
+                Some(_) => LocalTokenLifecycle::Inactive,
+            };
+            records.push(with_token_lifecycle(
+                to_extra_record(extra),
+                pool,
+                lifecycle,
+            ));
         }
         Ok(records)
     }
 
-    /// Extra bearers the live gateway should accept besides each pool hub_token.
+    /// Named extras only. The live edge's primary token is supposed to be
+    /// `pool.hub_token`; see [`Self::list_accepted_local_bearers`] when it is not.
     pub fn list_extra_local_bearers(&self) -> Result<Vec<(String, String)>> {
         Ok(self
             .entry_keys
@@ -214,6 +272,91 @@ impl RoutePoolService {
             .filter(|row| !row.token.trim().is_empty())
             .map(|row| (row.token, row.pool_id))
             .collect())
+    }
+
+    /// Every loopback bearer the running gateway must accept.
+    ///
+    /// Restore may start an edge with the projected `ahb_` key written into the
+    /// Agent, then skip rebuilding that listener. The Tokens-page hub token is
+    /// a different secret. Register both, plus named extras, so neither 401s.
+    ///
+    /// Hub tokens of demoted manual pools (same Agent/surface, `is_default`
+    /// cleared by a later enroll) are included too. Skipping them left
+    /// `…z7cc` / `…q6gg` in the DB while the live set only had Codex hubs.
+    pub fn list_accepted_local_bearers(&self) -> Result<Vec<(String, String)>> {
+        let mut rows = self.list_extra_local_bearers()?;
+        if !self.enabled()? {
+            return Ok(rows);
+        }
+        let extra_ids = extra_pool_ids(&rows);
+        let pools = self.pools.list_pools(None, None)?;
+        let default_surfaces = default_pool_surfaces(&pools);
+        for pool in &pools {
+            if !pool_needs_listener(pool, &extra_ids, &default_surfaces) {
+                continue;
+            }
+            push_accepted_bearer(&mut rows, &pool.hub_token, &pool.id);
+        }
+        self.append_projected_local_bearers(&mut rows, &pools)?;
+        Ok(rows)
+    }
+
+    fn append_projected_local_bearers(
+        &self,
+        rows: &mut Vec<(String, String)>,
+        pools: &[RoutePool],
+    ) -> Result<()> {
+        let pool_ids: HashSet<&str> = pools.iter().map(|pool| pool.id.as_str()).collect();
+        let profiles = self
+            .profiles
+            .list_filtered(&AdapterProfileFilter::default())?;
+        let pool_by_provider: HashMap<&str, &str> = profiles
+            .iter()
+            .filter_map(|profile| {
+                let provider_id = profile.generated_provider_id.as_deref()?;
+                pool_ids
+                    .contains(profile.id.as_str())
+                    .then_some((provider_id, profile.id.as_str()))
+            })
+            .collect();
+        for provider in self.providers.list(None)? {
+            if !generated_provider_is_adapter_owned(&provider) {
+                continue;
+            }
+            let Some(token) = projected_local_bearer(&provider.settings_config) else {
+                continue;
+            };
+            let pool_id = provider
+                .meta
+                .get("adapterProfileId")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|id| !id.is_empty() && pool_ids.contains(*id))
+                .map(str::to_owned)
+                .or_else(|| {
+                    pool_by_provider
+                        .get(provider.id.as_str())
+                        .map(|id| (*id).to_owned())
+                });
+            let Some(pool_id) = pool_id else {
+                continue;
+            };
+            push_accepted_bearer(rows, &token, &pool_id);
+        }
+        Ok(())
+    }
+
+    fn projected_bearer_for_profile(&self, profile: &AdapterProfile) -> Result<Option<String>> {
+        let Some(provider_id) = profile.generated_provider_id.as_deref() else {
+            return Ok(None);
+        };
+        let Some(provider) = self.providers.get_by_id(provider_id)? else {
+            return Ok(None);
+        };
+        if !generated_provider_is_adapter_owned(&provider) {
+            return Ok(None);
+        }
+        Ok(projected_local_bearer(&provider.settings_config))
     }
 
     /// Replace one pool loopback bearer, or rotate a named extra key.
@@ -1479,13 +1622,17 @@ impl RoutePoolService {
             self.ensure_lead_member(&existing.id, profile)?;
             return Ok(existing);
         }
+        let hub_token = match self.projected_bearer_for_profile(profile)? {
+            Some(token) if !token.trim().is_empty() => token,
+            _ => generate_hub_token()?,
+        };
         let now = now();
         let pool = self.pools.create_pool(&RoutePool {
             id: profile.id.clone(),
             target_agent_id: profile.target_agent_id,
             downstream_surface: surface,
             downstream_dialect: RouteDownstreamDialect::for_agent(profile.target_agent_id),
-            hub_token: generate_hub_token()?,
+            hub_token,
             schedule_policy: schedule_policy.unwrap_or_default(),
             is_default: false,
             unified_gateway_enrolled: false,
@@ -2144,6 +2291,46 @@ fn now() -> String {
     Utc::now().to_rfc3339()
 }
 
+fn extra_pool_ids(extras: &[(String, String)]) -> HashSet<String> {
+    extras.iter().map(|(_, pool_id)| pool_id.clone()).collect()
+}
+
+fn default_pool_surfaces(pools: &[RoutePool]) -> HashSet<(AgentId, RouteDownstreamSurface)> {
+    pools
+        .iter()
+        .filter(|pool| pool.is_default)
+        .map(|pool| (pool.target_agent_id, pool.downstream_surface))
+        .collect()
+}
+
+fn pool_needs_listener(
+    pool: &RoutePool,
+    extra_ids: &HashSet<String>,
+    default_surfaces: &HashSet<(AgentId, RouteDownstreamSurface)>,
+) -> bool {
+    // Every persisted pool has a hub token (`validate_pool`). Do not treat
+    // "has hub" as a start reason — that would listen on every leftover row.
+    pool.is_default
+        || pool.unified_gateway_enrolled
+        || extra_ids.contains(&pool.id)
+        || default_surfaces.contains(&(pool.target_agent_id, pool.downstream_surface))
+}
+
+fn push_accepted_bearer(rows: &mut Vec<(String, String)>, token: &str, pool_id: &str) {
+    let token = token.trim();
+    let pool_id = pool_id.trim();
+    if token.is_empty() || pool_id.is_empty() {
+        return;
+    }
+    if rows
+        .iter()
+        .any(|(existing, id)| existing == token && id == pool_id)
+    {
+        return;
+    }
+    rows.push((token.to_owned(), pool_id.to_owned()));
+}
+
 fn to_extra_record(row: LocalEntryKey) -> LocalTokenRecord {
     LocalTokenRecord {
         id: row.id,
@@ -2151,6 +2338,9 @@ fn to_extra_record(row: LocalEntryKey) -> LocalTokenRecord {
         token: row.token,
         name: row.name,
         primary: false,
+        lifecycle: LocalTokenLifecycle::Active,
+        target_agent_id: None,
+        surface: None,
     }
 }
 
@@ -2161,7 +2351,27 @@ fn named_primary_record(pool: &RoutePool, name: String) -> LocalTokenRecord {
         token: pool.hub_token.clone(),
         name,
         primary: true,
+        lifecycle: if pool.is_default {
+            LocalTokenLifecycle::Active
+        } else {
+            LocalTokenLifecycle::Inactive
+        },
+        target_agent_id: Some(pool.target_agent_id.as_str().to_owned()),
+        surface: Some(pool.downstream_surface.as_str().to_owned()),
     }
+}
+
+fn with_token_lifecycle(
+    mut record: LocalTokenRecord,
+    pool: Option<&RoutePool>,
+    lifecycle: LocalTokenLifecycle,
+) -> LocalTokenRecord {
+    record.lifecycle = lifecycle;
+    if let Some(pool) = pool {
+        record.target_agent_id = Some(pool.target_agent_id.as_str().to_owned());
+        record.surface = Some(pool.downstream_surface.as_str().to_owned());
+    }
+    record
 }
 
 fn nonempty_json_str(blob: &Value, key: &str) -> Option<String> {

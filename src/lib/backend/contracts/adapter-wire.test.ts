@@ -562,6 +562,7 @@ describe('Adapter Rust wire mappers', () => {
       token: 'ahb_secret',
       name: '',
       primary: true,
+      lifecycle: 'active',
     });
     expect(mapLocalTokenRecord({
       id: 'extra-1',
@@ -569,12 +570,18 @@ describe('Adapter Rust wire mappers', () => {
       token: 'ahb_extra',
       name: '工作电脑',
       primary: false,
+      lifecycle: 'inactive',
+      targetAgentId: 'kimi',
+      surface: 'chat_completions',
     })).toEqual({
       id: 'extra-1',
       poolId: 'pool-1',
       token: 'ahb_extra',
       name: '工作电脑',
       primary: false,
+      lifecycle: 'inactive',
+      targetAgentId: 'kimi',
+      surface: 'chat_completions',
     });
   });
 

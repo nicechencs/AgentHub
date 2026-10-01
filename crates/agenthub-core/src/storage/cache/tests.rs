@@ -15,7 +15,8 @@ fn usage_row(id: &str, hash: &str) -> UsageRecord {
         cache_write_tokens: 0,
         cost_usd: Some(0.01),
         session_id: Some("s1".into()),
-        ts: "2026-09-01T00:00:00Z".into(),
+        ts: (chrono::Utc::now() - chrono::Duration::days(1))
+            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         raw_hash: Some(hash.into()),
         fast: false,
     }

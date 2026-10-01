@@ -10,6 +10,7 @@ import type {
 } from '@/lib/backend/contracts/adapter';
 import type { GatewayUsageRow } from '@/lib/backend/contracts/usage-types';
 import type { TranslateFn } from '@/lib/i18n';
+import { agentDisplayName } from '@/config/agents';
 import { KNOWN_AGENT_IDS, type AgentKey } from '@/lib/types';
 import {
   LOCAL_ENDPOINT_KINDS,
@@ -74,6 +75,8 @@ export interface LocalTokenRow {
   listedModels: string[];
   /** True when Messages catalog was filled from Chat Completions sibling. */
   modelsSharedFromChat?: boolean;
+  /** Persisted extras stay listed when the pool is not the live default. */
+  lifecycle?: 'active' | 'inactive' | 'orphaned';
 }
 
 export function uniqueListedModels(
@@ -149,34 +152,113 @@ export function supportedAgentsForEndpointKind(kind: LocalEndpointKind): AgentKe
   return KNOWN_AGENT_IDS.filter((id) => agentSupportsLocalEndpointKind(id, kind));
 }
 
+export type CreateTokenPoolOption = {
+  id: string;
+  name: string;
+  last4: string;
+  targetAgentId: string;
+};
+
 export type CreateTokenEndpointCard = {
   kind: LocalEndpointKind;
   path: string;
-  /** Primary pool id when this endpoint can receive a new key. */
+  /**
+   * Unambiguous pool for this kind: set only when exactly one pool is eligible.
+   * Multi-pool kinds stay null so 新建 cannot silently bind the first pool.
+   */
   poolId: string | null;
+  /** Real eligible pools for this kind — not only currently visible rows. */
+  pools: CreateTokenPoolOption[];
   agentIds: readonly AgentKey[];
 };
 
-/** Four endpoint cards for 新建入口 Key; missing pools stay visible and unselectable. */
-export function buildCreateTokenEndpointCards(
-  targets: readonly Pick<LocalTokenRow, 'id' | 'kind'>[],
-): CreateTokenEndpointCard[] {
-  const poolByKind = new Map<LocalEndpointKind, string>();
-  for (const row of targets) {
-    if (!poolByKind.has(row.kind)) poolByKind.set(row.kind, row.id);
-  }
-  return LOCAL_ENDPOINT_KINDS.map((endpoint) => ({
-    kind: endpoint.kind,
-    path: endpoint.path,
-    poolId: poolByKind.get(endpoint.kind) ?? null,
-    agentIds: supportedAgentsForEndpointKind(endpoint.kind),
-  }));
+export type CreateTokenEndpointTarget = {
+  id: string;
+  kind: LocalEndpointKind;
+  name?: string;
+  last4?: string;
+  targetAgentId?: string;
+};
+
+export function createTokenPoolLabel(pool: CreateTokenPoolOption): string {
+  const name = pool.name.trim();
+  const last4 = pool.last4.trim();
+  if (name && last4) return `${name} · …${last4}`;
+  if (name) return name;
+  if (last4) return `…${last4}`;
+  return pool.targetAgentId.trim() || pool.id;
 }
 
+/** Eligible default pools for 新建入口 Key, labeled by pool name + key last4. */
+export function buildCreateTokenTargets(
+  pools: readonly DefaultRoutePoolOverview[],
+  records: readonly LocalTokenRecord[] | null | undefined,
+): CreateTokenEndpointTarget[] {
+  return pools.flatMap((pool) => {
+    if (pool.members.length === 0) return [];
+    const kind = localEndpointKindFromPool(pool);
+    if (!kind) return [];
+    const list = records ?? [];
+    const primary = list.find((record) => record.primary && record.poolId === pool.id);
+    const anyRecord = primary ?? list.find((record) => record.poolId === pool.id);
+    const token = anyRecord?.token?.trim() ?? '';
+    return [{
+      id: pool.id,
+      kind,
+      name: agentDisplayName(pool.targetAgentId),
+      last4: token.slice(-4),
+      targetAgentId: pool.targetAgentId,
+    }];
+  });
+}
+
+/** Four endpoint cards for 新建入口 Key; missing pools stay visible and unselectable. */
+export function buildCreateTokenEndpointCards(
+  targets: readonly CreateTokenEndpointTarget[],
+): CreateTokenEndpointCard[] {
+  const poolsByKind = new Map<LocalEndpointKind, CreateTokenPoolOption[]>();
+  for (const row of targets) {
+    const list = poolsByKind.get(row.kind) ?? [];
+    if (!list.some((pool) => pool.id === row.id)) {
+      list.push({
+        id: row.id,
+        name: row.name?.trim() || '',
+        last4: row.last4?.trim() || '',
+        targetAgentId: row.targetAgentId?.trim() || '',
+      });
+    }
+    poolsByKind.set(row.kind, list);
+  }
+  return LOCAL_ENDPOINT_KINDS.map((endpoint) => {
+    const pools = poolsByKind.get(endpoint.kind) ?? [];
+    return {
+      kind: endpoint.kind,
+      path: endpoint.path,
+      poolId: pools.length === 1 ? pools[0]!.id : null,
+      pools,
+      agentIds: supportedAgentsForEndpointKind(endpoint.kind),
+    };
+  });
+}
+
+/** First kind that has exactly one eligible pool. Multi-pool kinds are skipped. */
 export function firstCreateTokenPoolId(
   cards: readonly CreateTokenEndpointCard[],
 ): string {
   return cards.find((card) => card.poolId)?.poolId ?? '';
+}
+
+/** Bind a pool only when the choice is explicit or unambiguous. */
+export function resolveCreateTokenPoolId(
+  card: CreateTokenEndpointCard | undefined,
+  preferredPoolId?: string,
+): string {
+  const pools = card?.pools ?? [];
+  if (pools.length === 0) return '';
+  if (pools.length === 1) return pools[0]!.id;
+  const preferred = preferredPoolId?.trim() ?? '';
+  if (preferred && pools.some((pool) => pool.id === preferred)) return preferred;
+  return '';
 }
 
 /** Name used when 新建 leaves the field empty. Numbered from 2 because the type already has a default key. */
@@ -347,6 +429,7 @@ function rowFromRuntime(input: {
   storedToken?: string | null;
   listedModels?: readonly string[];
   statuses: Record<string, AdapterBridgeRuntimeStatus | undefined>;
+  lifecycle?: LocalTokenRow['lifecycle'];
 }): LocalTokenRow {
   const port = input.unavailable
     ? null
@@ -394,7 +477,83 @@ function rowFromRuntime(input: {
     lastRequestAt: visit.lastRequestAt,
     usageEligible,
     listedModels: uniqueListedModels(input.listedModels ?? []),
+    lifecycle: input.lifecycle ?? 'active',
   };
+}
+
+function kindForTokenRecord(
+  record: Pick<LocalTokenRecord, 'targetAgentId' | 'surface'>,
+): LocalEndpointKind {
+  if (record.surface) {
+    return localEndpointKindFromPool({
+      surface: record.surface,
+      targetAgentId: record.targetAgentId,
+    }) ?? localEndpointKindForTargetAgent(record.targetAgentId ?? '');
+  }
+  return localEndpointKindForTargetAgent(record.targetAgentId ?? '');
+}
+
+function appendLeftoverTokenRecords(input: {
+  records?: readonly LocalTokenRecord[] | null;
+  rows: LocalTokenRow[];
+  coveredExtraIds: Set<string>;
+  profiles: readonly AdapterProfile[];
+  bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus | undefined>;
+  statusErrors: Readonly<Record<string, unknown>>;
+}): void {
+  if (!input.records) return;
+  const seenIds = new Set(input.rows.map((row) => row.id));
+  for (const extra of input.records) {
+    if (extra.primary) continue;
+    if (input.coveredExtraIds.has(extra.id) || seenIds.has(extra.id)) continue;
+    const kind = kindForTokenRecord(extra);
+    const profile = input.profiles.find((item) => item.id === extra.poolId) ?? null;
+    const statusId = profile?.id ?? extra.poolId;
+    input.rows.push(rowFromRuntime({
+      id: extra.id,
+      poolBacked: true,
+      primary: false,
+      canDelete: true,
+      name: extra.name,
+      kind,
+      targetAgentId: extra.targetAgentId || profile?.targetAgentId || '',
+      profile,
+      profileIds: profile ? [profile.id] : [],
+      portHint: profile?.localPort,
+      status: input.bridgeStatuses[statusId],
+      unavailable: Boolean(input.statusErrors[statusId]),
+      storedToken: extra.token,
+      statuses: input.bridgeStatuses,
+      lifecycle: extra.lifecycle ?? (extra.targetAgentId ? 'inactive' : 'orphaned'),
+    }));
+    seenIds.add(extra.id);
+  }
+  for (const primary of input.records) {
+    if (!primary.primary) continue;
+    if (primary.lifecycle !== 'inactive' && primary.lifecycle !== 'orphaned') continue;
+    if (seenIds.has(primary.id) || seenIds.has(primary.poolId)) continue;
+    const kind = kindForTokenRecord(primary);
+    const profile = input.profiles.find((item) => item.id === primary.poolId) ?? null;
+    const statusId = profile?.id ?? primary.poolId;
+    input.rows.push(rowFromRuntime({
+      id: primary.id,
+      poolBacked: primary.lifecycle !== 'orphaned',
+      primary: true,
+      canDelete: primary.lifecycle !== 'orphaned',
+      name: primary.name,
+      kind,
+      targetAgentId: primary.targetAgentId || profile?.targetAgentId || '',
+      profile,
+      profileIds: profile ? [profile.id] : [primary.poolId],
+      portHint: profile?.localPort,
+      status: input.bridgeStatuses[statusId],
+      unavailable: Boolean(input.statusErrors[statusId]),
+      storedToken: primary.token,
+      statuses: input.bridgeStatuses,
+      lifecycle: primary.lifecycle,
+    }));
+    seenIds.add(primary.id);
+  }
 }
 
 /**
@@ -420,6 +579,7 @@ export function buildLocalTokenRows(
   let sharedChatRow = false;
   const extraChatIds: string[] = [];
   const extraChatModels: string[] = [];
+  const coveredExtraIds = new Set<string>();
 
   for (const pool of pools) {
     if (pool.members.length === 0) continue;
@@ -488,6 +648,7 @@ export function buildLocalTokenRows(
       }));
     }
     for (const extra of extraRecords) {
+      coveredExtraIds.add(extra.id);
       rows.push(rowFromRuntime({
         id: extra.id,
         poolBacked: true,
@@ -504,6 +665,7 @@ export function buildLocalTokenRows(
         storedToken: extra.token,
         listedModels: pool.listedModels,
         statuses: bridgeStatuses,
+        lifecycle: extra.lifecycle,
       }));
     }
     if (kind === 'chat_completions') sharedChatRow = true;
@@ -538,6 +700,15 @@ export function buildLocalTokenRows(
     }));
     if (kind === 'chat_completions') sharedChatRow = true;
   }
+
+  appendLeftoverTokenRecords({
+    records,
+    rows,
+    coveredExtraIds,
+    profiles,
+    bridgeStatuses,
+    statusErrors,
+  });
 
   if (chatCompletionsShared && extraChatIds.length > 0) {
     for (const row of rows) {
@@ -629,7 +800,7 @@ export function localTokenEmptyCreateGate(
     reason: t
       ? t(needRoute ? 'routes.board.entryNeedRoute' : 'routes.tokens.createNeedPool')
       : (needRoute
-        ? '连接池已有登录。打开本机转发后，端点 Key 会出现在入口 Key 页'
+        ? '连接池已有登录。下一步：打开本机转发，然后在入口 Key 页复制或导入 Key'
         : '先在连接池加入登录'),
   };
 }

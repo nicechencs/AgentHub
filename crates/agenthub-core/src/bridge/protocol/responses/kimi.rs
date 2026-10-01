@@ -65,10 +65,12 @@ pub fn to_kimi_chat_request(request: &BridgeRequest) -> Value {
         body.insert("tool_choice".to_owned(), render_tool_choice(tool_choice));
     }
 
-    // Forward only Chat Completions options with an equivalent Kimi meaning.  All other
-    // unknown options remain in BridgeRequest::passthrough for a deliberate future policy.
+    // Forward only Chat Completions options with an equivalent Kimi meaning.
+    // Codex→Kimi rejects `temperature` (`Unsupported parameter`); strip it here
+    // and keep it on Anthropic / Grok Chat. Official Codex Responses strips it
+    // in `prepare_official_codex_request`. Other unknown options remain in
+    // BridgeRequest::passthrough for a deliberate future policy.
     for key in [
-        "temperature",
         "top_p",
         "presence_penalty",
         "frequency_penalty",
@@ -93,8 +95,11 @@ pub fn to_kimi_chat_request(request: &BridgeRequest) -> Value {
 /// when Codex sent a mappable Responses `reasoning.effort`.
 pub fn to_grok_chat_request(request: &BridgeRequest) -> Value {
     let mut body = to_kimi_chat_request(request);
-    if let Some(effort) = request.passthrough.get("reasoning_effort") {
-        if let Some(object) = body.as_object_mut() {
+    if let Some(object) = body.as_object_mut() {
+        if let Some(temperature) = request.passthrough.get("temperature") {
+            object.insert("temperature".to_owned(), temperature.clone());
+        }
+        if let Some(effort) = request.passthrough.get("reasoning_effort") {
             object.insert("reasoning_effort".to_owned(), effort.clone());
         }
     }

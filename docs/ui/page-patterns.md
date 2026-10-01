@@ -3,503 +3,333 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-21
+updated: 2026-09-29
 ---
 
 # UI Page Patterns
 
-> Status: current contract
-> 
-> This document defines the current navigation, page shells, and user workflows. Reusable visual and component rules live in [design-system.md](design-system.md). It describes the product surface as it exists now; future sidecar, tray, and modularity options are documented under [../proposals/](../proposals/README.md).
+This page is the source of truth for navigation, page shells, and per-page workflows. Visual and component rules live in [design-system.md](design-system.md). Per-Agent Chat channels and approval mechanics live in [Chat 与 Agent](../concepts/chat-and-agents.md); cross-page implementation facts live in [STATUS](../STATUS.md). Future sidecar, tray, and modularity options are [proposals](../proposals/README.md), not part of this contract.
 
-## 1. Navigation contract
+Each page section lists its behavior, its **Agent touchpoints** (what a new Agent must be checked against, see [添加 Agent](../guides/adding-an-agent.md#5a-页面触点)), and what it is **not**.
 
-The application is organized by work and management, with Agent filtering inside a page where it helps the task.
+## 1. Navigation
 
-| Group | Label | Canonical path | Pattern |
+| Group | zh label | Path | Page |
 |---|---|---|---|
-| Workspace | Chat | `/chat` | Full-height conversation workbench |
-| Workspace | Agents | `/agents` | Installed Agent catalog and lifecycle |
-| Workspace | Skills | `/skills` | User skills (shared library + this-tool), project skills by workspace, and market |
-| Workspace | MCP | `/mcp` | Inventory + write/enable for Claude / Codex / Grok / Cursor / WorkBuddy |
-| Workspace | History | `/projects` | Project/session tree and read-only preview (internal name: Projects) |
-| Workspace | Plugins | `/plugins` | Installed vendor plugin / extension packs; Claude / Grok can install, uninstall, enable, or disable; Pi is list-only |
-| Manage | Dashboard | `/` | Agent status, usage, and shortcuts |
-| Manage | Connections | `/connections` | General login list; route-only entries with `home=route_pool` may be absent |
-| Manage | Sub2API | `/sub2api` | Sign in to a Sub2API site, manage API keys by group, and import usable keys into an installed Agent |
-| Manage | Routes | `/routes` | Local route runtime and the connection pool. May add/manage route-only official login / API Key; `/routes` opens the board; secondary nav: board / pool / tokens / activity |
-| Manage | Settings | `/settings` | Preferences, Features, This computer, backups, and about |
+| 工作区 | 对话 | `/chat` | Full-height conversation workbench |
+| 工作区 | Agent | `/agents` | Agent catalog and lifecycle |
+| 工作区 | 技能 | `/skills` | User skills, project skills, market |
+| 工作区 | MCP | `/mcp` | MCP server inventory; write/enable for Claude / Codex / Grok / Cursor / WorkBuddy |
+| 工作区 | 历史 | `/projects` | Local sessions by workspace (internal name: Projects) |
+| 工作区 | 插件 | `/plugins` | Installed plugin / extension packs |
+| 管理 | 总览 | `/` | Agent status, usage, and the connect dialog |
+| 管理 | 连接 | `/connections` | General login list |
+| 管理 | Sub2API | `/sub2api` | Sub2API site sign-in and key management |
+| 管理 | 路由 | `/routes` | Local forwarding runtime and the connection pool |
+| 管理 | 设置 | `/settings` | Preferences, features, this computer, backups, about |
 
-New installs hide the **Plugins** and **Sub2API** sidebar entries (`pluginsNavVisible` and `sub2apiNavVisible` default off). **Routes** defaults **on** (`routesNavVisible` default on) and can be hidden in Settings → Features. Turning a setting on shows its entry; the pages stay reachable at `/routes`, `/plugins`, and `/sub2api`. MCP stays in the workspace nav. The sidebar marks **Plugins** as in development; MCP no longer has that mark. Routes and Sub2API are Features-gated without that mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Update for plugin packs is still a [proposal](../proposals/plugin-management.md). The current page lists installed packs for Claude, Grok, and Pi; Claude and Grok can install, uninstall, enable, or disable. Pi remains list-only.
+Sidebar visibility (`src/lib/ui-preferences.ts`):
 
-The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. They are recovery paths for existing links, not current navigation labels.
+- 对话, Agent, 总览, and 设置 always show. The rest can be toggled in 设置 → 功能.
+- New installs show everything except 插件 and Sub2API (`pluginsNavVisible` / `sub2apiNavVisible` default off). The first-run guide can turn 路由 / Sub2API on or off from the user's usage choice.
+- Hiding an entry never disables its path. While the URL is inside `/routes*`, 路由 stays visible in the sidebar even if hidden, without changing the preference.
+- 插件 carries an **开发中** badge.
 
-Routes nested paths (secondary nav):
+Compatibility redirects (`src/App.tsx`) replace-navigate and keep safe query parameters. They are not current labels:
 
-| Label | Path | Role |
+| Old path | Goes to |
+|---|---|
+| `/adapter`, `/router`, `/bridges` (legacy) | `/routes` |
+| `/providers`, `/accounts` | `/connections` |
+| `/usage` | `/?section=usage` |
+| `/backups` | `/settings?tab=backups` |
+| `/routes/sub2api` | `/sub2api` |
+
+Routes secondary nav (shown on every `/routes*` path):
+
+| zh label | Path | Role |
 |---|---|---|
-| Board | `/routes/board` | Endpoint-type overview, usage, and the one local-gateway start/stop switch. Bare `/routes` redirects here. |
-| Connection pool | `/routes/pool` | Login list with status and detail; `?profile=` opens route detail. Logins do not start or stop the local gateway. |
-| Local tokens | `/routes/tokens` | Entry keys per endpoint; copy or write into the matching Agent. Keys appear after the local gateway starts. |
-| Activity | `/routes/activity` | Cross-route recent request feed |
+| 看板 | `/routes/board` | Endpoint overview, usage, and the single local-gateway start/stop. Bare `/routes` redirects here |
+| 连接池 | `/routes/pool` | Logins used for local forwarding; `?profile=` opens detail |
+| 入口 Key | `/routes/tokens` | Entry keys per endpoint; appear after the gateway starts |
+| 监控 | `/routes/activity` | Recent request feed |
 
-Entering any `/routes*` path shows a shell-level secondary nav panel. Clicking Routes in the primary sidebar collapses that sidebar when **Collapse sidebar on Routes** is on (writes `agenthub:sidebar-collapsed`; default on). Other primary items, refresh, secondary-nav clicks, and leaving the routes area do not auto-expand or auto-collapse it. The setting is in Settings → Features. The secondary nav top-right control collapses that nav (writes `agenthub:routes-nav-collapsed`). Right-click offers expand when collapsed and collapse when expanded. While the URL is inside `/routes*`, the primary sidebar still shows the Routes entry even if `routesNavVisible` is off, so the active item remains visible; that preference itself is unchanged.
-
-Primary sidebar (expanded or icon rail) and this Routes rail share one selected / hover / collapse chrome. Settings five tabs stay a page pill bar (`?tab=preferences|features|local|backups|about`); they are not collapsed into the rail.
+- Clicking 路由 in the primary sidebar collapses that sidebar when **Collapse sidebar on Routes** is on (in 设置 → 功能; default on; writes `agenthub:sidebar-collapsed`). Nothing else auto-expands or auto-collapses it.
+- The secondary nav's top-right control collapses it (`agenthub:routes-nav-collapsed`); right-click offers the opposite action.
+- The primary sidebar (expanded or icon rail) and the Routes rail share one selected / hover / collapse chrome.
 
 ## 2. Application shell
 
-The window bottom bar (`StatusBar`) is application chrome: installed Agents on the left, local-forward status on the right (click goes to the Routes board). It is not a page top-bar control.
+- The bottom `StatusBar` is application chrome: installed Agents on the left, local-forward status on the right (click opens the Routes board).
+- Standard shell: 12px canvas gutter (`pageEdge.canvas`), a rounded sidebar panel, a rounded main panel, and a top bar. Page edges use `pageEdge.inset` (12px) from `src/components/layout/page-rhythm.ts`.
+- Non-chat pages put a one-line title on the left of the top bar: page name in title size and primary color, then a short description in meta size and secondary color. Help and feedback sit on the right. There is no notification bell. Do not repeat the title or its explanation in the page body.
+- Chat has no top bar and owns its session name.
 
-### 2.1 Standard shell
-
-The standard shell has a 12px canvas gutter (`pageEdge.canvas`), a rounded sidebar panel, a rounded main panel, and a top bar. The main column uses the edge-column pattern with a shared horizontal inset (`pageEdge.inset`, currently 12px). Dashboard and the Routes board use `pageRhythm.overviewColumn`. Non-chat pages put the page title on the left of the top bar as one line: the page name in the title size and primary color, then a short description in the meta size and secondary color. Help (question mark) and Feedback stay on the right. There is no in-app notification bell. Chat has no top bar and owns its session name. A standard page is composed in this order:
+A standard page is composed in this order:
 
 ```text
-TopBar (title + metadata | help + feedback)
+TopBar (title + description | help + feedback)
   -> chrome / chromeRow (tabs, filters, Agent strip; page commands on the right of the same row)
   -> lead (environment status or one Notice)
   -> stack / blocks (main content)
-  -> PageSection / ruled section where a real boundary is needed
+  -> PageSection where a real boundary is needed
 ```
 
-The page title is a single line: name, then short description. Distinguish them with type size and color, not a second row. Do not repeat the same explanation in a card immediately below the title. Do not keep a second title block in the page body.
+Full-height workbench: Chat, Agents, Skills, Projects, Plugins, Connections, Sub2API, Routes, and Settings use `fullBleed` and own their vertical scroll. `fullBleed` is not a width system:
 
-### 2.2 Full-height workbench
+- Chat messages use the Chat content column (see [design-system.md §3.4](design-system.md#34-content-widths)).
+- Dashboard, the Routes board, and Settings forms (except backups) use the overview column.
+- Everything else uses the edge column, with a split preview where the page has one.
+- Page commands sit on the right of the tabs/filter row, never on a row of their own. List and preview columns share the same top and bottom inset.
 
-Chat, Agents, Skills, Projects, Plugins, Connections, Sub2API, Routes, and Settings use `fullBleed` and manage their own vertical scrolling. Full-height does not create a third content width: Chat messages use the reading column; Preferences, Features, This computer, and About use the overview column; Agents, Skills, Projects, Plugins, Connections, Sub2API, and the Settings backups tab use the edge column with a split preview surface. Page-level commands stay in the list column, on the right of the same row as tabs or filters. They do not occupy a row of their own. The workbench list and the preview column share the same `pageEdge.inset` top and bottom so both edges line up. The page title itself stays in the top bar.
+## 3. Shared behavior
 
-### 2.3 Settings
+- **Agent filtering.** Use `AgentTabStrip` where content is naturally scoped by Agent: Connections, Skills, Projects, Plugins, Backups. Installed Agents first; hidden Agents only appear when they have recoverable data. Do not make every page Agent-first.
+- **Four states.** Every independently loaded page or block has loading, empty, error, and partial states. One failed parser or unavailable Agent never blanks the page and is never replaced by mock data.
+- **Deep links.** Use current paths. A missing detail ID leaves the user on the list without a success toast.
+- **After a write.** Refresh the owning page through its backend façade. If the write succeeded but the refresh failed, say so (e.g. 已切换，但列表刷新失败), never “未完成”.
+- **Open detail.** Name-click tables open detail from the name; while a detail pane is open, clicking another row's empty area switches it; a closed pane stays closed. Details: [design-system.md §4.4](design-system.md#44-list-table-and-inspect).
 
-Settings uses the workbench header and five page tabs; the tab row stays at the top-left of the workbench header. Preferences, Features, This computer, and About center their content on the overview column. Backups is a left-right workbench: the list is on the left, a file inspect panel opens on the right.
+## 4. Dashboard (总览)
 
-| Tab | Query | Contents |
-|---|---|---|
-| Preferences | `?tab=preferences` | Grouped cards: language and appearance; launch and close; Routes (duplicate-key tip and same-URL update); Skills (market source); Usage (collection interval) |
-| Features | `?tab=features` | Sidebar pages (which entries appear in the left nav) and whether clicking Routes collapses the sidebar |
-| This computer | `?tab=local` | Data directory, log level, retention, log directory |
-| Backups | `?tab=backups` | Agent configuration snapshots; keep-copies switch; restore/delete; file inspect |
-| About | `?tab=about` | Version, update check, repository, and read-only credential-storage notes |
+The overview for installed Agents and usage. Not a second Connections or Routes workbench.
 
-Invalid or old tab values replace to the nearest current tab. Tab changes use `replace` so normal navigation history does not fill with panel changes. The backups keep-copies switch (`keepLiveFileCopies`, default on) copies each Agent's live files into the backup directory on switch/import; turning it off stops piling historical copies, but the current switch still keeps one copy for rollback. Manual backups are unaffected. The backup list identity stays a short label (email or key tail). The file preview shows the snapshot as stored.
+- Auto-fit cards for **installed** Agents only; the layout does not encode the Agent count. A card shows identity and readiness. Clicking an installed Agent's card opens the connect dialog when that Agent supports login management (`ConnectFlowDialog`, also reachable via `/?connect=`), which offers 直连 / 用这份登录 / 本机转发 / 当前不支持. A card whose install or environment is not ready links to Agents instead; an Agent without login management is not clickable.
+- Usage filters (time, Agent, model) drive summary, trend, distribution, and details together. The trend switches between Agent (area) and Model (line); hover shows tokens then cost, the day's total, running total, and each series' share. Model options are the models present in the selected records. Filters survive leaving and returning within one app run.
+- Usage collection is explicit and shows last/next sync. A compact parser-health block names the affected Agent. An empty usage state guides the first manual collection.
 
-### Features (Settings)
+**Agent touchpoints:** Usage parsers per Agent; route `plan` / bind outcomes for the connect dialog; catalog + install/detect for card state.
 
-- Five tabs via `?tab=`: Preferences, Features, This computer (`local`), Backups, About. Invalid or legacy tab values replace to the nearest current tab.
-- Preferences: language and appearance; launch and close; Routes duplicate-key tip and same-URL update; Skills market source; Usage collection interval.
-- Features: sidebar page visibility (pages other than Chat, Agents, Dashboard, and Settings) and auto-collapse on Routes.
-- This computer: data directory, log level, retention, and log directory.
-- Backups: Agent configuration snapshots with `AgentTabStrip`; keep-copies switch (`keepLiveFileCopies`); restore/delete; right-hand file inspect of the stored snapshot.
-- About: version, update check, repository link, and read-only credential-storage notes.
+**Not:** a login list, Routes start/stop, or Skills / Plugins / MCP / Sub2API management.
 
-### Agent touchpoints (Settings)
+## 5. Connections (连接)
 
-- Backups depend on `LiveBackup` and per-Agent snapshot identity (email or key tail). Switch/import keep-copies follow Agent live files.
-- Features gates sidebar page visibility. Preferences still holds the Skills market source used by those pages.
-- No ConnectFlow, route `plan`/`bind`, or usage parsers live on Settings itself.
+The general login list, in a full-height split. Logins created or imported here are Connections-managed, including ones later synced into the connection pool.
 
-### Out of scope (Settings)
+- `AgentTabStrip` filters the list. No second row of “official / API key” chips.
+- **添加登录** menu: **官方登录** / **添加 API Key** (Cursor has no API Key form). **导入本机登录** appears only when 设置 → 偏好 → **自动导入本机登录** is off (default on). When import is shown, each menu row has a one-line description and import is highlighted if a login was found on this computer.
+- Official logins and API Keys are separate rows. WorkBuddy custom models and ZCode catalog providers become one login per directory row. Desktop package logins are not imported.
+- Official rows use a person icon, API Key rows a key icon, each with an accessible label.
+- Click the login **name** to open detail: a quiet table without section titles or column headers, in this order: status, usage, where it connects and models, who is using it, related files and records. Record ID and import source sit under a collapsed **更多**. Labels are masked; the file preview shows the stored snapshot.
+- The official-login wait page hides internal status and file paths; on failure **重试** is the primary action.
+- The row menu only has **取消添加** (when the login is already written into a tool).
+- Missing data and a genuinely empty list are different states. The recycle bin restores to Connections only.
 
-- Not a login list, route runtime, or Agent install surface.
-- Does not encrypt credentials at rest or manage Sub2API site sessions (those stay on Sub2API via the settings port vault).
-- Does not install or update plugin packs.
+**Agent touchpoints:** AccountSwitch / ApiKeyAccount / ConfigWrite when a login is written into a tool (取消添加 reverses it); per-Agent import/probe; occupancy (exclusive slot vs directory-append for WorkBuddy / ZCode).
 
-## 3. Shared page behavior
+**Not:** the connect dialog (Dashboard), pool enrollment (**从连接同步** on the pool page), **分享至连接池** / **用到其他工具** / **本机转发** actions, route-only `home=route_pool` logins, or gateway start/stop.
 
-### 3.1 Agent filtering
+## 6. Routes (路由)
 
-Use `AgentTabStrip` where content is naturally scoped by Agent: Connections, Skills, Projects, Plugins, and Backups. Installed Agents appear first; hidden Agents do not occupy the default strip unless they have recoverable data. Do not turn every page into an Agent-first two-level navigation.
+Runtime management for local loopback forwarding. Not a general connection editor. The `local_bridge` runtime runs inside the Tauri process; a separate sidecar is a proposal and not a UI assumption. When that host cannot be reached, Routes shows unavailable.
 
-### 3.2 Four states
+### 6.1 Board (看板)
 
-Every independently loaded page or block implements loading, empty, error, and partial states. A failed usage parser must not remove Dashboard status cards. An unavailable Agent must be shown as unavailable or partial, not silently converted to mock data.
+- Four endpoint cards: Messages, Responses · Codex, Responses · Grok, Chat completions. Codex and Grok share `/v1/responses` on the wire; the cards split them and filter usage. They are not per-endpoint switches.
+- Usage charts and **one** start/stop control for the shared local gateway.
 
-### 3.3 Route and deep-link behavior
+**Agent touchpoints:** gateway readiness for Agents using entry keys; board usage is route-side telemetry, not Agent Usage parsers.
 
-- Use canonical paths for links and navigation.
-- Preserve safe query parameters when replacing compatibility paths.
-- A missing detail ID leaves the user on the list with no misleading success toast.
-- A successful mutation refreshes the owning page through its backend façade; a refresh error says “已完成，但刷新失败” rather than “未完成”.
+**Not:** a login list, entry-key management, or the request feed.
 
-## 4. Dashboard
+### 6.2 Connection pool (连接池)
 
-Dashboard is the overview for installed Agents and usage, not a second Connections or Routes workbench.
+- Lists official logins and API Keys used for local forwarding in a field-aligned table.
+- **Who can join via 从连接同步** (`canSyncConnectionToPool` in `src/components/login-kernel/eligibility.ts`): every API Key regardless of owning Agent; official logins only for Claude / Codex / Grok; domestic official logins never. Logins already in the pool are skipped.
+- The pool can also add its own official login / API Key. These use `home=route_pool`, may not appear in Connections, and their whole lifecycle stays in Routes.
+- A login synced from Connections stays Connections-managed until the user **编辑** it here: saving copies it to a pool-owned row (the Connections original stays), then asks **同步到连接页？** to write models back.
+- Removing a pool member never deletes the Connections login. Connections and the pool have separate recycle bins; each restores to its own page.
+- Columns: login, type, and status always; connection count, usage window, last used, and priority only when some row has a value; enable switch last. Column widths are dragged from the header edge and remembered.
+- Click the login **name** for detail (same headerless table as Connections; model lists longer than 8 show 8 plus expand). The enable switch does not open detail. `?profile=<id>` opens a row directly.
 
-- Render only installed Agents. Use an auto-fit grid so the number of Agents is not encoded in the layout.
-- Agent cards show identity, readiness, and one primary “连接 / 切换” entry. That opens ConnectFlow on Dashboard (直连 / 用这份登录 / 本机路由 / 当前不支持). Do not duplicate that flow on Connections.
-- Usage filters are shared by summary metrics, trend, distribution, and details: time, Agent, and model. The trend chart can switch between Agent (area) and Model (line); hover shows tokens then cost, plus that day's total, running total, and each series' share. Model options are the distinct models in the selected records, not a model-management catalog. Leaving Dashboard and coming back in the same run keeps the last time / Agent / model / trend-group selection; closing the app starts from the defaults.
-- Usage collection is explicit and shows last/next sync. A parser health block is compact and partial; it names the affected Agent and keeps the rest of the dashboard usable.
-- A usage-empty state guides the first manual collection. Routes health-empty is the exception described below.
-
-### Features (Dashboard)
-
-- Auto-fit cards for **installed** Agents only: identity, readiness, and one primary **连接 / 切换** entry.
-- Opens ConnectFlow on Dashboard (直连 / 用这份登录 / 本机路由 / 当前不支持); does not duplicate that flow on Connections.
-- Usage section: shared filters for time, Agent, and model across summary, trend, distribution, and details; trend switches Agent (area) vs Model (line); session remembers last filters until the app closes.
-- Explicit usage collection with last/next sync; compact parser-health block names the affected Agent and keeps the rest usable.
-- Empty usage guides first manual collection. `/usage` redirects to `/?section=usage`.
-
-### Agent touchpoints (Dashboard)
-
-- **Usage** parsers per Agent; a failed parser must not remove status cards.
-- ConnectFlow uses route `plan` / bind outcomes and login availability for 直连 / 用这份登录 / 本机路由.
-- Catalog + install/detect readiness for card state; links toward Agents when nothing is installed.
-
-### Out of scope (Dashboard)
-
-- Not a Connections workbench, login CRUD, or Routes start/stop surface.
-- Does not manage Skills, Plugins, MCP inventory, or Sub2API site keys.
-
-## 5. Connections
-
-Connections is the general login list in a full-height workbench split. Logins created or imported here, including ones later selected into a local route, are Connections-managed. Editing a shared official login in the pool copies it to a Routes-owned row; the Connections original stays. Routes-owned official login and API Key entries marked “仅用于本机路由” use `home=route_pool` and may not appear here. Connections is not a list of generated route providers and it does not expose internal binding implementation names.
-
-- The top `AgentTabStrip` filters the list. Do not add a second row of “official / API key / unknown” filter chips.
-- The add menu is **导入授权** / **官方登录** / **添加 API Key**. Official login and API Key are stored as separate rows. WorkBuddy custom models and ZCode catalog providers split into one login per directory row; desktop package logins are not imported.
-- OAuth rows use an identity/person icon; API key rows use a key icon. The icon has an accessible label and a short hint.
-- Click the login **name** to open the right-hand detail. The pane is a quiet table without section titles or column headers. Rows stay in this order: status, usage, where it connects and models, who is using it, then related files and records. Related config files, last used, and added time stay expanded; record ID and import source sit under collapsed **更多**. The rest of the row (switch, edit, menu, sort) does not open inspect. If the detail pane is already open, clicking another row’s empty area switches the detail; a closed pane stays closed. The list uses masked labels; the file preview shows the stored snapshot.
-- The official-login wait page does not show internal status or login file paths; failure keeps **重试** as the primary action.
-- The row menu is only **取消添加** (when that login is already written into the tool). Adding a Connections login to the default connection pool is **从连接同步** on the pool page, not a Connections row action. Connections does not open ConnectFlow, and does not show **分享至连接池**, **用到其他工具**, or **本机转发**.
-- Missing data and a genuinely empty login list are different states.
-
-### Features (Connections)
-
-- Full-height workbench split: `AgentTabStrip` filters; add menu **导入授权** / **官方登录** / **添加 API Key**.
-- Official login and API Key stored as separate rows; WorkBuddy custom models and ZCode catalog providers split one login per directory row; desktop package logins are not imported.
-- Click login **name** for right-hand detail (headerless labeled rows: status, usage, where it connects / models, who is using it, files and records; no section titles). Row menu only **取消添加** when that login is already written into the tool.
-- Distinct states for missing data vs a genuinely empty login list. Recycle bin restores to Connections only.
-
-### Agent touchpoints (Connections)
-
-- **AccountSwitch** / **ApiKeyAccount** / **ConfigWrite** when a login is written into a tool (cancel-add reverses that write).
-- Import/probe paths per Agent; occupancy rules (exclusive slot vs directory-append for WorkBuddy / ZCode).
-- Pool enrollment is **从连接同步** on Routes pool — not a Connections row action. ConnectFlow stays on Dashboard.
-
-### Out of scope (Connections)
-
-- Does not open ConnectFlow, show **分享至连接池**, **用到其他工具**, or **本机转发**.
-- Does not list route-only `home=route_pool` entries or generated route providers.
-- Does not start/stop the local gateway or expose internal binding implementation names.
-
-## 6. Routes
-
-Routes is the runtime management page for local loopback forwarding. It is not a general connection-binding editor.
-
-### 6.0 Secondary nav and board
-
-Routes nested paths use a shell-level secondary nav. The **board** (`/routes/board`) is the health overview: four endpoint-kind cards (Messages, Responses · Codex, Responses · Grok, Chat completions), usage charts, and **one start/stop control for the shared local gateway**. Codex and Grok share the `/v1/responses` path on the wire; the cards split them in the UI and filter usage. They are not per-endpoint switches. Logins for local forwarding are listed on the connection pool (`/routes/pool`); request filtering stays on Activity. `/routes?profile=` opens pool detail. `/adapter`, `/router`, and `/bridges` redirect into this area.
-
-### Features (Board)
-
-- Four endpoint-kind cards (Messages, Responses · Codex, Responses · Grok, Chat completions), usage charts, and **one** shared local-gateway start/stop control.
-- Codex and Grok share `/v1/responses` on the wire; cards split them in the UI and filter usage. Not per-endpoint switches.
-- Bare `/routes` redirects here; secondary nav stays visible for board / pool / tokens / activity.
-
-### Agent touchpoints (Board)
-
-- Local gateway readiness for Agents that consume loopback entry keys (Codex / Grok Responses, Messages, Chat completions).
-- Board usage is route-side telemetry, not Agent **Usage** log parsers.
-- Deep links from Dashboard ConnectFlow **本机路由** land in this area after bind.
-
-### Out of scope (Board)
-
-- Does not list or edit logins (pool), mint entry keys (tokens), or filter the request feed (activity).
-- Does not replace Connections or Sub2API.
-
-### 6.1 Connection pool
-
-The connection pool lists official logins and API Keys used for local forwarding in a field-aligned table. **All API Keys can join** (any owning Agent, including WorkBuddy / ZCode / Pi / Cursor); official OAuth share is limited to Claude / Codex / Grok; domestic official logins cannot. See `isPoolShareableLogin`. It may contain a Connections-managed login enrolled with **从连接同步** on this page, or a Routes-managed login marked “仅用于本机路由”; the latter uses `home=route_pool` and may not appear in Connections. Connections owns the login lifecycle for entries selected from Connections until you **编辑** a shared official login in the pool: saving copies it to a pool-owned row (the Connections login stays), then asks **同步到连接页？** to write models back. Routes owns creation, editing, and deletion for route-only entries. Removing a member from the pool does not delete the Connections-managed login. Each page has its own recycle bin: Connections trash restores to Connections; pool trash restores to the pool. The table shows login, type, and status on every row; connection count, usage window, last used, and priority only when at least one row has that value; enable last. Column widths are dragged from the header edge and remembered. Click the login **name** to open a detail panel; the enable switch does not. Detail sections use the same headerless tables as Connections inspect. If the detail pane is already open, clicking another row’s empty area switches the detail; a closed pane stays closed. A route row can still be opened through `?profile=<id>`.
-
-### Features (Pool)
-
-- Field-aligned table of official logins and API Keys used for local forwarding; **从连接同步**, route-only add/edit/delete, enable switch, column resize memory, name-click detail (headerless labeled rows: status, usage, where it connects / models, files and records; no section titles; model lists longer than 8 show the first 8 plus expand), `?profile=<id>`.
-- Editing a shared official login copies to a pool-owned row, then may ask **同步到连接页？**. Separate recycle bin from Connections.
-- Shareability for「从连接同步」: **all API Keys** can join (any owning Agent, including WorkBuddy / ZCode / Pi / Cursor); official OAuth only for Claude / Codex / Grok; domestic official logins cannot. Implemented by `isPoolShareableLogin` in `ticket-pool-import.ts` (aligned with product — no Agent API Key whitelist). Status/health states are distinct from durable DB rows (see table below).
-
-### Agent touchpoints (Pool)
-
-- Route `plan` / `bind` / `unbind` and **交给本机网关** when `plan()` still allows a local-bridge write.
-- Pool membership feeds default-pool resolver / `GET /models` for Agents using 本机路由.
-- Sync-back to Connections writes models through Agent **ConfigWrite** when the user confirms.
-
-### Out of scope (Pool)
-
-- Does not start/stop the shared local gateway (board owns that).
-- Does not mint or copy local entry tokens (tokens page).
-- Does not delete the Connections-managed original when removing a pool member.
-
-The page treats the following states separately:
+Runtime states are shown separately:
 
 | State | Meaning | UI |
 |---|---|---|
-| Running | Listener and route are available | Address, port, health. Start/stop of the shared local gateway is on the board |
-| Starting / stopping | Lifecycle mutation is in progress | Busy state, stable row, dismissal guarded |
-| Degraded | Listener exists but the last upstream check failed | Warning state plus retry/diagnostics |
-| Stopped | Durable route exists but is not running | Board shows start; leftover route cards may still expose start |
-| Host unavailable | The current runtime host cannot be reached | Explicit unavailable error; never “running” and never silent mock |
-| Healthy empty | No local route is configured | Informational empty state without a conversion CTA |
+| Running | Listener and route available | Address, port, health |
+| Starting / stopping | Lifecycle change in progress | Busy state, stable row, dismissal guarded |
+| Degraded | Listener up, last upstream check failed | Warning plus retry/diagnostics |
+| Stopped | Route saved but not running | Board shows start; leftover route cards may still offer start |
+| Host unavailable | Runtime host unreachable | Explicit unavailable error; never “running”, never mock |
+| Healthy empty | No local route configured | Informational empty state, no conversion CTA |
 
-Do not infer “running” from a durable database row when the runtime host is unavailable. Do not use an account or generated provider badge as a substitute for route health.
+Never infer “running” from a saved database row when the host is unavailable, and never use an account or generated provider badge as route health.
 
-### 6.2 Detail
+**Agent touchpoints:** route `plan` / `bind` / `unbind`; pool membership feeds the default pool and `GET /models`; sync-back writes models through ConfigWrite when confirmed.
 
-The detail panel is a focused dialog or side surface opened from the connection pool. It shows route identity, loopback address and port, downstream surface, upstream summary, last health result, default-pool members, and the listed models the resolver currently serves. It never shows the local token value or refresh credentials.
+**Not:** gateway start/stop (board) or entry keys (入口 Key).
 
-Official `native_endpoint` / `config_sync` rows are not auto-enrolled. When `plan()` still allows a local-bridge write, the detail offers **交给本机网关**. Routes may directly add and manage an official login or API Key marked “仅用于本机路由”; it uses `home=route_pool`, may not appear in Connections, and its lifecycle stays in Routes. A login selected from Connections remains Connections-managed while shown here, until pool **编辑** copies that official login to a pool-owned row.
+### 6.3 Route detail
 
-The primary start/stop control for the shared local gateway is on the board, not on each pool login. Detail may still enroll a native row with **交给本机网关**, and leftover route cards may still expose start/stop. A stop or unbind confirmation explains listener impact and whether the current local configuration will be restored. A failed unbind remains retryable; it must not fall back to force deletion.
+- Opened from the pool. Shows route identity, loopback address and port, endpoint type, upstream summary, last health, default-pool members, and the models currently served. Never shows the entry key value or refresh credentials.
+- Official `native_endpoint` / `config_sync` rows are not auto-enrolled. When `plan()` still allows a local-forward write, detail offers **改用本机转发**.
+- Stop or unbind confirmation explains listener impact and whether the local configuration will be restored. A failed unbind stays retryable and never falls back to force-delete.
 
-### Features (Route detail)
+**Agent touchpoints:** `plan()` gate for enrollment; the model list is resolver output, not the ModelSelect capability.
 
-- Shows route identity, loopback address/port, downstream surface, upstream summary, last health, default-pool members, and models the resolver currently serves.
-- May offer **交给本机网关** for eligible native rows; leftover route cards may still expose start/stop.
-- Stop/unbind confirmation explains listener impact and config restore; failed unbind stays retryable (no force-delete fallback).
+### 6.4 Entry keys (入口 Key)
 
-### Agent touchpoints (Route detail)
+- Entry keys per endpoint; they appear after the gateway starts. Create, copy, or write a key into the matching installed Agent (API Key style).
+- Endpoint type must match the Agent's surface (Messages / Responses · Codex / Responses · Grok / Chat completions).
 
-- `plan()` gate for local-bridge enrollment; bind/unbind against the Agent’s route surface.
-- Model list is resolver output for Agents consuming the shared loopback entry — not `ModelSelect` capability.
+**Agent touchpoints:** ApiKeyAccount / ConfigWrite / AccountSwitch when writing a key into an Agent.
 
-### Out of scope (Route detail)
+**Not:** upstream login or Sub2API key management; gateway start/stop; pool edits.
 
-- Never shows the local token value or refresh credentials.
-- Not the primary start/stop control (board) and not the tokens minting UI.
+### 6.5 Activity (监控)
 
-### 6.2a Local tokens
-
-Local tokens (`/routes/tokens`) are entry keys per endpoint. Keys appear after the local gateway starts. Users can copy a key or **write it into the matching Agent** (API Key style) for Codex / Grok Responses and other loopback surfaces.
-
-#### Features (Local tokens)
-
-- List and inspect entry keys per endpoint type; create/default naming; copy; import/write into an installed Agent.
-- Detail never shows upstream refresh credentials; local token value handling stays on this page’s copy/write actions.
-
-#### Agent touchpoints (Local tokens)
-
-- **ApiKeyAccount** / **ConfigWrite** / **AccountSwitch** when writing an entry key into an Agent.
-- Endpoint-type mapping must match the Agent surface (Messages vs Responses · Codex vs Responses · Grok vs Chat completions).
-
-#### Out of scope (Local tokens)
-
-- Does not manage upstream official logins or Sub2API site keys.
-- Does not start/stop the gateway or edit the connection pool.
-
-### 6.2b Activity
-
-Activity (`/routes/activity`) is the cross-route recent request feed with filters and trace detail (inbound/outbound endpoints, key, stages).
-
-#### Features (Activity)
-
-- Recent request list with filters; open a trace for stage timeline and endpoint summary.
-- Monitoring-oriented; complements board usage charts.
-
-#### Agent touchpoints (Activity)
-
-- Shows traffic for Agents using 本机路由 entry keys; not Agent session **Usage** parsers.
-- No bind/unbind or config write from this page.
-
-#### Out of scope (Activity)
-
-- Does not configure routes, pool membership, or Agent live files.
-- Does not replace Dashboard usage collection.
-
-### 6.3 Runtime boundary
-
-The current `local_bridge` runtime is hosted in the Tauri process through the in-process control host. Routes may report unavailable when that host is not reachable. A future sidecar is a proposal and is not a current UI assumption.
+- Recent requests across routes with filters. Opening a row shows the trace: stage timeline, inbound/outbound endpoints, and key.
+- No bind/unbind or config writes. Does not replace Dashboard usage collection.
 
 ## 7. Sub2API
 
-Sub2API is a separate site-management workbench, not a Routes subpage or a replacement for Connections. A signed-in user can filter keys by group; create, edit, enable, disable, or delete keys; and import a usable key into an installed Agent. The visible API key value stays masked. Site session and saved-account controls belong to this page, not the Connections list.
+A separate site-management workbench, not a Routes subpage or a Connections replacement.
 
-### Features (Sub2API)
+- Sign in to a Sub2API site (password; captcha / 2FA when required); session refresh; remembered accounts, with passwords in the desktop SQLite vault through the settings port (memory in mock).
+- After sign-in: filter keys by group; create, edit, enable/disable, or delete keys; key values stay masked; import a usable key into an installed Agent.
+- Site session and saved accounts live here, not in Connections.
 
-- Sign in to a Sub2API site (password login; captcha / 2FA when required); session refresh; multi-account **remember** with passwords in the desktop SQLite vault via the settings port (memory in mock).
-- After sign-in: filter keys by group; create, edit, enable/disable, or delete keys; masked key values; import a usable key into an installed Agent.
-- Sidebar entry defaults hidden (`sub2apiNavVisible`); hiding the nav does not disable `/sub2api`.
+**Agent touchpoints:** import uses ApiKeyAccount / ConfigWrite and the same import helpers as 入口 Key.
 
-### Agent touchpoints (Sub2API)
-
-- Import uses Agent **ApiKeyAccount** / **ConfigWrite** (and Connect/import helpers shared with Routes tokens).
-- Site session and remembered accounts belong here, not Connections.
-
-### Out of scope (Sub2API)
-
-- Not a Routes subpage and not a replacement for Connections.
-- Does not start the local gateway or enroll pool members by itself.
-- Child webview open-login on the settings port remains available but unused by the current UI.
+**Not:** gateway start or pool enrollment. The settings port's child-webview login exists but the current UI does not use it.
 
 ## 8. Chat
 
-Chat is a one-conversation, one-Agent workbench with a session rail, transcript, process panel, and composer. The quality bar versus Claude Code, Cursor Chat, and the Codex app is [Chat 体验标杆](chat-experience-bar.md).
+One conversation, one Agent: session rail, transcript, process pane, composer. The quality bar is [Chat 体验标杆](chat-experience-bar.md). Which channel each Agent uses, approval scope, and title sources are in [Chat 与 Agent](../concepts/chat-and-agents.md) and [STATUS](../STATUS.md).
 
-- The rail supports new conversation, search by title and working directory, day grouping, selection, rename, and delete confirmation. List rows show the title only; working directory, draft, and time stay in the hover tip. The rail width is dragged from the separator and remembered (`agenthub:chat-rail-width`).
-- A title starts as the short phrase derived from the first message (paths and weak lead-ins dropped; stored untruncated). When a turn ends, the Agent's own title for that session is adopted instead, where the CLI keeps one: Codex (`local_thread_catalog.display_title` in the app-server's `sqlite/*.db`, falling back to `thread_name` in `session_index.jsonl`), Grok (`generated_title` in `summary.json`), Kiro (`title` in `sessions/cli/<id>.json`), DSH (`session/title` row in its log). Claude keeps no session title, so its conversations stay on the derived one. A title renamed by hand is never overwritten. AgentHub never asks for a title over the protocol; it reads what the Agent wrote into its own local session store. Verified on a real machine: Grok and Codex conversations do resolve a stored title, and Codex's `session_index.jsonl` only lists threads the IDE / desktop client started itself, which is why the app-server catalog is read first. Kiro's stored title is often a 1–2 character placeholder, DSH sends no session id on a normal turn so its source stays dormant, and Claude has no source at all.
-- The current conversation header exposes Agent identity, working directory, how this chat connects (ACP / 持续对话 / 原来的发送方式), automatic-approval state, and connection context. Session settings repeat the connect label and, for continuous chats, a **本会话已一直允许** switch that can only turn off (cards still own turning it on). A missing working directory is a blocker, not an automatic modal. Which continuous channel this session uses follows the Agent (new-empty Codex app-server, Grok/Kiro ACP, Claude stream-json; old threads keep the original send path). There is no Settings-wide ACP runner list; Agents detail shows that Agent's new-chat connect.
-- A conversation has one active Agent. Hidden or unauthorized Agents remain visible with a reason but cannot be selected for a new send.
-- The composer validates blockers in order: hidden Agent, environment not ready, missing authorization, unknown status, then missing working directory. It renders only the first blocker with a recovery action. Sending is isolated per conversation; several conversations may generate at once.
-- An empty transcript invites typing first (`开始对话` only). Example chips stay above the composer and only fill the draft; the draft-only note is on the chip hover, not a permanent line. The composer placeholder is generic (`发消息…`). Grok / Kiro / Claude queue-only limits and Enter / Shift+Enter sit on hover titles near the composer or send, not as permanent secondary lines on an empty session. On that first-use empty transcript the toolbar keeps Agent, connection, model, thinking, images, and skills, but secondary image/skill labels collapse to icon-only (accessible names stay); the connection label truncates and shows the full name on hover. Cursor is not on this surface.
-- The send button is the composer's accent action. The session-rail **新建对话** button uses the same theme fill (not gray). Enter sends; Shift+Enter inserts a new line; the footer names the current shortcut on a non-empty transcript, and on an empty session via hover. The bottom-right slot is a single circular control: never Stop and Send side by side. Idle shows Send (disabled when empty). While generating, Send stays when there is draft text and a real action (mid-turn inject, otherwise queue); an empty or blocked generating composer shows Stop in that same slot (square icon, danger styling, same footprint). After click or when the runtime is already cancelling, Stop stays 正在停止 and disabled until the turn ends. A missed cancel request re-enables it. Esc uses the same cancel path unless a dialog, menu, or preview already owns Escape; the shortcut overview and hover layer list Esc. Queued follow-ups show a count and preview with a clear action. Stopped replies do not show a raw `cancelled` status word. After send, focus stays in the composer. Failed or stopped turns have no retry button; keep sending in this chat. Cursor is not on this surface.
-- Approval cards offer Allow / Deny; Always allow when this request includes that option. After Always allow, Codex / Grok / Kiro auto-accept later command/file prompts in the current process (Codex typically this turn; Grok / Kiro the live ACP process). Not saved. Chat then shows **本会话已一直允许**, distinct from session-settings auto-approve / Kiro full access; session settings can turn that remember off, and will not fake turning it on. File-change cards title **修改文件** and show the path.
-- A current-turn plan list sits above the composer when the Agent published one. The header shows completed/total counts and status labels (待做 / 进行中 / 已完成 / 失败); the list collapses. Collapsed view keeps the counts and the in-progress row. Missing status counts as 待做. The bar is not a process timeline.
-- Streaming process details use a compact one-line summary of 正在读取 / 正在修改 / 正在执行 on the reply. Clicking it opens the right-hand pane with 你说了、thinking, tools, waiting allow/deny, turn usage, and run details (the same pane as Markdown preview; opening a file replaces process). Allow / Deny stay on the card — the pane does not invent buttons. Tool names, statuses, and JSON payloads stay in a per-step **细节** disclosure. Commands, stderr, status events, and exit codes stay in **运行详情**. After the turn ends, Codex / Grok may show a muted turn-only 输入 / 输出 footnote under the reply; nothing while generating, and no session total or window ratio. No fake usage bar. Continuous Codex / Grok / Kiro turns poll the focused snapshot about every 80ms and show **正在想** before the first character, then **正在写** with a caret. The body is the durable `currentMessage` from that read, not a client-side drip of a buffered reply. A failed poll keeps the last view and shows **没法更新这场对话** with Retry after one second; it does not toast every poll, and it does not fall back to the one-shot send path.
-- Switching conversations does not cancel the active operation. Codex runtime keeps per-conversation process state and a replay cursor; its snapshot supplies the authoritative current reply. Legacy sends retain their existing in-memory process behavior.
-- Copy is available for completed user/Agent messages. Running messages do not show copy. Failed or stopped replies do not show retry.
+Session rail and header:
 
-### Features (Chat)
+- The rail has new conversation (**新建对话**, accent fill), search by title and working directory, day grouping, rename, and delete confirmation. Rows show the title only; working directory, draft, and time are on hover. Rail width is dragged and remembered (`agenthub:chat-rail-width`).
+- A title starts as a short phrase from the first message. After a turn, the Agent's own stored title replaces it where the Agent keeps one. A hand-renamed title is never overwritten. AgentHub never asks the Agent for a title.
+- The header shows Agent identity, working directory, how this chat connects (持续对话（通用接口） / 持续对话 / 原来的发送方式; the UI does not say “ACP”), auto-approval state, and connection context. Session settings repeat the connect label and, for continuous chats, a **本会话已一直允许** switch that can only be turned off.
+- Hidden or unauthorized Agents stay visible with a reason but cannot be picked for a new send. A missing working directory is a blocker, not an automatic modal.
 
-- Session rail: new conversation, search by title/cwd, day grouping, rename, delete confirmation; list rows are title-only (cwd / draft / time on hover); drag-resize remembered in `agenthub:chat-rail-width`.
-- Header: Agent identity, working directory, how this chat connects, automatic-approval state, connection context.
-- Empty transcript: invite headline only; example chips fill the draft only (draft-only note on chip hover). Composer placeholder is generic (`发消息…`); Grok / Kiro / Claude queue-only limits and Enter / Shift+Enter use hover titles on an empty session. First-use toolbar keeps needed controls and quiets image/skill labels to icons; connection label truncates with a full-name hover. Composer blocker order: hidden Agent → environment not ready → missing authorization → unknown status → missing working directory; send is the composer accent action; rail **新建对话** uses the same theme fill. Enter sends, Shift+Enter makes a new line. While generating, one bottom-right control: Send injects or queues when the draft has text and that channel exists; empty draft shows icon Stop in the same slot; Esc still stops (dialogs/menus first). Queued lines show a count; Stop stays 正在停止 and disabled until the turn ends (re-enables if the cancel request misses); stopped replies do not show a raw `cancelled` status word; focus stays in the composer after send. Failed or stopped turns have no retry button. Several conversations may generate at once. A compact shortcuts control opens the same overview on hover or click; `?` still opens the shortcuts dialog. Delete-confirm dialogs (session rail, backups) keep Enter-to-confirm and show a return-key icon, not the word Enter.
-- Approval cards: Allow / Deny; Always allow when the request includes that option. Codex / Grok / Kiro in-process remember (not saved). File-change cards show the path.
-- Plan bar above the composer: counts and 待做 / 进行中 / 已完成 / 失败; collapsible. Snapshot poll failure: **没法更新这场对话** after one second, Retry, no toast spam.
-- Streaming process: one-line human 正在读取 / 正在修改 / 正在执行 on the reply; click to open thinking/tools in the right-hand pane; protocol details folded. After the turn ends, muted turn-only 输入 / 输出 under the reply when the protocol sent counts. Copy for completed messages only.
-- Chat outline (聊天大纲): with the setting on (default), two or more user messages, and a transcript panel at least 768px wide, a tick rail on the left of the transcript jumps between prompts. Hover magnifies nearby ticks and shows a preview; the current reading turn is highlighted. A jump turns off stick-to-bottom so streaming does not pull the view back. Toggle is Settings → 语言与外观 (`agenthub:chat-outline-enabled`).
-- New Codex conversations use durable app-server snapshots and show actual approval/question requests as controls. Replies and stop target the exact run; snapshot failure does not fall back to legacy send. Codex B2 is in: session model/effort, `/` command search, local image attachments, and skills/plugins discovery for this turn (no plan mode; no toolbar skill button — use `/` or Codex auto-use). The composer does not show a duplicate Agent overflow (⋮) next to the selected Agent. `/` lists run-now actions (new chat, copy latest reply). Model/effort/skill appear when the query matches, not as a full dump on a bare `/`. When a Grok/Kiro session is ready and the peer declared commands, `/` also lists those names: choosing one sends `/name` as a normal turn, or inserts `/name ` when the declaration requires args. History, search, settings, Agents, and Connections stay on the rail or header. New Grok conversations are continuous (model/thinking, images, queued follow-ups); **Unsupported**: choosing a skill “for this turn” (no clickable fake control). New Kiro conversations use the ACP continuous channel; old Kiro chats keep the original send path. New Claude conversations use stream-json continuous chat (images; no mid-turn steer; no approval cards in this slice); TodoWrite / Task tool lists fill the same plan bar as Grok / Kiro. Old Claude chats keep print+resume. See [B2](../archive/chat-codex-b2.md) and [STATUS](../STATUS.md).
-- Runtime confirmation cards use **允许** / **拒绝**. **一直允许** appears only when this request includes that option (Codex command/file prompts always include it; Grok / Kiro only if the ACP request does, including Kiro `allow_always_tool`). Pending option lists are stored with the request so a snapshot or restart can still show the same buttons. After **一直允许**, Codex / Grok / Kiro auto-accept later command/file prompts in the current process (Codex typically this turn; Grok / Kiro the live ACP process; not saved). Grok / Kiro also forward the server option. Kiro session **完全访问权限** is the next-send `--trust-all-tools` switch, not this card; changing it after a turn restarts the Kiro process in this conversation. Cursor is out of this surface. See [Chat 与 Agent](../concepts/chat-and-agents.md#允许-拒绝-一直允许).
+Composer:
 
-### Agent touchpoints (Chat)
+- Blockers are checked in order: hidden Agent → environment not ready → missing authorization → unknown status → missing working directory. Only the first is shown, with a recovery action.
+- Sending is per conversation; several conversations can generate at once. Switching conversations never cancels a run.
+- Empty transcript: headline **开始对话** only; example chips above the composer only fill the draft (the note is on chip hover); placeholder **发消息…**. Queue-only limits and Enter / Shift+Enter hints live in hover titles, not permanent lines. The first-use toolbar keeps Agent, connection, model, thinking, images, and skills, but image/skill labels collapse to icons (accessible names stay) and the connection label truncates with a full-name hover.
+- Enter sends, Shift+Enter adds a line; the footer names the shortcut once the transcript has content.
+- One circular control bottom-right, never Stop and Send side by side. Idle: Send (disabled when empty). Generating with draft text and a real action (mid-turn inject, else queue): Send. Generating with an empty or blocked draft: Stop (square icon, danger style, same footprint). After click, or while the runtime is already cancelling, it shows **正在停止** disabled until the turn ends; a missed cancel re-enables it. Esc uses the same stop unless a dialog, menu, or preview owns Escape.
+- Queued follow-ups show a count, preview, and clear action. Focus stays in the composer after send.
+- Failed or stopped turns have no retry button; the user keeps sending in the same chat. Stopped replies never show a raw `cancelled` word.
+- `/` lists run-now actions (new chat, copy latest reply); model, effort, and skill items appear only when the query matches. When a Grok / Kiro session is ready and the peer declared commands, `/` also lists them: picking one sends `/name` as a normal turn, or inserts `/name ` when arguments are required. History, search, settings, Agents, and Connections stay on the rail or header. There is no duplicate ⋮ menu next to the selected Agent.
+- A compact shortcuts control opens the shortcut overview on hover or click; `?` opens the shortcuts dialog. Delete confirmations (sessions, backups) keep Enter-to-confirm and show a return-key icon.
 
-- **StructuredStream** (and text fallbacks) for Chat send/stream; **DangerousMode** / automatic-approval where supported.
-- **SessionResume** where Partial (Claude / Codex / Grok print+resume; Kiro continuous ACP / HTTP `kiro-http:`); connection context from current login / 本机路由.
-- One active Agent per conversation; hidden/unauthorized Agents visible with reason but not selectable for a new send.
+Transcript and process:
 
-### Out of scope (Chat)
+- Continuous turns poll the focused conversation's snapshot about every 80ms and show **正在想** before the first character, then **正在写** with a caret. The body is the snapshot's `currentMessage`, not a client-side drip. A failed poll keeps the last view and after one second shows **没法更新这场对话** with Retry, without toasting each poll or falling back to the one-shot send.
+- Each reply has a one-line process summary (正在读取 / 正在修改 / 正在执行). Clicking it opens the right-hand pane with 你说了, thinking, tools, pending allow/deny, turn usage, and run details (the same pane as Markdown preview). Tool names, statuses, and JSON sit in a per-step **细节** disclosure; commands, stderr, status events, and exit codes in **运行详情**.
+- After a turn ends, a muted 输入 / 输出 footnote may appear under the reply when the protocol sent counts. Nothing while generating, no session totals, no fake usage bar.
+- A plan list sits above the composer when the Agent published one: completed/total counts, statuses 待做 / 进行中 / 已完成 / 失败 (missing status counts as 待做), collapsible to counts plus the in-progress row. It is not a process timeline.
+- Copy appears on completed user and Agent messages only.
+- Chat outline (聊天大纲): when enabled (default; 设置 → 偏好 → 语言与外观, `agenthub:chat-outline-enabled`), with at least two user messages and a transcript panel at least 768px wide, a tick rail on the left jumps between prompts. Hover magnifies nearby ticks and shows a preview; the current turn is highlighted; a jump turns off stick-to-bottom.
 
-- Does not edit Agent project logs in place; does not manage Connections CRUD or Routes runtime.
-- Does not install Agents or skills.
+Approval cards:
+
+- **允许** / **拒绝** always; **一直允许** only when the request carries that option. Pending options are stored with the request, so a snapshot or restart shows the same buttons.
+- After **一直允许**, later prompts of the same scope in this conversation are auto-accepted (not saved): a file-change grant covers later file changes; a command or tool grant covers only that exact call; a file grant never approves a command. The chat then shows **本会话已一直允许**, distinct from session auto-approve or Kiro **完全访问权限**.
+- File-change cards are titled **修改文件** and show the path.
+- Cursor is not on this surface. Full rules: [Chat 与 Agent · 允许 / 拒绝 / 一直允许](../concepts/chat-and-agents.md#允许-拒绝-一直允许).
+
+**Agent touchpoints:** StructuredStream (and text fallbacks); DangerousMode / auto-approval where supported; SessionResume; connection context from the current login or 本机转发.
+
+**Not:** editing Agent logs in place, Connections or Routes management, or installing Agents or skills.
 
 ## 9. Skills, Projects, and Plugins
 
-Skills, Projects, and Plugins are full-height workbenches with a left inventory and an optional right preview.
+Full-height workbenches with a left list and an optional right preview.
 
-### Skills
+### Skills (技能)
 
-- User skills, Project skills, and Market are page-level tabs. Filtering and Agent scope stay in the chrome row.
-- User skills list the shared library plus this-tool-only skills, with the enablement matrix. The install dialog has one Source field (folder path, zip path, or git URL; must contain `SKILL.md`). **Choose folder** opens the system folder picker; **Choose zip** opens the system file dialog (title **Choose a skill zip** / **选择技能 zip**, ZIP filter). Cancel in the system dialog leaves the field unchanged. Empty source shows a field error. User-skill install writes `~/.agents/skills/` only and does not enable the skill on any tool.
-- Project skills use a dropdown of workspaces already identified on the Projects page. After a project is selected, skills can be added or deleted for that workspace (canonical folder `.agents/skills`). The same install dialog writes that folder instead of the shared library.
-- A skill name opens the preview (`ListNameButton`); Enter on the name is equivalent. If the preview is already open, clicking empty row area on the library/project tables switches it; a closed preview stays closed. Checkbox selection is only for batch operations and never opens the preview.
-- The preview identity is separate from checkbox selection. It remains open when filters hide the selected skill, with a short source label in the header.
-- The list keeps the name and at most one line of description. Absolute paths move to the preview footer or an explicit open-directory action.
-- The matrix represents supported/unavailable/unknown states without blanking the page. A missing skill directory is a partial state, not a global error.
+- Page tabs: User skills, Project skills, Market. Filters and Agent scope stay in the chrome row.
+- User skills list the shared library plus this-tool-only skills, with the enablement matrix. Install writes `~/.agents/skills/` only and does not enable the skill anywhere.
+- Project skills pick a workspace already found on the History page; add or delete skills in that workspace's `.agents/skills`. The same install dialog is used.
+- Install dialog: one Source field (folder, zip, or git URL; must contain `SKILL.md`). **Choose folder** opens the system folder picker; **Choose zip** opens the system file dialog (title **选择技能 zip**, ZIP filter). Cancelling leaves the field unchanged; an empty source shows a field error.
+- The skill name (`ListNameButton`, or Enter) opens the preview. Checkboxes are for batch actions only. The preview stays open when filters hide its skill and shows a short source label.
+- Rows keep the name and at most one line of description; absolute paths go to the preview footer or an open-directory action.
+- The matrix shows supported / unavailable / unknown; a missing skill directory is a partial state, not a page error.
 
-### Features (Skills)
+**Agent touchpoints:** Skills capability and the per-Agent matrix; project skills read/write `.agents/skills` and list existing per-Agent folders (e.g. `.claude/skills`). The market source is in 设置 → 偏好.
 
-- Tabs: User skills (shared library + this-tool), Project skills (workspace dropdown from Projects), Market.
-- Enablement matrix; name opens preview; checkbox selection only for batch ops; paths in preview footer / open-directory.
-- Install dialog: folder picker, zip via system file dialog (ZIP filter; title Choose a skill zip), or git URL. User install writes the shared library and does not auto-enable. Project install uses the same dialog for `.agents/skills`.
+**Not:** plugin packs or MCP servers.
 
-### Agent touchpoints (Skills)
+### Projects (历史)
 
-- **Skills** capability and per-Agent enablement matrix; supported/unavailable/unknown without blanking the page.
-- Project skills read/write `.agents/skills` (and list existing `.claude/skills` etc.) for workspaces identified on Projects.
-- Market source preference lives in Settings → Preferences.
+- Collapsible project cards. Sessions align in columns (title, file name, time, size, icon actions) without row dividers. The title opens the excerpt preview; the file name reveals the record in the file manager.
+- Page actions (summarize, delete, refresh) stay in the list column and move with it when resizing.
+- Search covers project and session names. Summarize and delete are session actions with confirmation where supported.
+- A session can start a new Chat conversation through the session-storage handoff; the original Agent log is never edited.
 
-### Out of scope (Skills)
+**Agent touchpoints:** ProjectHistory for list/preview; ProjectDelete where supported (ZCode / Kiro deletion stays in that tool; Cursor unsupported). Kiro lists both CLI and editor conversations. Unsupported actions are hidden or disabled with a hint.
 
-- Not the plugin/extension pack manager and not MCP server editing.
-- A missing skill directory is a partial state, not a global error page replacement for other tabs.
+**Not:** an IDE, a log editor, Skills market, or plugin management.
 
-### Projects
+### Plugins (插件)
 
-- The left tree is still a stack of collapsible project cards. Sessions under a project align in columns (title, file name, time, size, icon actions) without row dividers. Title opens the right-hand excerpt preview; the file-name field reveals the record in the file manager. If the preview is already open, clicking another session’s empty area switches it; a closed preview stays closed. Page actions (summarize, delete, refresh) stay in the list column, left of the separator, and travel with it while resizing.
-- Search covers project and session names. Delete and summarize are session actions and require confirmation where supported.
-- A project/session can bootstrap a new Chat conversation through the documented session storage handoff. It does not silently edit the original Agent log.
-- Agent capabilities such as transcript support are explicit. Unsupported actions are hidden or disabled with a hint.
+- Lists installed packs for Claude, Grok, and Pi. A row shows name, on-disk version when known, one line of description, and exception badges (disabled / untrusted / not installed / version mismatch). Clicking a row opens details.
+- Details lead with pack components (bundled MCP is a component, not a row), then version, marketplace, scope, and path. Pi also shows a pinned version and how upgrades are judged.
+- Claude and Grok packs can be installed, uninstalled, enabled, or disabled here (disable is not uninstall). Pi is list-only.
+- Empty copy depends on the Agent filter: wired-but-empty, planned, or unsupported. Scan sources are not shown in the list.
 
-### Features (Projects)
+**Agent touchpoints:** each Agent's official plugin CLI. There is no `Capability::Plugins`, and this is not `Capability::Mcp`.
 
-- Collapsible project cards with session columns (title, file name, time, size, actions); title opens excerpt preview; file-name reveals in file manager.
-- Search; summarize/delete with confirmation where supported; resizable name/path columns; handoff to bootstrap a new Chat conversation.
-
-### Agent touchpoints (Projects)
-
-- **ProjectHistory** for list/preview; **ProjectDelete** where supported (ZCode / Kiro delete stays in that tool; Cursor unsupported). Kiro lists CLI and editor conversations.
-- Transcript/session support is capability-gated; unsupported actions hidden or disabled with a hint.
-- Does not silently edit the original Agent log when handing off to Chat.
-
-### Out of scope (Projects)
-
-- Not a full IDE or Agent log editor.
-- Not Skills market or plugin management.
-
-### Plugins
-
-- Left column lists installed plugin / extension packs (Claude, Grok, and Pi today). The row keeps the name, the on-disk version when known, at most one line of description, and exception badges (disabled / untrusted / not installed / version mismatch). Clicking a row opens the right-hand details pane.
-- Details lead with the pack components (bundled MCP is a component, not a list row). Identity fields (version, marketplace, scope, path) follow. Pi also shows the specified version from settings when pinned, and a short note on how upgrade is judged (pinned npm specs are skipped by Pi updates; this page does not probe npm for a newer unpinned version). Claude and Grok packs can be turned on or off (turning off is not uninstall), and can be installed or uninstalled from this page. Pi remains list-only.
-- Empty copy depends on the Agent filter: wired-but-empty (install in that tool, then refresh), planned (list not wired yet), or unsupported (this tool has no pack system of this kind). Loading, empty, and error states stay in the list column. Diagnostic scan sources are not shown in the list. Hiding the sidebar item does not disable `/plugins`.
-
-### Features (Plugins)
-
-- Lists installed plugin/extension packs for Claude, Grok, and Pi; row shows name, on-disk version, one-line description, exception badges.
-- Details: pack components (bundled MCP is a component), identity fields; Pi shows pinned version note.
-- Claude and Grok can install, uninstall, enable, or disable listed packs. Pi is list-only. Sidebar visibility gated by `pluginsNavVisible`.
-
-### Agent touchpoints (Plugins)
-
-- Claude / Grok install, uninstall, and toggle via that Agent’s official plugin CLI; Pi is list-only.
-- Empty copy depends on Agent filter: wired-but-empty, planned, or unsupported. Not `Capability::Plugins` (none exists); not `Capability::Mcp`.
-
-### Out of scope (Plugins)
-
-- Update of packs remains a proposal. Codex / Pi install and uninstall are not wired.
-- Not the MCP inventory page; hiding the sidebar item does not disable `/plugins`.
+**Not:** pack updates (still a [proposal](../proposals/plugin-management.md)) or Codex / Pi install.
 
 ## 10. Agents and MCP
 
 ### Agents
 
-Agents is the lifecycle surface: installed state, runtime readiness, install/update, and environment remediation. The catalog is a field table in a full-height split. Click the Agent **name** to open the right-hand detail; start / install stay labeled on the row. Hide sits in the row `⋯` menu; a hidden row shows **取消隐藏** as the labeled action. If the detail pane is already open, clicking another row’s empty area switches the detail; a closed pane stays closed. A missing runtime is shown before Agent installation, with repair steps and a re-detect action. Do not offer a successful installation action while its prerequisite environment is known to be missing. Leftover `~/.agenthub/npm` copies are labeled **启动后备，非安装位置** (spawn fallback only; install via official npm into `~/.npm-global`). An incomplete DeepSeek CLI (common: `~/.local/bin/dsh` missing `@deepseek-ai/dsh-scope`) is not-ready and prompts the same official npm install — never `~/.agenthub/npm`. Uninstall entry in the detail pane is `dangerOutline`; the confirm dialog uses `danger`.
+- The lifecycle page: installed state, runtime readiness, install/update, hide, and environment repair, as a field table in a full-height split.
+- Click the Agent **name** for detail; start / install stay labeled on the row; hide is in the row `⋯` menu, and a hidden row shows **取消隐藏**. Detail names that Agent's new-chat connect method. Uninstall in detail is `dangerOutline`; its confirmation uses `danger`.
+- A missing runtime is shown before Agent install, with repair steps and re-detect. Never offer a successful install while a prerequisite is known to be missing.
+- Leftover `~/.agenthub/npm` copies are labeled **启动后备，非安装位置**; installs go through official npm into `~/.npm-global`. An incomplete DeepSeek CLI (e.g. `~/.local/bin/dsh` without `@deepseek-ai/dsh-scope`) is not-ready and prompts the same npm install.
 
-### Features (Agents)
+**Agent touchpoints:** catalog, install registry, and detect are the list source; `src/config/agents.ts` is display only. Install channels and runtime prerequisites come from the Agent's `install` / `lifecycle` ports. Soft-hidden Agents (e.g. Cursor) can be unhidden here.
 
-- Lifecycle catalog table: installed state, runtime readiness, install/update, hide, environment remediation. Leftover `~/.agenthub/npm` is **启动后备，非安装位置**; incomplete DeepSeek CLI prompts official npm into `~/.npm-global`.
-- Click Agent **name** for detail; start/install stay labeled on the row; hide is in the row `⋯` menu; uninstall in detail is `dangerOutline` with `danger` confirm. Detail **新对话** names that Agent's new-chat connect (ACP / 持续对话 / 原来的发送方式); it is not a fake ACP on/off.
-- Missing runtime shown before Agent installation, with repair steps and re-detect.
-
-### Agent touchpoints (Agents)
-
-- Catalog / install registry / detect are the list truth; frontend `agents.ts` is display decoration only.
-- Install channels and Runtime prerequisites from the Agent’s sparse `install` / `lifecycle` ports.
-- Soft-hidden Agents (e.g. Cursor store-stamp) can be unhidden here without implying ConfigWrite support.
-
-### Out of scope (Agents)
-
-- Does not run Chat, manage logins, or configure Routes.
-- Must not offer successful install while a known prerequisite runtime is missing.
+**Not:** Chat, login management, or Routes.
 
 ### MCP
 
-MCP lists known **MCP server** configuration files and can write/enable for Claude / Codex / Grok / Cursor / WorkBuddy (local templates, probe, no OAuth). It lists Agent, server, transport, source path, and enabled status. Parse errors, missing files, and an empty inventory each get their own recoverable state. Inventory does not imply that editing or injection is supported, and it is not the plugin/extension pack manager. The current page is a standard single-column table. Plugin / extension packs live on `/plugins`.
+- A single-column table of known MCP server config files: Agent, server, transport, source path, enabled.
+- Write dialog: local catalog → probe → write into a supported Agent. Writable rows have an enable toggle (Codex disable removes the entry; Grok disable sets `enabled = false`).
+- Parse errors, missing files, and an empty inventory each have their own recoverable state.
 
-### Features (MCP)
+**Agent touchpoints:** `Capability::Mcp` is Partial for Claude / Codex / Grok / Cursor / WorkBuddy (write/enable, no OAuth) and Planned elsewhere. Bundled MCP inside a plugin pack shows on Plugins.
 
-- Table of known MCP server configuration files: Agent, server, transport, source path, enabled status.
-- Write dialog: local catalog → probe → upsert into a supported Agent; enable toggle on writable rows (Codex disable removes the entry; Grok disable sets `enabled = false`).
-- Distinct recoverable states for parse errors, missing files, and empty inventory.
+**Not:** OAuth connectors, credential encryption, a remote marketplace, or plugin packs.
 
-### Agent touchpoints (MCP)
+## 11. Settings (设置)
 
-- Inventory paths where verified; **`Capability::Mcp` is Partial** for Claude / Codex / Grok / Cursor / WorkBuddy (write/enable, no OAuth); Planned elsewhere.
-- Bundled MCP inside a plugin pack is shown on Plugins as a component, not as rows here.
+Five page tabs (`?tab=`), kept as a pill bar at the top-left of the workbench header. Invalid or old values replace to the nearest tab; tab changes use `replace` history.
 
-### Out of scope (MCP)
+| Tab | Query | Contents |
+|---|---|---|
+| 偏好 | `preferences` | Groups: 语言与外观 (language, theme, accent, chat outline); 启动与关闭; 连接 (自动导入本机登录); 路由 (duplicate-key tip, same-URL update); 技能 (market source); 用量 (collection interval) |
+| 功能 | `features` | Which optional sidebar pages show; whether clicking 路由 collapses the sidebar |
+| 本机 | `local` | Data directory, log level, retention, log directory |
+| 备份 | `backups` | Agent config snapshots with `AgentTabStrip`; keep-copies switch; restore/delete; file inspect on the right |
+| 关于 | `about` | Version, update check, repository, read-only notes on how login information is shown |
 
-- No OAuth connectors, credential encryption, or remote marketplace.
-- Not the plugin/extension pack manager (`/plugins`).
+- Preferences, Features, This computer, and About use the overview column. Backups is a list-and-inspect split.
+- Keep-copies (`keepLiveFileCopies`, default on) copies each Agent's live files into the backup directory on switch or import. Turning it off stops piling copies; a switch still keeps one copy for rollback. Manual backups are unaffected. Backup identity stays a short label (email or key tail).
 
-## 11. Responsive and interaction constraints
+**Agent touchpoints:** LiveBackup and per-Agent snapshot identity.
 
-- Use stable grid tracks (`auto-fit`/`minmax`) for Agent cards, tables, toolbars, and preview panes.
-- On narrow windows, wrap labels and metadata instead of shrinking type or allowing overlap. Icon-only actions remain available through an overflow menu when the row cannot fit.
-- A split preview has a focusable separator. Keyboard adjustment moves it in fixed increments; double-click restores the default width. Dragging must not select the document body.
-- Escape closes the topmost dialog/menu/popover before closing a preview. Focus order follows content, row actions, separator, preview tools, then document body.
-- Page-specific user copy belongs with the page pattern or locale dictionary. Do not embed implementation phase labels in visible UI.
+**Not:** a login list, route runtime, Agent install, plugin install, credential encryption, or Sub2API sessions.
 
-## 12. Current implementation references
+## 12. Responsive and interaction rules
 
-- Layout and routing composition: `src/App.tsx`, `src/components/layout/`, and `src/pages/`.
-- Shared component rules: `src/components/ui/`, `src/components/shared/`, and [design-system.md](design-system.md).
-- Backend access: `src/lib/api/`, `src/lib/backend/contracts/`, and `src/lib/backend/tauri/`.
-- Route control: the backend/control contract and the current in-process Tauri host. The proposal for a separate process is deliberately outside this current page contract.
+- Use stable grid tracks (`auto-fit` / `minmax`) for cards, tables, toolbars, and preview panes.
+- On narrow windows, wrap labels and metadata instead of shrinking type or overlapping. Icon actions move into an overflow menu when a row cannot fit.
+- A split preview has a focusable separator: keyboard moves it in fixed steps, double-click restores the default width, dragging never selects page text.
+- Escape closes the topmost dialog/menu/popover before a preview. Focus order: content, row actions, separator, preview tools, document body.
+- Page copy lives in the page or the locale dictionary (`src/lib/i18n/locales/`). No implementation phase labels in visible UI.
 
-When code and this document disagree, verify the current implementation and update this current contract in the same change. Do not revive a completed redesign document as a new task list.
+## 13. Implementation references
+
+- Layout and routing: `src/App.tsx`, `src/components/layout/`, `src/pages/`.
+- Shared components: `src/components/ui/`, `src/components/shared/`, [design-system.md](design-system.md).
+- Backend access: `src/lib/api/`, `src/lib/backend/contracts/`, `src/lib/backend/tauri/`.
+
+When code and this page disagree, verify the implementation and update this page in the same change. Do not revive a completed redesign document as a task list.

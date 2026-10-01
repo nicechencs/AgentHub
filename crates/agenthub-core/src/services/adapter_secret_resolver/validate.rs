@@ -228,6 +228,32 @@ impl AdapterSecretResolver {
             .ok_or_else(invalid_reference)
     }
 
+    /// DeepSeek pool login. Inline keys win. Official DSH rows keep the key
+    /// in `.credentials.yaml` and must still count as a live upstream secret,
+    /// or the route index drops the login and its models.
+    pub(crate) fn resolve_deepseek_provider_auth(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<ResolvedAuth> {
+        if let Ok(auth) = self.resolve_openai_compat_auth(source_kind, source_id) {
+            return Ok(auth);
+        }
+        if source_kind != AdapterSourceKind::Provider {
+            return Err(invalid_reference());
+        }
+        let source = self
+            .providers
+            .get_by_id(source_id.trim())?
+            .ok_or_else(invalid_reference)?;
+        if !is_deepseek_api_source(&source) {
+            return Err(invalid_reference());
+        }
+        Ok(ResolvedAuth::bearer(deepseek_credentials_file_key(
+            &source.settings_config,
+        )?))
+    }
+
     /// Resolve only the current Codex OAuth access token for a bridge upstream.
     /// Refresh is intentionally owned by the next Codex login sync; this
     /// adapter does not persist or return refresh material.

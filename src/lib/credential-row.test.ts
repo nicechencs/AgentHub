@@ -70,7 +70,7 @@ describe('toCredentialRow', () => {
         }),
       }),
     });
-    expect(row.title).toBe('本机路由');
+    expect(row.title).toBe('本机转发');
     expect(row.title).not.toMatch(/Bridge|grok-live|127\.0\.0\.1/i);
     expect(row.subtitle).not.toMatch(/127\.0\.0\.1|44227/);
   });
@@ -166,7 +166,7 @@ describe('toCredentialRow', () => {
         }),
       }),
     }, tEn);
-    expect(row.title).toBe('Local route');
+    expect(row.title).toBe('Local forwarding');
     expect(row.title).not.toMatch(/[\u4e00-\u9fff]/);
   });
 
