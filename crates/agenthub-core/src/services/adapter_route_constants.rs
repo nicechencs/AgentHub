@@ -367,6 +367,60 @@ pub(crate) fn settings_contain_anthropic_api_endpoint(value: &Value) -> bool {
     value_contains_needle(value, ANTHROPIC_API_ENDPOINT_NEEDLE)
 }
 
+/// Provider `env.ANTHROPIC_BASE_URL` adapted for the Messages bridge.
+///
+/// Claude stores the host root (often without `/v1`). The bridge joins
+/// `messages` and the health probe joins `/models`; the official rule base
+/// already ends in `/v1`.
+pub(crate) fn anthropic_messages_upstream_base_url(settings: &Value) -> Option<String> {
+    let raw = settings
+        .get("env")
+        .and_then(Value::as_object)
+        .and_then(|env| env.get(ANTHROPIC_BASE_URL_ENV))
+        .and_then(Value::as_str)?;
+    anthropic_messages_base_from_raw(raw)
+}
+
+/// Usable http(s) Anthropic base, normalized so it ends with `/v1`.
+pub(crate) fn anthropic_messages_base_from_raw(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if normalized_http_host(trimmed).is_none() {
+        return None;
+    }
+    let without_slash = trimmed.trim_end_matches('/');
+    if without_slash.len() >= 3
+        && without_slash[without_slash.len() - 3..].eq_ignore_ascii_case("/v1")
+    {
+        Some(without_slash.to_owned())
+    } else {
+        Some(format!("{without_slash}/v1"))
+    }
+}
+
+/// Custom Claude relay that can pass the Anthropic secret gate.
+///
+/// Requires a usable env key and an http(s) base together. Either one alone
+/// stays closed; official preset / host are separate evidence.
+pub(crate) fn claude_settings_have_anthropic_key_and_base(settings: &Value) -> bool {
+    if anthropic_messages_upstream_base_url(settings).is_none() {
+        return false;
+    }
+    anthropic_env_secret_usable(settings, ANTHROPIC_AUTH_TOKEN_ENV)
+        || anthropic_env_secret_usable(settings, ANTHROPIC_API_KEY_ENV)
+}
+
+fn anthropic_env_secret_usable(settings: &Value, key: &str) -> bool {
+    settings
+        .get("env")
+        .and_then(Value::as_object)
+        .and_then(|env| env.get(key))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .is_some_and(|token| {
+            !token.is_empty() && token != "***" && token != CONNECTION_SECRET_MARKER
+        })
+}
+
 /// True when config points at OpenAI's public API host (not a custom relay).
 pub(crate) fn settings_contain_openai_api_endpoint(value: &Value) -> bool {
     openai_compat_base_url(value)

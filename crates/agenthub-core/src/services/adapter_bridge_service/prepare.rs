@@ -425,6 +425,13 @@ pub(super) fn openai_source_upstream(
     let mut listed = Vec::new();
     let mut protocol = rule.protocol;
     let mut context_window_tokens = None;
+    // Anthropic rules keep the official host unless the source configured a base.
+    if rule.source == crate::models::AdapterSourceProduct::AnthropicApi {
+        if let Some(base) = anthropic_source_upstream(service, source_kind, source_id) {
+            url = base;
+        }
+        return (url, model, listed, protocol, context_window_tokens);
+    }
     if rule.source != crate::models::AdapterSourceProduct::OpenaiApi {
         return (url, model, listed, protocol, context_window_tokens);
     }
@@ -493,6 +500,47 @@ pub(super) fn openai_source_upstream(
         protocol = crate::bridge::BridgeUpstreamProtocol::AnthropicMessages;
     }
     (url, model, listed, protocol, context_window_tokens)
+}
+
+/// Custom Anthropic Messages base for a provider or account, when one is set.
+///
+/// Absent or unusable values return `None` so the caller keeps the rule default.
+pub(super) fn anthropic_source_upstream(
+    service: &AdapterBridgeService,
+    source_kind: AdapterSourceKind,
+    source_id: &str,
+) -> Option<String> {
+    match source_kind {
+        AdapterSourceKind::Provider => {
+            let provider = service.providers.get_by_id(source_id).ok().flatten()?;
+            crate::services::adapter_route_constants::anthropic_messages_upstream_base_url(
+                &provider.settings_config,
+            )
+        }
+        AdapterSourceKind::Account => {
+            let account = service
+                .secrets
+                .accounts
+                .get_by_id(source_id)
+                .ok()
+                .flatten()?;
+            anthropic_account_base(&account.credentials)
+                .or_else(|| anthropic_account_base(&account.extra))
+        }
+    }
+}
+
+fn anthropic_account_base(blob: &Value) -> Option<String> {
+    for key in ["base_url", "baseUrl", "url", "endpoint"] {
+        if let Some(raw) = blob.get(key).and_then(Value::as_str) {
+            if let Some(base) =
+                crate::services::adapter_route_constants::anthropic_messages_base_from_raw(raw)
+            {
+                return Some(base);
+            }
+        }
+    }
+    crate::services::adapter_route_constants::anthropic_messages_upstream_base_url(blob)
 }
 
 /// Turn a WorkBuddy model endpoint into the base URL that the bridge host

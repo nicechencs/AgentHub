@@ -304,6 +304,102 @@ fn rejects_invalid_reference_without_leaking_secret_or_raw() {
 }
 
 #[test]
+fn is_anthropic_mytokens_claude_resolves_and_empty_custom_stays_closed() {
+    let source = provider(
+        "mytokens-claude",
+        AgentId::Claude,
+        json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": "https://mytokens.cc",
+                "ANTHROPIC_AUTH_TOKEN": "sk-fixture-mytokens"
+            }
+        }),
+        json!({"preset": "custom"}),
+    );
+    let (_dir, resolver) = resolver_with(source);
+    let auth = resolver
+        .resolve_anthropic_auth(AdapterSourceKind::Provider, "mytokens-claude")
+        .unwrap();
+    assert_eq!(auth.token(), "sk-fixture-mytokens");
+
+    let api_key_source = provider(
+        "mytokens-api-key",
+        AgentId::Claude,
+        json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": "https://mytokens.cc/v1",
+                "ANTHROPIC_API_KEY": "sk-fixture-api"
+            }
+        }),
+        json!({"preset": "custom"}),
+    );
+    let (_dir, resolver) = resolver_with(api_key_source);
+    assert_eq!(
+        resolver
+            .resolve_anthropic_auth(AdapterSourceKind::Provider, "mytokens-api-key")
+            .unwrap()
+            .token(),
+        "sk-fixture-api"
+    );
+
+    for (id, agent, settings, meta) in [
+        (
+            "custom-empty",
+            AgentId::Claude,
+            json!({"env": {}}),
+            json!({"preset": "custom"}),
+        ),
+        (
+            "custom-key-only",
+            AgentId::Claude,
+            json!({"env": { "ANTHROPIC_AUTH_TOKEN": "sk-fixture-only" }}),
+            json!({"preset": "custom"}),
+        ),
+        (
+            "custom-base-only",
+            AgentId::Claude,
+            json!({"env": { "ANTHROPIC_BASE_URL": "https://mytokens.cc" }}),
+            json!({"preset": "custom"}),
+        ),
+        (
+            "glm-not-anthropic",
+            AgentId::Claude,
+            json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
+                    "ANTHROPIC_AUTH_TOKEN": "sk-glm"
+                }
+            }),
+            json!({"preset": "glm-coding-plan"}),
+        ),
+        (
+            "codex-not-claude",
+            AgentId::Codex,
+            json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://mytokens.cc",
+                    "ANTHROPIC_AUTH_TOKEN": "sk-fixture-mytokens"
+                }
+            }),
+            json!({"preset": "custom"}),
+        ),
+    ] {
+        let source = provider(id, agent, settings, meta);
+        let (_dir, resolver) = resolver_with(source);
+        let error = resolver
+            .resolve_anthropic_auth(AdapterSourceKind::Provider, id)
+            .unwrap_err();
+        assert_eq!(error.code(), "invalid_arg", "{id}");
+        assert!(
+            error
+                .to_string()
+                .contains("invalid adapter secret reference"),
+            "{id}"
+        );
+    }
+}
+
+#[test]
 fn ordinary_provider_passes_through_unchanged() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("adapter-secret-resolver.db")).unwrap();

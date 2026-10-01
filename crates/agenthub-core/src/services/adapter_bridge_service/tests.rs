@@ -2077,6 +2077,70 @@ fn prepare_anthropic_provider_projects_messages_bridge_not_kimi() {
 }
 
 #[test]
+fn prepare_anthropic_mytokens_provider_uses_anthropic_source_upstream_base() {
+    let (_dir, db) = test_db();
+    let mut source = anthropic_source("mytokens-claude", "sk-fixture-mytokens");
+    source.meta = json!({"preset": "custom"});
+    source.settings_config = json!({
+        "env": {
+            "ANTHROPIC_BASE_URL": "https://mytokens.cc",
+            "ANTHROPIC_AUTH_TOKEN": "sk-fixture-mytokens"
+        }
+    });
+    ProviderRepo::new(db.clone()).create(&source).unwrap();
+    let service = AdapterBridgeService::new(db);
+
+    let prepared = service
+        .prepare(&anthropic_request(
+            AdapterSourceKind::Provider,
+            "mytokens-claude",
+        ))
+        .unwrap();
+    let start = prepared.runtime_material().start_spec(None);
+    assert_eq!(start.upstream.base_url, "https://mytokens.cc/v1");
+    assert_ne!(start.upstream.base_url, ANTHROPIC_MESSAGES_BASE_URL);
+    assert_eq!(
+        start.upstream.protocol,
+        BridgeUpstreamProtocol::AnthropicMessages
+    );
+    assert!(!format!("{prepared:?}").contains("sk-fixture-mytokens"));
+
+    let direct = super::prepare::anthropic_source_upstream(
+        &service,
+        AdapterSourceKind::Provider,
+        "mytokens-claude",
+    );
+    assert_eq!(direct.as_deref(), Some("https://mytokens.cc/v1"));
+}
+
+#[test]
+fn prepare_anthropic_account_uses_credential_base_url() {
+    let (_dir, db) = test_db();
+    let mut account = anthropic_account("anthropic-relay", "sk-ant-relay");
+    account.credentials = json!({
+        "format": "api_key",
+        "api_key": "sk-ant-relay",
+        "base_url": "https://mytokens.cc/"
+    });
+    AccountRepo::new(db.clone()).create(&account).unwrap();
+    let service = AdapterBridgeService::new(db);
+
+    let prepared = service
+        .prepare(&anthropic_request(
+            AdapterSourceKind::Account,
+            "anthropic-relay",
+        ))
+        .unwrap();
+    let start = prepared.runtime_material().start_spec(None);
+    assert_eq!(start.upstream.base_url, "https://mytokens.cc/v1");
+    assert_eq!(
+        start.upstream.protocol,
+        BridgeUpstreamProtocol::AnthropicMessages
+    );
+    assert!(!format!("{prepared:?}").contains("sk-ant-relay"));
+}
+
+#[test]
 fn prepare_anthropic_account_reuses_secret_resolver_and_projects_account_ref() {
     let (_dir, db) = test_db();
     AccountRepo::new(db.clone())
