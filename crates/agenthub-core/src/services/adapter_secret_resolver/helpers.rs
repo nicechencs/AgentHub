@@ -326,6 +326,17 @@ pub(super) fn extract_explicit_provider_api_key(rule_id: &str, settings: &Value)
     if let Some(value) = settings.get("api_key").and_then(Value::as_str) {
         candidates.push(value);
     }
+    // Codex dual-shape rows store the upstream key at auth.OPENAI_API_KEY.
+    // Other explicit-API products do not use that slot.
+    if matches!(rule_id, OPENAI_TO_PI_RULE | OPENAI_TO_GROK_RULE) {
+        if let Some(value) = settings
+            .get("auth")
+            .and_then(|auth| auth.get(OPENAI_API_KEY_ENV))
+            .and_then(Value::as_str)
+        {
+            candidates.push(value);
+        }
+    }
     for candidate in candidates {
         if let Some(key) = usable_secret(candidate) {
             return Ok(key.to_owned());
