@@ -4,7 +4,7 @@ description: AgentHub 前端、Tauri contract、Rust core 和 fixture 的测试�
 type: reference
 audience: contributor
 status: current
-updated: 2026-09-29
+updated: 2026-10-01
 ---
 
 # 测试参考
@@ -33,6 +33,16 @@ updated: 2026-09-29
 - Vitest 由配置固定使用 mock backend；`pnpm dev:mock` 是浏览器演示入口。
 - `pnpm test:e2e:browser` 在独立端口（`scripts/dev-runtime.json` 的 `e2ePort`，当前 5174）启动 `vite --mode mock`，只覆盖路由、表单、弹层和焦点，不代表真实 Tauri。不要复用 `pnpm dev` 的 5173。
 - `pnpm build` 永远选 Tauri adapter，不允许把 mock 或 `e2e/` 打进生产 bundle。
+
+## PR CI
+
+`.github/workflows/pr-ci.yml` 的 job 仍然分开：`test`、`check-windows`、`check-macos`、`browser-e2e`。
+
+- Linux `test` 在前端测试之后，用 `scripts/cargo-ci.sh parallel` 同时跑 `cargo test -p agenthub-core|agenthub-cli|agenthub-gui --locked`。任一个包失败，该 step 失败。
+- Windows / macOS 用同一个 helper 同时跑 `cargo check -p agenthub-core --locked` 和 `cargo check -p agenthub-gui --locked`。
+- `scripts/cargo-ci.sh` 只在这一次输出里出现 `ETXTBSY` 或 `Text file busy` 时重试（默认 3 次）。其它失败立刻退出，不会把真实测试失败重跑成绿。
+- Playwright 仍是 `workers: 1`、`fullyParallel: false`（真窗共用网关，保持串行）。
+- Release workflow 仍是一次 `cargo test --workspace --locked`，只包了同一套 ETXTBSY 重试，没有改成按包并行。
 
 ## 文件约定
 
