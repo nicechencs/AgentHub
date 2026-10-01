@@ -247,9 +247,23 @@ pub(super) fn provider_explicit_tag(source: &Provider) -> Option<&str> {
 }
 
 pub(super) fn is_anthropic_api_source(source: &Provider) -> bool {
-    source.agent_id == AgentId::Claude
-        && (source.meta.get("preset").and_then(Value::as_str) == Some(ANTHROPIC_PRESET)
-            || settings_contain_anthropic_api_endpoint(&source.settings_config))
+    if source.agent_id != AgentId::Claude {
+        return false;
+    }
+    if source.meta.get("preset").and_then(Value::as_str) == Some(ANTHROPIC_PRESET)
+        || settings_contain_anthropic_api_endpoint(&source.settings_config)
+    {
+        return true;
+    }
+    // GLM / DeepSeek also store ANTHROPIC_* env keys. Their markers win first,
+    // matching classify, so a custom relay cannot steal those products.
+    let tag = provider_explicit_tag(source);
+    if is_glm_coding_plan_marker(tag, &source.settings_config)
+        || is_deepseek_api_marker(tag, &source.settings_config)
+    {
+        return false;
+    }
+    claude_settings_have_anthropic_key_and_base(&source.settings_config)
 }
 
 pub(super) fn is_openai_api_source(source: &Provider) -> bool {
