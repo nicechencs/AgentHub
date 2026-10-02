@@ -1811,7 +1811,6 @@ export const en = {
       deleteAlsoConnectionsHint: "{count} on Connections: {names}",
       deleteAlsoConnectionsFailed: "Entry key deleted, but the Connections copy could not be removed",
       deleteFailed: "Couldn't delete the entry key",
-      deleteNeedExtra: "This is the only key for this type — you can edit it, but not delete it",
     },
     pool: {
       entry: "Local forwarding",
@@ -1828,12 +1827,14 @@ export const en = {
       schedule: {
         label: "Scheduling",
         hint: "Take turns only rotates usable logins that share priority, transport, and protocol.",
+        mixedHint: "These pools use different scheduling. Choose one to apply it to all.",
         priorityFailover: "In order, next one on error",
         priorityFailoverHint: "Use the highest-priority eligible login. Others are tried only if it fails before any response is sent.",
         roundRobin: "Take turns",
         roundRobinHint: "Rotate among eligible logins with the same priority, transport, and dialect.",
         saved: "Scheduling updated",
         saveFailed: "Couldn't update scheduling",
+        partialSaveFailed: "Scheduling partly updated: {count} pools failed to save",
         createLabel: "Scheduling for new pools",
         createHint: "Applies only when creating a new default pool. Existing pools keep their current scheduling.",
       },

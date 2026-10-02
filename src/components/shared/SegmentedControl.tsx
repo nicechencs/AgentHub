@@ -57,6 +57,11 @@ export function SegmentedControl<T extends string = string>({
     tabs[nextIndex]?.click();
   };
 
+  const hasActiveOption = options.some((opt) => value === opt.value);
+  const firstEnabledIndex = hasActiveOption
+    ? -1
+    : options.findIndex((opt) => !opt.disabled);
+
   return (
     <div
       role="tablist"
@@ -64,15 +69,16 @@ export function SegmentedControl<T extends string = string>({
       onKeyDown={onTabListKeyDown}
       className={cn(segmentedTrackClass, className)}
     >
-      {options.map((opt) => {
+      {options.map((opt, index) => {
         const active = value === opt.value;
+        const focusable = hasActiveOption ? active : index === firstEnabledIndex;
         return (
           <Hint key={opt.value} label={opt.title}>
             <button
               type="button"
               role="tab"
               aria-selected={active}
-              tabIndex={active ? 0 : -1}
+              tabIndex={focusable ? 0 : -1}
               disabled={opt.disabled}
               onClick={() => onChange(opt.value)}
               className={cn(

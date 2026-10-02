@@ -688,26 +688,16 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
           retryable: false,
         });
       }
-      const extraCount = state.extraLocalTokens.filter((row) => row.poolId === poolId).length;
-      const listed = extraCount + (state.hiddenPrimaryIds.has(poolId) ? 0 : 1);
-      if (listed <= 1) {
-        throw adapterCommandError({
-          code: 'invalid_arg',
-          message: 'cannot delete the only entry key for this type',
-          retryable: false,
-        });
-      }
       if (extraIndex >= 0) {
         state.extraLocalTokens.splice(extraIndex, 1);
         return;
       }
       const promote = state.extraLocalTokens.find((row) => row.poolId === id);
       if (!promote) {
-        throw adapterCommandError({
-          code: 'invalid_arg',
-          message: 'cannot delete the only entry key for this type',
-          retryable: false,
-        });
+        state.localTokens.delete(id);
+        state.localTokenNames.delete(id);
+        state.hiddenPrimaryIds.add(id);
+        return;
       }
       state.localTokens.set(id, promote.token);
       state.localTokenNames.set(id, promote.name);

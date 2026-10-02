@@ -77,12 +77,12 @@ describe('TokenDetailPanel', () => {
     expect(body.indexOf('端点')).toBeLessThan(body.indexOf('类型'));
   });
 
-  it('disables delete when this is the only key of the type', () => {
+  it('allows deleting the only key of the type', () => {
     const markup = render({}, {
       onDelete: () => {},
       siblingRows: [row()],
     });
-    expect(markup).toMatch(/data-token-delete=""[^>]*\bdisabled\b/);
+    expect(markup).not.toMatch(/data-token-delete=""[^>]*\bdisabled\b/);
   });
 
   it('disables the test button when the entry is not ready', () => {

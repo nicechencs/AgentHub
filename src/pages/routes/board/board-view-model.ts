@@ -171,7 +171,7 @@ export type BoardEndpointKeyTotals = {
   keys: number;
 };
 
-/** Four endpoint cards; counts are outbound entry keys already created. */
+/** Endpoint cards for outbound entry keys already created. */
 export function buildBoardEndpointTypeRows(
   createdKeyKinds: readonly LocalEndpointKind[] = [],
 ): BoardEndpointTypeRow[] {
@@ -182,12 +182,20 @@ export function buildBoardEndpointTypeRows(
     chat_completions: 0,
   };
   for (const kind of createdKeyKinds) counts[kind] += 1;
-  return LOCAL_ENDPOINT_KINDS.map((endpoint) => ({
+  return LOCAL_ENDPOINT_KINDS.filter((endpoint) => counts[endpoint.kind] > 0).map((endpoint) => ({
     kind: endpoint.kind,
     surface: endpoint.surface,
     path: endpoint.path,
     keyCount: counts[endpoint.kind],
   }));
+}
+
+export function visibleBoardEndpointKind(
+  selected: LocalEndpointKind | 'all',
+  rows: readonly Pick<BoardEndpointTypeRow, 'kind'>[],
+): LocalEndpointKind | 'all' {
+  if (selected === 'all' || rows.some((row) => row.kind === selected)) return selected;
+  return 'all';
 }
 
 export function boardEndpointKeyTotals(

@@ -9,6 +9,7 @@ import {
   resetGoldenLookupStats,
   resetMockAdapters,
   seedMockAdapterProfiles,
+  seedMockDefaultRoutePools,
   setMockRoutePoolV2,
 } from './adapter';
 import type { MockAdapterApplyPlan } from './adapter/plan';
@@ -45,6 +46,49 @@ describe('mock adapter projection', () => {
       'utf8',
     );
     expect(src).not.toMatch(/\bclassify(Account|Provider)Source\b/);
+  });
+
+  it('allows deleting the only primary entry key and leaves the pool empty', async () => {
+    const adapter = createMockAdapterPort(resolver);
+    seedMockDefaultRoutePools([{
+      id: 'pool-codex',
+      targetAgentId: 'codex',
+      surface: 'responses',
+      dialect: 'codex',
+      unifiedGatewayEnrolled: true,
+      members: [],
+      listedModels: [],
+    }]);
+
+    await expect(adapter.listLocalTokens()).resolves.toHaveLength(1);
+    await adapter.deleteLocalToken('pool-codex');
+    await expect(adapter.listLocalTokens()).resolves.toEqual([]);
+  });
+
+  it('promotes an extra key when primary is deleted and does not revive a hidden primary', async () => {
+    const adapter = createMockAdapterPort(resolver);
+    seedMockDefaultRoutePools([{
+      id: 'pool-codex',
+      targetAgentId: 'codex',
+      surface: 'responses',
+      dialect: 'codex',
+      unifiedGatewayEnrolled: true,
+      members: [],
+      listedModels: [],
+    }]);
+
+    await adapter.listLocalTokens();
+    const extra = await adapter.createLocalToken('pool-codex', '备用');
+    await adapter.deleteLocalToken('pool-codex');
+    await expect(adapter.listLocalTokens()).resolves.toMatchObject([
+      { id: 'pool-codex', token: extra.token, name: '备用', primary: true },
+    ]);
+
+    await adapter.deleteLocalToken('pool-codex');
+    await expect(adapter.listLocalTokens()).resolves.toEqual([]);
+    const hiddenExtra = await adapter.createLocalToken('pool-codex', '隐藏池备用');
+    await adapter.deleteLocalToken(hiddenExtra.id);
+    await expect(adapter.listLocalTokens()).resolves.toEqual([]);
   });
 
   it('plan carries sourceProduct from the plan owner', async () => {

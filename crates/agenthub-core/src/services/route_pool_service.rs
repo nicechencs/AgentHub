@@ -6,7 +6,7 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
-use rusqlite::{params, Transaction, TransactionBehavior};
+use rusqlite::{params, OptionalExtension, Transaction, TransactionBehavior};
 use uuid::Uuid;
 
 use super::adapter_projection::{
@@ -230,7 +230,10 @@ impl RoutePoolService {
         let mut records = Vec::new();
         for pool in &all_pools {
             let name = name_by_pool.remove(&pool.id).unwrap_or_default();
-            if pool.is_default && name == HIDDEN_PRIMARY_ENTRY_NAME {
+            // A hidden primary has been deleted. Keep the pool/member rows so
+            // the route can be restored later, but do not expose its rotated
+            // hub bearer again while the sentinel is present.
+            if name == HIDDEN_PRIMARY_ENTRY_NAME {
                 continue;
             }
             if !pool.is_default && pool.hub_token.trim().is_empty() {
@@ -459,71 +462,113 @@ impl RoutePoolService {
 
     pub fn delete_local_token(&self, id: &str) -> Result<()> {
         self.require_enabled()?;
-        let pool_id = if let Some(existing) = self.entry_keys.get(id)? {
-            existing.pool_id.clone()
-        } else if self.pools.get_pool(id)?.is_some() {
-            id.to_string()
-        } else {
-            return Err(AppError::NotFound(format!("entry key not found: {id}")));
-        };
-        let listed = self
-            .list_local_tokens()?
-            .into_iter()
-            .filter(|record| record.pool_id == pool_id)
-            .count();
-        if listed <= 1 {
-            return Err(AppError::InvalidArg(
-                "cannot delete the only entry key for this type".into(),
-            ));
-        }
         if let Some(existing) = self.entry_keys.get(id)? {
             if !existing.token.trim().is_empty() {
                 return self.entry_keys.delete(id);
             }
             return self.delete_primary_local_token(&existing.pool_id);
         }
-        self.delete_primary_local_token(id)
+        if self.pools.get_pool(id)?.is_some() {
+            return self.delete_primary_local_token(id);
+        }
+        Err(AppError::NotFound(format!("entry key not found: {id}")))
     }
 
     fn delete_primary_local_token(&self, pool_id: &str) -> Result<()> {
-        let extras: Vec<LocalEntryKey> = self
-            .entry_keys
-            .list()?
-            .into_iter()
-            .filter(|row| row.pool_id == pool_id && !row.token.trim().is_empty())
-            .collect();
-        if let Some(extra) = extras.into_iter().next() {
-            self.pools.set_hub_token(pool_id, &extra.token, &now())?;
-            self.upsert_primary_name(pool_id, &extra.name)?;
-            return self.entry_keys.delete(&extra.id);
-        }
-        Err(AppError::InvalidArg(
-            "cannot delete the only entry key for this type".into(),
-        ))
-    }
-
-    fn upsert_primary_name(&self, pool_id: &str, name: &str) -> Result<()> {
-        let stamp = now();
-        if let Some(existing) = self.entry_keys.get(pool_id)? {
-            if existing.token.trim().is_empty() {
-                self.entry_keys.update(&LocalEntryKey {
-                    name: name.to_owned(),
-                    updated_at: stamp,
-                    ..existing
-                })?;
-                return Ok(());
+        // The primary bearer lives on the pool, so deleting its display row
+        // alone would make list_local_tokens() expose the same key again.
+        // Rotate the bearer to invalidate the deleted key, then hide the
+        // primary row while preserving the pool and its route members. Keep
+        // the token/name/extra transition in one transaction so a storage
+        // failure cannot leave the old bearer live with a partial row update.
+        self.db.with_conn(|conn| {
+            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+            // Read the candidate inside the same immediate transaction as the
+            // promotion/deletion. Otherwise a concurrent extra-key update could
+            // make us promote a stale token and delete the newer row.
+            let extra: Option<(String, String, String)> = tx
+                .query_row(
+                    "SELECT id, name, token FROM local_entry_keys WHERE pool_id = ?1 AND trim(token) <> '' ORDER BY created_at ASC, id ASC LIMIT 1",
+                    params![pool_id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .optional()?;
+            let next_token = match extra.as_ref() {
+                Some((_id, _name, token)) => token.clone(),
+                None => generate_hub_token()?,
+            };
+            let next_name = extra
+                .as_ref()
+                .map(|(_id, name, _token)| name.as_str())
+                .unwrap_or(HIDDEN_PRIMARY_ENTRY_NAME);
+            let extra_id = extra.as_ref().map(|(id, _name, _token)| id.as_str());
+            let stamp = now();
+            let previous_hub_token: String = tx
+                .query_row(
+                    "SELECT hub_token FROM route_pools WHERE id = ?1",
+                    params![pool_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .ok_or_else(|| AppError::NotFound(format!("route pool not found: {pool_id}")))?;
+            let changed = tx.execute(
+                "UPDATE route_pools SET hub_token = ?2, updated_at = ?3 WHERE id = ?1",
+                params![pool_id, next_token, stamp],
+            )?;
+            if changed != 1 {
+                return Err(AppError::NotFound(format!("route pool not found: {pool_id}")));
             }
-            return Err(AppError::InvalidArg("entry key already exists".into()));
-        }
-        self.entry_keys.insert(&LocalEntryKey {
-            id: pool_id.to_owned(),
-            pool_id: pool_id.to_owned(),
-            name: name.to_owned(),
-            token: String::new(),
-            created_at: stamp.clone(),
-            updated_at: stamp,
-        })?;
-        Ok(())
+
+            let existing: Option<(String, String, String)> = tx
+                .query_row(
+                    "SELECT id, token, created_at FROM local_entry_keys WHERE id = ?1",
+                    params![pool_id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .optional()?;
+            match existing {
+                Some((_id, token, _created_at)) if token.trim().is_empty() => {
+                    tx.execute(
+                        "UPDATE local_entry_keys SET name = ?2, updated_at = ?3 WHERE id = ?1",
+                        params![pool_id, next_name, stamp],
+                    )?;
+                }
+                Some(_) => {
+                    return Err(AppError::InvalidArg(
+                        "entry key already exists for route pool".into(),
+                    ));
+                }
+                None => {
+                    tx.execute(
+                        r#"
+                        INSERT INTO local_entry_keys (id, pool_id, name, token, created_at, updated_at)
+                        VALUES (?1, ?2, ?3, '', ?4, ?4)
+                        "#,
+                        params![pool_id, pool_id, next_name, stamp],
+                    )?;
+                }
+            }
+            if let Some(extra_id) = extra_id {
+                let deleted = tx.execute(
+                    "DELETE FROM local_entry_keys WHERE id = ?1",
+                    params![extra_id],
+                )?;
+                if deleted != 1 {
+                    return Err(AppError::NotFound(format!(
+                        "entry key not found: {extra_id}"
+                    )));
+                }
+            }
+            update_generated_provider_projection(
+                &tx,
+                pool_id,
+                &previous_hub_token,
+                &next_token,
+                &stamp,
+            )?;
+            tx.commit()?;
+            Ok(())
+        })
     }
 
     fn unhide_primary_if_needed(&self, pool_id: &str) -> Result<()> {
@@ -2385,6 +2430,94 @@ impl RoutePoolService {
         } else {
             Err(AppError::Unsupported("route_pool_v2 is disabled".into()))
         }
+    }
+}
+
+/// Rotate the local bearer in the generated provider owned by this pool. The
+/// generated provider is a projection of the local route, so changing only
+/// `route_pools.hub_token` would leave its old bearer accepted as an alias.
+/// Upstream login fields remain untouched; only an exact occurrence of the
+/// old local bearer is replaced, and the write is part of the pool transaction.
+fn update_generated_provider_projection(
+    tx: &Transaction<'_>,
+    pool_id: &str,
+    previous_token: &str,
+    next_token: &str,
+    stamp: &str,
+) -> Result<()> {
+    if previous_token.trim().is_empty() || previous_token == next_token {
+        return Ok(());
+    }
+    let generated_provider_id: Option<String> = tx
+        .query_row(
+            "SELECT generated_provider_id FROM adapter_profiles WHERE id = ?1",
+            params![pool_id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten();
+    let providers: Vec<(String, String, String)> = {
+        let mut statement = tx.prepare("SELECT id, settings_config, meta FROM providers")?;
+        let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()?
+    };
+    for (provider_id, settings_raw, meta_raw) in providers {
+        let meta: Value = serde_json::from_str(&meta_raw)?;
+        let owned = meta.get("generatedBy").and_then(Value::as_str) == Some("adapter");
+        let linked = generated_provider_id.as_deref() == Some(provider_id.as_str())
+            || meta
+                .get("adapterProfileId")
+                .and_then(Value::as_str)
+                .is_some_and(|id| id == pool_id);
+        if !owned || !linked {
+            continue;
+        }
+        let mut settings: Value = serde_json::from_str(&settings_raw)?;
+        if !replace_local_bearer(&mut settings, previous_token, next_token) {
+            continue;
+        }
+        let serialized = serde_json::to_string(&settings)?;
+        let changed = tx.execute(
+            "UPDATE providers SET settings_config = ?2, updated_at = ?3 WHERE id = ?1",
+            params![provider_id, serialized, stamp],
+        )?;
+        if changed != 1 {
+            return Err(AppError::NotFound(format!(
+                "generated provider not found: {provider_id}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn replace_local_bearer(value: &mut Value, previous_token: &str, next_token: &str) -> bool {
+    match value {
+        Value::String(text) => {
+            if text == previous_token {
+                *text = next_token.to_owned();
+                true
+            } else if text.contains(previous_token) {
+                *text = text.replace(previous_token, next_token);
+                true
+            } else {
+                false
+            }
+        }
+        Value::Array(items) => {
+            let mut changed = false;
+            for item in items {
+                changed |= replace_local_bearer(item, previous_token, next_token);
+            }
+            changed
+        }
+        Value::Object(map) => {
+            let mut changed = false;
+            for item in map.values_mut() {
+                changed |= replace_local_bearer(item, previous_token, next_token);
+            }
+            changed
+        }
+        _ => false,
     }
 }
 

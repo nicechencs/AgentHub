@@ -1790,7 +1790,6 @@ export const zh = {
       deleteAlsoConnectionsHint: "连接页有 {count} 份：{names}",
       deleteAlsoConnectionsFailed: "入口 Key 已删除，但连接页上的没删掉",
       deleteFailed: "没法删除入口 Key",
-      deleteNeedExtra: "这类型只剩这一把，不能删除，可修改",
     },
     pool: {
       entry: "本机转发",
@@ -1807,12 +1806,14 @@ export const zh = {
       schedule: {
         label: "调度",
         hint: "「轮流用」只在同一优先级、同一传输、同一协议的可用登录之间轮换。",
+        mixedHint: "当前连接池的调度不同，请选择后统一设置。",
         priorityFailover: "按顺序用，出错换下一个",
         priorityFailoverHint: "先用优先级最高的合格登录。只有在它失败、且还没向下游写出内容时，才试下一个。",
         roundRobin: "轮流用",
         roundRobinHint: "在同一优先级、同一传输、同一协议的合格登录之间轮流。",
         saved: "调度已更新",
         saveFailed: "没法更新调度",
+        partialSaveFailed: "调度部分更新失败：{count} 个连接池没保存",
         createLabel: "新建池调度",
         createHint: "只在新建默认连接池时生效；已有池保持当前调度不变。",
       },

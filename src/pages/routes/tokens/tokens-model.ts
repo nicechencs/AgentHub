@@ -629,23 +629,6 @@ export function buildLocalTokenRows(
         listedModels: pool.listedModels,
         statuses: bridgeStatuses,
       }));
-    } else if (extraRecords.length === 0) {
-      rows.push(rowFromRuntime({
-        id: pool.id,
-        poolBacked: true,
-        primary: true,
-        canDelete: false,
-        name: '',
-        kind,
-        targetAgentId: pool.targetAgentId,
-        profile,
-        profileIds,
-        portHint: pool.gatewayPort,
-        status: bridgeStatuses[statusId],
-        unavailable: Boolean(statusErrors[statusId]),
-        listedModels: pool.listedModels,
-        statuses: bridgeStatuses,
-      }));
     }
     for (const extra of extraRecords) {
       coveredExtraIds.add(extra.id);
@@ -757,30 +740,15 @@ export type LocalTokenEditKeyGate = {
 
 export function localTokenDeleteGate(
   row: Pick<LocalTokenRow, 'canDelete' | 'poolBacked' | 'unavailable' | 'kind'>,
-  rows: readonly Pick<LocalTokenRow, 'kind' | 'poolBacked'>[] = [],
+  _rows: readonly Pick<LocalTokenRow, 'kind' | 'poolBacked'>[] = [],
   t?: TranslateFn,
 ): LocalTokenEditKeyGate {
-  if (row.unavailable) {
-    return {
-      enabled: false,
-      reason: t ? t('routes.runtime.unavailable') : '状态不可用',
-    };
-  }
   if (!row.poolBacked || !row.canDelete) {
     return {
       enabled: false,
       reason: t
         ? t('routes.tokens.editKeyNeedPool')
         : '这条还不是连接池入口 Key，先从路由建入口',
-    };
-  }
-  const sameKind = rows.filter((item) => item.kind === row.kind && item.poolBacked);
-  if (sameKind.length <= 1) {
-    return {
-      enabled: false,
-      reason: t
-        ? t('routes.tokens.deleteNeedExtra')
-        : '这类型只剩这一把，不能删除，可修改',
     };
   }
   return { enabled: true, reason: null };

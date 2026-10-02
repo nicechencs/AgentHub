@@ -52,6 +52,7 @@ import {
   localGatewayRetryAction as resolveLocalGatewayRetryAction,
   type BoardEndpointTypeRow,
   type LocalGatewayControl,
+  visibleBoardEndpointKind,
 } from '@/pages/routes/board/board-view-model';
 import {
   buildLocalTokenRows,
@@ -276,9 +277,14 @@ export default function RoutesBoardPage() {
     ],
   );
   const endpointRows = useMemo(
-    () => buildBoardEndpointTypeRows(visibleTokenKinds(tokenRows, hiddenTargetIds)),
+    () => buildBoardEndpointTypeRows(
+      visibleTokenKinds(tokenRows.filter((row) => Boolean(row.token)), hiddenTargetIds),
+    ),
     [hiddenTargetIds, tokenRows],
   );
+  useEffect(() => {
+    setEndpointKind((selected) => visibleBoardEndpointKind(selected, endpointRows));
+  }, [endpointRows]);
   const totals = boardEndpointKeyTotals(endpointRows);
   const usageSurface = endpointKind === 'all'
     ? 'all'

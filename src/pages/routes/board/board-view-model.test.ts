@@ -15,6 +15,7 @@ import {
   parseActivityFilter,
   partitionBoardRows,
   sumRouteRequestTotals,
+  visibleBoardEndpointKind,
 } from './board-view-model';
 
 function pool(partial: Partial<DefaultRoutePoolOverview> & Pick<DefaultRoutePoolOverview, 'id'>): DefaultRoutePoolOverview {
@@ -130,7 +131,7 @@ describe('buildLocalGatewayControl', () => {
 });
 
 describe('buildBoardEndpointTypeRows', () => {
-  it('lists four endpoint kinds and counts created entry keys', () => {
+  it('lists only endpoint kinds with created entry keys', () => {
     const rows = buildBoardEndpointTypeRows([
       'messages',
       'responses_codex',
@@ -140,19 +141,32 @@ describe('buildBoardEndpointTypeRows', () => {
       'messages',
       'responses_codex',
       'responses_grok',
-      'chat_completions',
     ]);
     expect(rows.map((row) => row.path)).toEqual([
       '/v1/messages',
       '/v1/responses',
       '/v1/responses',
-      '/v1/chat/completions',
     ]);
     expect(rows.find((row) => row.kind === 'messages')).toMatchObject({ keyCount: 1 });
     expect(rows.find((row) => row.kind === 'responses_codex')).toMatchObject({ keyCount: 1 });
     expect(rows.find((row) => row.kind === 'responses_grok')).toMatchObject({ keyCount: 1 });
-    expect(rows.find((row) => row.kind === 'chat_completions')).toMatchObject({ keyCount: 0 });
+    expect(rows.find((row) => row.kind === 'chat_completions')).toBeUndefined();
     expect(boardEndpointKeyTotals(rows)).toEqual({ keys: 3 });
+  });
+
+  it('shows no endpoint cards when all entry keys are gone', () => {
+    expect(buildBoardEndpointTypeRows()).toEqual([]);
+    expect(boardEndpointKeyTotals(buildBoardEndpointTypeRows())).toEqual({ keys: 0 });
+  });
+
+  it('resets a selected kind after its last key disappears', () => {
+    expect(visibleBoardEndpointKind('responses_codex', [
+      { kind: 'messages' },
+    ])).toBe('all');
+    expect(visibleBoardEndpointKind('responses_codex', [
+      { kind: 'responses_codex' },
+    ])).toBe('responses_codex');
+    expect(visibleBoardEndpointKind('all', [])).toBe('all');
   });
 });
 

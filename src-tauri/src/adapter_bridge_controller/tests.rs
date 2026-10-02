@@ -387,6 +387,154 @@ fn manual_start_fails_when_default_pool_fails() {
 }
 
 #[test]
+fn deleting_entry_keys_restarts_its_pool_and_retires_bearers() {
+    tauri::async_runtime::block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
+        hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        let profile = seed_active_bridge(&hub, "kimi-delete-extra", 43121);
+        let pool = hub
+            .route_pools()
+            .get(&profile.id)
+            .unwrap()
+            .expect("seeded route pool");
+        let extra = hub
+            .route_pools()
+            .create_local_token(&pool.id, "额外入口")
+            .unwrap();
+        let promoted = hub
+            .route_pools()
+            .create_local_token(&pool.id, "晋升入口")
+            .unwrap();
+        let host = Arc::new(BridgeRuntimeHost::new());
+        let spec = hub
+            .adapter_bridge()
+            .pool_listener_spec(&pool, hub.route_pools().pair_adapter_flags());
+        let started = host.start(spec).await.unwrap();
+        sync_extra_local_bearers(hub.clone(), host.as_ref())
+            .await
+            .unwrap();
+        let primary_token = host.local_token(&pool.id).unwrap().unwrap();
+        assert_eq!(started.port, host.status(&pool.id).unwrap().unwrap().port);
+        assert!(hub
+            .route_pools()
+            .list_accepted_local_bearers()
+            .unwrap()
+            .iter()
+            .any(|(token, id)| token == &extra.token && id == &pool.id));
+
+        let coordinator = Arc::new(AdapterSagaCoordinator::new());
+        let exit = crate::exit_coordinator::ExitCoordinator::new();
+        delete_local_gateway_token(
+            hub.clone(),
+            host.clone(),
+            Arc::clone(&coordinator),
+            exit.lifecycle_barrier(),
+            extra.id,
+        )
+        .await
+        .unwrap();
+
+        assert!(host.status(&pool.id).unwrap().is_some());
+        assert_eq!(
+            host.local_token(&pool.id).unwrap().as_deref(),
+            Some(primary_token.as_str())
+        );
+        assert!(!hub
+            .route_pools()
+            .list_accepted_local_bearers()
+            .unwrap()
+            .iter()
+            .any(|(token, id)| token == &extra.token && id == &pool.id));
+
+        delete_local_gateway_token(
+            hub.clone(),
+            host.clone(),
+            Arc::clone(&coordinator),
+            exit.lifecycle_barrier(),
+            pool.id.clone(),
+        )
+        .await
+        .unwrap();
+        let promoted_token = host.local_token(&pool.id).unwrap().unwrap();
+        assert_eq!(promoted_token, promoted.token);
+        let accepted = hub.route_pools().list_accepted_local_bearers().unwrap();
+        assert!(!accepted
+            .iter()
+            .any(|(token, id)| token == &primary_token && id == &pool.id));
+        assert!(accepted
+            .iter()
+            .any(|(token, id)| token == &promoted.token && id == &pool.id));
+
+        delete_local_gateway_token(
+            hub.clone(),
+            host.clone(),
+            coordinator,
+            exit.lifecycle_barrier(),
+            pool.id.clone(),
+        )
+        .await
+        .unwrap();
+        assert_ne!(
+            host.local_token(&pool.id).unwrap().as_deref(),
+            Some(promoted.token.as_str())
+        );
+        assert!(!hub
+            .route_pools()
+            .list_accepted_local_bearers()
+            .unwrap()
+            .iter()
+            .any(|(token, id)| token == &promoted.token && id == &pool.id));
+        host.shutdown().await.unwrap();
+    });
+}
+
+#[test]
+fn deleting_entry_key_restores_listener_when_persistence_fails() {
+    tauri::async_runtime::block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
+        hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        let profile = seed_active_bridge(&hub, "kimi-delete-failure", 43121);
+        let pool = hub
+            .route_pools()
+            .get(&profile.id)
+            .unwrap()
+            .expect("seeded route pool");
+        let host = Arc::new(BridgeRuntimeHost::new());
+        let spec = hub
+            .adapter_bridge()
+            .pool_listener_spec(&pool, hub.route_pools().pair_adapter_flags());
+        host.start(spec).await.unwrap();
+        let before = host.local_token(&pool.id).unwrap().unwrap();
+        install_sql_trigger(
+            &hub,
+            "CREATE TRIGGER injected_delete_route_pool_failure BEFORE UPDATE OF hub_token ON route_pools BEGIN SELECT RAISE(ABORT, 'injected delete failure'); END;",
+        );
+
+        let result = delete_local_gateway_token(
+            hub.clone(),
+            host.clone(),
+            Arc::new(AdapterSagaCoordinator::new()),
+            crate::exit_coordinator::ExitCoordinator::new().lifecycle_barrier(),
+            pool.id.clone(),
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(host.status(&pool.id).unwrap().is_some());
+        assert_eq!(
+            host.local_token(&pool.id).unwrap().as_deref(),
+            Some(before.as_str())
+        );
+        assert_eq!(
+            hub.route_pools().list_local_tokens().unwrap()[0].token,
+            before
+        );
+        host.shutdown().await.unwrap();
+    });
+}
+
+#[test]
 fn manual_start_fails_when_only_nondefault_pool_fails() {
     tauri::async_runtime::block_on(async {
         let dir = tempfile::tempdir().unwrap();

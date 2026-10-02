@@ -1959,15 +1959,56 @@ pub(crate) async fn delete_local_gateway_token(
 ) -> Result<(), String> {
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_profile("local-gateway").await;
-    let pool_id = id.clone();
-    with_hub_blocking(hub.clone(), move |hub| {
+    // Named extras use their own row id. Resolve the owning pool before the
+    // delete so the live listener and its bearer table are reconciled for the
+    // actual edge rather than silently leaving an extra's pool running.
+    let requested_id = id.clone();
+    let pool_id = with_hub_blocking(hub.clone(), move |hub| {
+        let pool_id = hub
+            .route_pools()
+            .list_local_tokens()
+            .map_err(|error| map_err_string("list_local_tokens", error))?
+            .into_iter()
+            .find(|record| record.id == requested_id)
+            .map(|record| record.pool_id)
+            .unwrap_or(requested_id);
+        Ok(pool_id)
+    })
+    .await?;
+    // Close the old auth edge before touching persistence. If the delete or a
+    // later refresh fails, the old bearer stays unusable and the user can retry
+    // after fixing the reported problem.
+    let was_running = stop_pool_listener_if_running(&host, &pool_id).await?;
+    let delete_result = with_hub_blocking(hub.clone(), move |hub| {
         hub.route_pools()
             .delete_local_token(&id)
             .map_err(|error| map_err_string("delete_local_token", error))
     })
-    .await?;
+    .await;
+    if let Err(error) = delete_result {
+        if was_running {
+            if let Err(restore_error) =
+                start_pool_listener_from_pool_id(hub.clone(), &host, pool_id.clone()).await
+            {
+                tracing::error!(
+                    target: targets::GUI,
+                    op = "delete_local_gateway_token",
+                    code = CODE_BRIDGE_START,
+                    error = %restore_error,
+                    "删除入口失败后恢复本机转发失败"
+                );
+                return Err(format!("{error}；删除未完成，本机转发恢复失败，请点重试。"));
+            }
+        }
+        return Err(error);
+    }
+    // Keep the affected pool stopped while rebuilding the accepted-bearer
+    // table. If this read or the subsequent start fails, no old key can be
+    // accepted by a still-running edge.
     sync_extra_local_bearers(hub.clone(), &host).await?;
-    restart_pool_listener_if_running(hub, &host, pool_id).await?;
+    if was_running {
+        start_pool_listener_after_local_token_delete(hub, &host, pool_id).await?;
+    }
     Ok(())
 }
 
@@ -2077,20 +2118,80 @@ pub(crate) async fn restart_pool_listener_if_running(
     })
     .await?;
     let Some(pool) = pools.into_iter().find(|pool| pool.id == pool_id) else {
+        // A pool whose final visible entry was deleted may no longer be in the
+        // listener set. It can still have a live runtime, so stop that runtime
+        // instead of treating the missing pool as a no-op.
+        stop_pool_listener_if_running(host, &pool_id).await?;
         return Ok(());
     };
-    let running = host
-        .status(&pool.id)
-        .map_err(map_bridge_host_error)?
-        .is_some();
+    let running = stop_pool_listener_if_running(host, &pool.id).await?;
     if !running {
         return Ok(());
     }
-    match host.stop(&pool.id).await {
-        Ok(_) => {}
-        Err(BridgeHostError::NotRunning) => {}
-        Err(error) => return Err(map_bridge_host_error(error)),
+    let spec = with_hub_blocking(hub, move |hub| {
+        Ok(hub
+            .adapter_bridge()
+            .pool_listener_spec(&pool, hub.route_pools().pair_adapter_flags()))
+    })
+    .await?;
+    host.start(spec).await.map_err(map_bridge_host_error)?;
+    Ok(())
+}
+
+async fn stop_pool_listener_if_running(
+    host: &BridgeRuntimeHost,
+    pool_id: &str,
+) -> Result<bool, String> {
+    let running = host
+        .status(pool_id)
+        .map_err(map_bridge_host_error)?
+        .is_some();
+    if !running {
+        return Ok(false);
     }
+    match host.stop(pool_id).await {
+        Ok(_) | Err(BridgeHostError::NotRunning) => Ok(true),
+        Err(error) => Err(map_bridge_host_error(error)),
+    }
+}
+
+async fn start_pool_listener_after_local_token_delete(
+    hub: Arc<AgentHub>,
+    host: &BridgeRuntimeHost,
+    pool_id: String,
+) -> Result<(), String> {
+    let pools = with_hub_blocking(hub.clone(), move |hub| {
+        hub.route_pools()
+            .list_gateway_listener_pools()
+            .map_err(|error| map_err_string("list_gateway_listener_pools", error))
+    })
+    .await?;
+    let Some(pool) = pools.into_iter().find(|pool| pool.id == pool_id) else {
+        return Ok(());
+    };
+    start_pool_listener_from_pool(hub, host, pool).await
+}
+
+async fn start_pool_listener_from_pool_id(
+    hub: Arc<AgentHub>,
+    host: &BridgeRuntimeHost,
+    pool_id: String,
+) -> Result<(), String> {
+    let pool = with_hub_blocking(hub.clone(), move |hub| {
+        hub.route_pools()
+            .get(&pool_id)
+            .map_err(|error| map_err_string("get_route_pool", error))
+    })
+    .await?
+    .ok_or_else(|| "删除未完成，本机转发恢复失败，请点重试。".to_owned())?;
+    start_pool_listener_from_pool(hub, host, pool).await
+}
+
+async fn start_pool_listener_from_pool(
+    hub: Arc<AgentHub>,
+    host: &BridgeRuntimeHost,
+    pool: agenthub_core::models::RoutePool,
+) -> Result<(), String> {
     let spec = with_hub_blocking(hub, move |hub| {
         Ok(hub
             .adapter_bridge()

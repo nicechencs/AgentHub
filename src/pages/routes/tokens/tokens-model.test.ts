@@ -156,7 +156,7 @@ describe('tokens-model', () => {
     expect(localTokenDeleteGate(rows[0]).enabled).toBe(false);
   });
 
-  it('lists named extra keys under the same type and blocks deleting the last key', () => {
+  it('lists named extra keys under the same type and allows deleting each key', () => {
     const rows = buildLocalTokenRows(
       [
         profile({
@@ -209,8 +209,8 @@ describe('tokens-model', () => {
       primary: false,
     });
     expect(localTokenDeleteGate(rows[1], rows).enabled).toBe(true);
-    expect(localTokenDeleteGate(rows[0], [rows[0]]).enabled).toBe(false);
-    expect(localTokenDeleteGate(rows[0], [rows[0]]).reason).toContain('只剩这一把');
+    expect(localTokenDeleteGate(rows[0], [rows[0]]).enabled).toBe(true);
+    expect(localTokenDeleteGate({ ...rows[0], unavailable: true }, [rows[0]]).enabled).toBe(true);
   });
 
   it('names an empty default key 默认 instead of the type label', () => {
@@ -282,7 +282,7 @@ describe('tokens-model', () => {
     });
   });
 
-  it('keeps an empty pool row when listLocalTokens did not return a key', () => {
+  it('hides an empty pool after listLocalTokens confirms every key was deleted', () => {
     const rows = buildLocalTokenRows(
       [profile({
         id: 'codex-bridge',
@@ -304,13 +304,7 @@ describe('tokens-model', () => {
       {},
       [],
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      id: 'pool-codex',
-      poolBacked: true,
-      token: null,
-      maskedToken: null,
-    });
+    expect(rows).toEqual([]);
   });
 
   it('sorts rows by endpoint kind then name', () => {
@@ -508,7 +502,6 @@ describe('tokens-model', () => {
     expect(rows[0]?.token).toBeNull();
     expect(rows[0]?.maskedToken).toBeNull();
   });
-
 
   it('marks pool rows editable and leftover profile rows not editable for setLocalToken', () => {
     const poolRows = buildLocalTokenRows(

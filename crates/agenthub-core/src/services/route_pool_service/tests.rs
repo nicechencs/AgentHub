@@ -177,13 +177,14 @@ fn accepted_bearers_include_projected_local_bearer_for_same_pool() {
     let mut profile = bridge_profile("codex-dsh-pool", "acc-dsh", AgentId::Codex, true);
     profile.generated_provider_id = Some("prov-dsh".into());
     profiles.create(&profile).unwrap();
-    ProviderRepo::new(db)
+    ProviderRepo::new(db.clone())
         .create(&Provider {
             id: "prov-dsh".into(),
             agent_id: AgentId::Codex,
             name: "Codex DSH projection".into(),
             settings_config: json!({
                 "format": "toml",
+                "content": "OPENAI_API_KEY = \"ahb_projected_uYvc\"",
                 "auth": { "OPENAI_API_KEY": "ahb_projected_uYvc" },
             }),
             meta: json!({
@@ -196,8 +197,9 @@ fn accepted_bearers_include_projected_local_bearer_for_same_pool() {
         })
         .unwrap();
     let pool = service
-        .create_legacy_pool(&profile, "ahb_hub_F9FE", true)
+        .create_legacy_pool(&profile, "ahb_projected_uYvc", true)
         .unwrap();
+    let promoted = service.create_local_token(&pool.id, "晋升入口").unwrap();
     let accepted = service.list_accepted_local_bearers().unwrap();
     assert!(
         accepted.contains(&(pool.hub_token.clone(), pool.id.clone())),
@@ -206,6 +208,27 @@ fn accepted_bearers_include_projected_local_bearer_for_same_pool() {
     assert!(
         accepted.contains(&("ahb_projected_uYvc".into(), pool.id.clone())),
         "{accepted:?}"
+    );
+
+    service.delete_local_token(&pool.id).unwrap();
+    let rotated = service.get(&pool.id).unwrap().expect("rotated pool");
+    assert_eq!(rotated.hub_token, promoted.token);
+    let accepted = service.list_accepted_local_bearers().unwrap();
+    assert!(!accepted
+        .iter()
+        .any(|(token, pool_id)| token == "ahb_projected_uYvc" && pool_id == &pool.id));
+    assert!(accepted.contains(&(rotated.hub_token.clone(), pool.id.clone())));
+    let projected = ProviderRepo::new(db)
+        .get_by_id("prov-dsh")
+        .unwrap()
+        .expect("generated provider");
+    assert_eq!(
+        projected.settings_config["auth"]["OPENAI_API_KEY"],
+        rotated.hub_token
+    );
+    assert_eq!(
+        projected.settings_config["content"],
+        format!("OPENAI_API_KEY = \"{}\"", rotated.hub_token)
     );
 }
 
@@ -386,6 +409,37 @@ async fn demoted_manual_dsh_tokens_authenticate_on_shared_listener() {
         );
     }
 
+    service.delete_local_token("entry-q6gg").unwrap();
+    host.set_extra_local_bearers(service.list_accepted_local_bearers().unwrap())
+        .unwrap();
+    let deleted = client
+        .get(&models)
+        .header("authorization", "Bearer ahb_entry_q6gg")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        deleted.status(),
+        reqwest::StatusCode::UNAUTHORIZED,
+        "deleted extra bearer must be rejected by the running listener"
+    );
+
+    service.delete_local_token(&manual.id).unwrap();
+    host.stop(&manual.id).await.unwrap();
+    host.set_extra_local_bearers(service.list_accepted_local_bearers().unwrap())
+        .unwrap();
+    let deleted_primary = client
+        .get(&models)
+        .header("authorization", "Bearer ahb_hub_z7cc")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        deleted_primary.status(),
+        reqwest::StatusCode::UNAUTHORIZED,
+        "deleted primary bearer must be rejected by the running listener"
+    );
+
     host.shutdown().await.unwrap();
 }
 
@@ -467,9 +521,15 @@ fn named_extra_entry_keys_can_be_created_renamed_and_deleted() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].name, "默认");
     assert_eq!(listed[0].token, "ahb_after-name");
-    let err = service.delete_local_token(&pool.id).unwrap_err();
-    assert!(err.to_string().contains("only entry key"));
-    assert_eq!(service.list_local_tokens().unwrap().len(), 1);
+    service.delete_local_token(&pool.id).unwrap();
+    assert!(service.list_local_tokens().unwrap().is_empty());
+    let saved = service.get(&pool.id).unwrap().expect("pool retained");
+    assert_ne!(saved.hub_token, "ahb_after-name");
+    assert!(!service
+        .list_accepted_local_bearers()
+        .unwrap()
+        .iter()
+        .any(|(token, pool_id)| token == "ahb_after-name" && pool_id == &pool.id));
 }
 
 #[test]
@@ -490,17 +550,60 @@ fn deleting_default_entry_key_promotes_the_oldest_extra() {
 }
 
 #[test]
-fn deleting_the_last_entry_key_is_rejected() {
-    let (_dir, _db, service, _) = tmp();
+fn deleting_the_last_entry_key_rotates_and_hides_the_primary() {
+    let (dir, db, service, _) = tmp();
     let pool = service
         .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
         .unwrap();
     let before = service.list_local_tokens().unwrap()[0].token.clone();
-    let err = service.delete_local_token(&pool.id).unwrap_err();
-    assert!(err.to_string().contains("only entry key"));
-    let listed = service.list_local_tokens().unwrap();
-    assert_eq!(listed.len(), 1);
-    assert_eq!(listed[0].token, before);
+    service.delete_local_token(&pool.id).unwrap();
+    assert!(service.list_local_tokens().unwrap().is_empty());
+    let saved = service.get(&pool.id).unwrap().expect("pool retained");
+    assert_ne!(saved.hub_token, before);
+    let accepted = service.list_accepted_local_bearers().unwrap();
+    assert!(!accepted
+        .iter()
+        .any(|(token, pool_id)| token == &before && pool_id == &pool.id));
+
+    // Reopening the same store must keep the sentinel hidden. A restart must
+    // not reconstruct the deleted entry from the rotated pool hub token.
+    drop(service);
+    drop(db);
+    let reopened_db = Database::open(&dir.path().join("route-pool-service.db")).unwrap();
+    let reopened = RoutePoolService::new(reopened_db);
+    assert!(reopened.list_local_tokens().unwrap().is_empty());
+    assert!(reopened
+        .list_accepted_local_bearers()
+        .unwrap()
+        .iter()
+        .all(|(token, pool_id)| token != &before || pool_id != &pool.id));
+    assert!(reopened.get(&pool.id).unwrap().is_some());
+}
+
+#[test]
+fn deleting_a_non_default_primary_hides_it_without_removing_members() {
+    let (_dir, _db, service, profiles) = tmp();
+    let profile = bridge_profile("legacy-pool", "acc-legacy", AgentId::Codex, true);
+    profiles.create(&profile).unwrap();
+    let pool = service
+        .create_legacy_pool(&profile, "ahb_legacy-before", false)
+        .unwrap();
+    let members_before = service.list_members(&pool.id).unwrap();
+
+    service.delete_local_token(&pool.id).unwrap();
+
+    assert!(service.list_local_tokens().unwrap().is_empty());
+    assert_eq!(service.list_members(&pool.id).unwrap(), members_before);
+    assert!(!service
+        .list_gateway_listener_pools()
+        .unwrap()
+        .iter()
+        .any(|item| item.id == pool.id));
+    assert!(!service
+        .list_accepted_local_bearers()
+        .unwrap()
+        .iter()
+        .any(|(token, pool_id)| token == "ahb_legacy-before" && pool_id == &pool.id));
 }
 
 #[test]
