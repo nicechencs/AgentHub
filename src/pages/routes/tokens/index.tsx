@@ -723,6 +723,7 @@ export default function RoutesTokensPage() {
             initialBaseUrl={importSession.draft.baseUrl}
             initialApiKey={importSession.draft.apiKey}
             initialModel={importSession.draft.model}
+            initialPiApi={importSession.draft.piApi}
             compactGrokApiBackend={importSession.draft.apiBackend}
             onOpenChange={(open) => {
               if (!open) setImportSession(null);

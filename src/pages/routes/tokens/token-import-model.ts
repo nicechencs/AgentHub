@@ -199,8 +199,13 @@ export function tokenImportApiKeyDraft(
           : undefined
     : undefined;
   if (agentId === 'pi' && !piApi) return null;
+  const baseUrl = parts.portPending
+    ? undefined
+    : agentId === 'pi' && row.kind === 'responses_codex'
+      ? `${parts.origin}/v1`
+      : parts.origin;
   return {
-    ...(parts.portPending ? {} : { baseUrl: parts.origin }),
+    ...(baseUrl ? { baseUrl } : {}),
     apiKey,
     ...(model ? { model } : {}),
     ...(piApi ? { piApi } : {}),

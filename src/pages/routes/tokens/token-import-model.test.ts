@@ -220,9 +220,10 @@ describe('tokenImportApiKeyDraft', () => {
       kind: 'responses_codex',
       token: 'ahb_secret',
       path: '/v1/responses',
-      endpoint: null,
+      endpoint: '127.0.0.1:17034',
       listedModels: ['gpt-5.1-codex'],
     }, 'pi')).toEqual({
+      baseUrl: 'http://127.0.0.1:17034/v1',
       apiKey: 'ahb_secret',
       model: 'gpt-5.1-codex',
       piApi: 'openai-responses',
@@ -231,11 +232,23 @@ describe('tokenImportApiKeyDraft', () => {
       kind: 'chat_completions',
       token: 'ahb_secret',
       path: '/v1/chat/completions',
-      endpoint: null,
+      endpoint: '127.0.0.1:17034',
       listedModels: [],
     }, 'pi')).toEqual({
+      baseUrl: 'http://127.0.0.1:17034',
       apiKey: 'ahb_secret',
       piApi: 'openai-completions',
+    });
+    expect(tokenImportApiKeyDraft({
+      kind: 'responses_codex',
+      token: 'ahb_secret',
+      path: '/v1/responses',
+      endpoint: '127.0.0.1:17034',
+      listedModels: ['gpt-5.1-codex'],
+    }, 'codex')).toEqual({
+      baseUrl: 'http://127.0.0.1:17034',
+      apiKey: 'ahb_secret',
+      model: 'gpt-5.1-codex',
     });
     expect(tokenImportApiKeyDraft({
       kind: 'responses_grok',
