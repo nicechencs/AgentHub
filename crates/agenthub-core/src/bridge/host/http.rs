@@ -31,7 +31,15 @@ pub(super) fn router(gateway: Gateway) -> Router {
             post(responses).fallback(conversation_method_not_allowed),
         )
         .route(
+            "/responses",
+            post(responses).fallback(conversation_method_not_allowed),
+        )
+        .route(
             "/v1/messages",
+            post(messages).fallback(conversation_method_not_allowed),
+        )
+        .route(
+            "/messages",
             post(messages).fallback(conversation_method_not_allowed),
         )
         .route(

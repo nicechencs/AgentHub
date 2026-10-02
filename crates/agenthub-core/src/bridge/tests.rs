@@ -435,6 +435,105 @@ async fn models_returns_openai_list_shape_on_both_paths() {
 }
 
 #[tokio::test]
+async fn chat_completions_accepts_versioned_and_unversioned_paths() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let mut chat_spec = spec("chat-path-aliases", 0, upstream_port);
+    chat_spec.upstream.local_surface = BridgeLocalSurface::ChatCompletions;
+    let status = host.start(chat_spec).await.expect("start");
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .expect("client");
+
+    for path in ["/v1/chat/completions", "/chat/completions"] {
+        let response = http
+            .post(format!("http://127.0.0.1:{}{path}", status.port))
+            .header(header::AUTHORIZATION, "Bearer local-test-token")
+            .json(&json!({
+                "model": "test",
+                "messages": [{ "role": "user", "content": "hello" }]
+            }))
+            .send()
+            .await
+            .unwrap_or_else(|err| panic!("POST {path}: {err}"));
+        assert_eq!(response.status(), StatusCode::OK, "POST {path}");
+        let body: Value = response.json().await.expect("chat json");
+        assert_eq!(body["choices"][0]["message"]["content"], "hello");
+    }
+
+    host.stop("chat-path-aliases").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn responses_accepts_versioned_and_unversioned_paths() {
+    let (upstream_port, upstream_task) = anthropic_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(anthropic_spec("responses-path-aliases", 0, upstream_port))
+        .await
+        .expect("start");
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .expect("client");
+
+    for path in ["/v1/responses", "/responses"] {
+        let response = http
+            .post(format!("http://127.0.0.1:{}{path}", status.port))
+            .header(header::AUTHORIZATION, "Bearer local-test-token")
+            .json(&json!({"model":"test","input":"hello"}))
+            .send()
+            .await
+            .unwrap_or_else(|err| panic!("POST {path}: {err}"));
+        assert_eq!(response.status(), StatusCode::OK, "POST {path}");
+        let body: Value = response.json().await.expect("responses json");
+        assert_eq!(body["object"], "response");
+        assert_eq!(body["output"][0]["content"][0]["text"], "你好");
+    }
+
+    host.stop("responses-path-aliases").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn messages_accepts_versioned_and_unversioned_paths() {
+    let (upstream_port, _captured, upstream_task) = capturing_codex_responses_sse_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(codex_spec("messages-path-aliases", 0, upstream_port))
+        .await
+        .expect("start");
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .expect("client");
+
+    for path in ["/v1/messages", "/messages"] {
+        let response = http
+            .post(format!("http://127.0.0.1:{}{path}", status.port))
+            .header(header::AUTHORIZATION, "Bearer local-test-token")
+            .json(&json!({
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 32,
+                "stream": false,
+                "messages": [{ "role": "user", "content": "hello" }]
+            }))
+            .send()
+            .await
+            .unwrap_or_else(|err| panic!("POST {path}: {err}"));
+        assert_eq!(response.status(), StatusCode::OK, "POST {path}");
+        let body: Value = response.json().await.expect("messages json");
+        assert_eq!(body["type"], "message");
+        assert_eq!(body["content"][0]["text"], "pong");
+    }
+
+    host.stop("messages-path-aliases").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
 async fn models_returns_empty_list_when_mapping_and_default_are_missing() {
     let (upstream_port, upstream_task) = upstream().await;
     let host = BridgeRuntimeHost::new();
@@ -811,15 +910,16 @@ async fn responses_rejects_missing_or_invalid_local_token() {
         .start(spec("auth", 0, upstream_port))
         .await
         .expect("start");
-    let url = format!("http://127.0.0.1:{}/v1/responses", status.port);
-    let response = client()
-        .await
-        .post(url)
-        .json(&json!({"model":"test","input":"hello"}))
-        .send()
-        .await
-        .expect("request");
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    for path in ["/v1/responses", "/responses"] {
+        let response = client()
+            .await
+            .post(format!("http://127.0.0.1:{}{path}", status.port))
+            .json(&json!({"model":"test","input":"hello"}))
+            .send()
+            .await
+            .unwrap_or_else(|err| panic!("POST {path}: {err}"));
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "POST {path}");
+    }
     host.stop("auth").await.expect("stop");
     upstream_task.abort();
 }
@@ -839,7 +939,9 @@ async fn get_on_conversation_paths_returns_method_not_allowed_json() {
 
     for path in [
         "/v1/responses",
+        "/responses",
         "/v1/messages",
+        "/messages",
         "/v1/chat/completions",
         "/chat/completions",
     ] {
@@ -3995,6 +4097,23 @@ async fn two_profiles_two_bearers_two_surfaces_do_not_cross() {
         cross_responses_msg.contains("/v1/messages")
             && cross_responses_msg.contains("/v1/responses"),
         "{cross_responses_msg}"
+    );
+
+    let cross_responses_alias = http
+        .post(format!("http://127.0.0.1:{port}/responses"))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .json(&json!({"model": "grok-4.5", "input": "hello"}))
+        .send()
+        .await
+        .expect("unversioned responses for A");
+    assert_eq!(cross_responses_alias.status(), StatusCode::NOT_FOUND);
+    let cross_responses_alias_body: Value = cross_responses_alias
+        .json()
+        .await
+        .expect("unversioned surface_mismatch json");
+    assert_eq!(
+        cross_responses_alias_body["error"]["code"],
+        cross_responses_body["error"]["code"]
     );
 
     let served_responses = http
