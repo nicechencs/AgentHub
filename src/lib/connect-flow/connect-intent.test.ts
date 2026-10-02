@@ -180,15 +180,29 @@ describe('connectApiKeyDraftState / readConnectApiKeyDraft', () => {
       apiKey: 'ahb_secret',
       model: 'kimi-k2',
       apiBackend: 'responses',
+      piApi: 'openai-responses',
     });
     expect(readConnectApiKeyDraft(state)).toEqual({
       baseUrl: 'http://127.0.0.1:17034',
       apiKey: 'ahb_secret',
       model: 'kimi-k2',
       apiBackend: 'responses',
+      piApi: 'openai-responses',
     });
     expect(readConnectApiKeyDraft(null)).toBeNull();
     expect(readConnectApiKeyDraft({})).toBeNull();
     expect(readConnectApiKeyDraft({ other: true })).toBeNull();
+  });
+
+  it('drops an illegal Pi API value instead of passing it to the editor', () => {
+    expect(readConnectApiKeyDraft({
+      connectApiKeyDraft: {
+        apiKey: 'ahb_secret',
+        piApi: 'openai-chat',
+      },
+    })).toEqual({ apiKey: 'ahb_secret' });
+    expect(readConnectApiKeyDraft({
+      connectApiKeyDraft: { piApi: 'openai-chat' },
+    })).toBeNull();
   });
 });

@@ -222,6 +222,7 @@ function extractPiProviderVars(root: unknown): ProviderFormVars {
     baseUrl: typeof provider?.baseUrl === 'string' ? provider.baseUrl : '',
     apiKey: providerKey || authHit?.key || '',
     model: typeof model?.id === 'string' ? model.id : '',
+    piApi: typeof provider?.api === 'string' ? provider.api.trim() : '',
   };
 }
 
@@ -465,9 +466,9 @@ function applyPiProviderVars(root: Record<string, unknown>, vars: ProviderFormVa
     if (url) provider.baseUrl = url;
     if (key) provider.apiKey = key;
     else if (typeof provider.apiKey === 'string') provider.apiKey = REDACTED_MARKER;
-    if (typeof provider.api !== 'string' || !provider.api) {
-      provider.api = defaultPiProviderApi(slug);
-    }
+    const existingApi = typeof provider.api === 'string' ? provider.api.trim() : '';
+    const requestedApi = typeof vars.piApi === 'string' ? vars.piApi.trim() : '';
+    provider.api = requestedApi || existingApi || defaultPiProviderApi(slug);
     model.id = modelId;
     if (typeof model.name !== 'string' || !model.name) model.name = modelId;
     models[0] = model;

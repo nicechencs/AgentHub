@@ -54,6 +54,12 @@ const CODE_BRIDGE_RESTORE_START: &str = "adapter.bridge_restore_start";
 const CODE_BRIDGE_PORT_IN_USE: &str = "adapter.port_in_use";
 const LOCAL_FORWARD_LIFECYCLE_EVENT: &str = "local-forward-lifecycle";
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LocalGatewayStartMode {
+    RestoreBestEffort,
+    ManualRequiredDefaults,
+}
+
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
 enum LocalForwardLifecyclePhase {
@@ -765,7 +771,7 @@ pub(crate) fn restore_adapter_bridges(
                 hub.clone(),
                 host.clone(),
                 restarting.load(Ordering::SeqCst),
-                true,
+                LocalGatewayStartMode::RestoreBestEffort,
             )
             .await;
             let bearer_sync = sync_extra_local_bearers(hub.clone(), &host).await;
@@ -1631,7 +1637,7 @@ pub(crate) async fn start_local_gateway(
         hub.clone(),
         host.clone(),
         restarting.load(Ordering::SeqCst),
-        false,
+        LocalGatewayStartMode::ManualRequiredDefaults,
     )
     .await?;
     if remember {
@@ -1649,7 +1655,7 @@ async fn start_local_gateway_entries(
     hub: Arc<AgentHub>,
     host: Arc<BridgeRuntimeHost>,
     restarting: bool,
-    isolate_pool_failures: bool,
+    mode: LocalGatewayStartMode,
 ) -> Result<LocalGatewayStatus, String> {
     let pools = with_hub_blocking(hub.clone(), move |hub| {
         hub.route_pools()
@@ -1677,18 +1683,28 @@ async fn start_local_gateway_entries(
 
     let mut started = Vec::new();
     let mut first_error = None;
+    let mut failed_nondefault_count = 0usize;
     for pool in pools {
         let pool_id = pool.id.clone();
         let result = async {
             // Legacy restoration may already have rebuilt and indexed this
             // same pool. Its live spec is authoritative for this process.
-            if isolate_pool_failures
-                && host
+            if matches!(mode, LocalGatewayStartMode::RestoreBestEffort) {
+                if host
                     .status(&pool_id)
-                    .map_err(map_bridge_host_error)?
+                    .map_err(|error| {
+                        map_local_gateway_pool_host_error(
+                            &pool_id,
+                            pool.target_agent_id,
+                            pool.downstream_surface,
+                            "status_existing",
+                            error,
+                        )
+                    })?
                     .is_some()
-            {
-                return Ok(pool_id.clone());
+                {
+                    return Ok(pool_id.clone());
+                }
             }
 
             let pool_for_spec = pool.clone();
@@ -1697,12 +1713,38 @@ async fn start_local_gateway_entries(
                     .adapter_bridge()
                     .pool_listener_spec(&pool_for_spec, flags))
             })
-            .await?;
+            .await
+            .map_err(|error| {
+                log_local_gateway_pool_error(
+                    &pool_id,
+                    pool.target_agent_id,
+                    pool.downstream_surface,
+                    "build_spec",
+                    &error,
+                );
+                error
+            })?;
             let was_running = host
                 .status(&pool_id)
-                .map_err(map_bridge_host_error)?
+                .map_err(|error| {
+                    map_local_gateway_pool_host_error(
+                        &pool_id,
+                        pool.target_agent_id,
+                        pool.downstream_surface,
+                        "status_before_start",
+                        error,
+                    )
+                })?
                 .is_some();
-            let runtime = host.start(spec).await.map_err(map_bridge_host_error)?;
+            let runtime = host.start(spec).await.map_err(|error| {
+                map_local_gateway_pool_host_error(
+                    &pool_id,
+                    pool.target_agent_id,
+                    pool.downstream_surface,
+                    "host_start",
+                    error,
+                )
+            })?;
             let port = runtime.port;
             let enrolled_pool = match with_hub_blocking(hub.clone(), {
                 let pool_id = pool_id.clone();
@@ -1716,8 +1758,23 @@ async fn start_local_gateway_entries(
             {
                 Ok(pool) => pool,
                 Err(error) => {
+                    log_local_gateway_pool_error(
+                        &pool_id,
+                        pool.target_agent_id,
+                        pool.downstream_surface,
+                        "enroll",
+                        &error,
+                    );
                     if !was_running {
-                        let _ = host.stop(&pool_id).await;
+                        if let Err(stop_error) = host.stop(&pool_id).await {
+                            let _ = map_local_gateway_pool_host_error(
+                                &pool_id,
+                                pool.target_agent_id,
+                                pool.downstream_surface,
+                                "enroll_compensation_stop",
+                                stop_error,
+                            );
+                        }
                     }
                     return Err(error);
                 }
@@ -1725,9 +1782,15 @@ async fn start_local_gateway_entries(
             // First successful enroll: replace the legacy non-indexed listener
             // with an indexed spec so create-time schedulePolicy is live. Seed
             // any prior live index. Later policy edits use hot-apply, not rebuild.
-            let prior = host
-                .live_route_index(&pool_id)
-                .map_err(map_bridge_host_error)?;
+            let prior = host.live_route_index(&pool_id).map_err(|error| {
+                map_local_gateway_pool_host_error(
+                    &pool_id,
+                    pool.target_agent_id,
+                    pool.downstream_surface,
+                    "live_route_index",
+                    error,
+                )
+            })?;
             let indexed = with_hub_blocking(hub.clone(), {
                 let enrolled_pool = enrolled_pool.clone();
                 let prior = prior.clone();
@@ -1739,17 +1802,53 @@ async fn start_local_gateway_entries(
                     ))
                 }
             })
-            .await?;
+            .await
+            .map_err(|error| {
+                log_local_gateway_pool_error(
+                    &pool_id,
+                    pool.target_agent_id,
+                    pool.downstream_surface,
+                    "build_indexed_spec",
+                    &error,
+                );
+                error
+            })?;
             match host.start(indexed.clone()).await {
                 Ok(_) => {}
                 Err(BridgeHostError::ConflictingStart) => {
                     match host.stop(&pool_id).await {
                         Ok(_) | Err(BridgeHostError::NotRunning) => {}
-                        Err(error) => return Err(map_bridge_host_error(error)),
+                        Err(error) => {
+                            let message = map_local_gateway_pool_host_error(
+                                &pool_id,
+                                pool.target_agent_id,
+                                pool.downstream_surface,
+                                "indexed_compensation_stop",
+                                error,
+                            );
+                            return Err(message);
+                        }
                     }
-                    host.start(indexed).await.map_err(map_bridge_host_error)?;
+                    host.start(indexed).await.map_err(|error| {
+                        map_local_gateway_pool_host_error(
+                            &pool_id,
+                            pool.target_agent_id,
+                            pool.downstream_surface,
+                            "indexed_start_retry",
+                            error,
+                        )
+                    })?;
                 }
-                Err(error) => return Err(map_bridge_host_error(error)),
+                Err(error) => {
+                    let message = map_local_gateway_pool_host_error(
+                        &pool_id,
+                        pool.target_agent_id,
+                        pool.downstream_surface,
+                        "indexed_start",
+                        error,
+                    );
+                    return Err(message);
+                }
             }
             Ok(runtime.profile_id)
         }
@@ -1757,18 +1856,62 @@ async fn start_local_gateway_entries(
 
         match result {
             Ok(profile_id) => started.push(profile_id),
-            Err(error) if isolate_pool_failures => {
-                tracing::warn!(
-                    target: "gui",
-                    op = "adapter_bridge_restore",
-                    pool_id = %pool.id,
-                    error = %error,
-                    "local gateway pool could not be restored"
-                );
-                first_error.get_or_insert(error);
-            }
-            Err(error) => return Err(error),
+            Err(error) => match mode {
+                LocalGatewayStartMode::RestoreBestEffort => {
+                    tracing::warn!(
+                        target: "gui",
+                        op = "adapter_bridge_restore",
+                        pool_id = %pool.id,
+                        target_agent = pool.target_agent_id.as_str(),
+                        surface = pool.downstream_surface.as_str(),
+                        stage = "pool_entry",
+                        error = %error,
+                        "local gateway pool could not be restored"
+                    );
+                    first_error.get_or_insert(error);
+                }
+                LocalGatewayStartMode::ManualRequiredDefaults if pool.is_default => {
+                    tracing::error!(
+                        target: targets::GUI,
+                        op = "start_local_gateway_entries",
+                        pool_id = %pool.id,
+                        target_agent = pool.target_agent_id.as_str(),
+                        surface = pool.downstream_surface.as_str(),
+                        stage = "required_default",
+                        code = CODE_BRIDGE_START,
+                        error = %error,
+                        "本机转发默认池启动失败"
+                    );
+                    return Err(error);
+                }
+                LocalGatewayStartMode::ManualRequiredDefaults => {
+                    failed_nondefault_count += 1;
+                    tracing::warn!(
+                        target: targets::GUI,
+                        op = "start_local_gateway_entries",
+                        pool_id = %pool.id,
+                        target_agent = pool.target_agent_id.as_str(),
+                        surface = pool.downstream_surface.as_str(),
+                        stage = "optional_nondefault",
+                        code = CODE_BRIDGE_START,
+                        error = %error,
+                        "本机转发非默认池启动失败，继续启动其他池"
+                    );
+                    first_error.get_or_insert(error);
+                }
+            },
         }
+    }
+    if failed_nondefault_count > 0 {
+        tracing::warn!(
+            target: targets::GUI,
+            op = "start_local_gateway_entries",
+            stage = "partial_summary",
+            code = CODE_BRIDGE_START,
+            started_count = started.len(),
+            failed_nondefault_count,
+            "本机转发部分池启动失败"
+        );
     }
     if started.is_empty() {
         if let Some(error) = first_error {
@@ -2147,20 +2290,132 @@ fn placeholder_entry_spec(
     .with_pair_adapter_flags(flags.0, flags.1)
 }
 
+fn log_local_gateway_pool_error(
+    pool_id: &str,
+    target_agent: AgentId,
+    surface: RouteDownstreamSurface,
+    stage: &'static str,
+    error: &str,
+) {
+    tracing::error!(
+        target: targets::GUI,
+        module = targets::GUI,
+        op = "start_local_gateway_entries",
+        pool_id = %pool_id,
+        target_agent = target_agent.as_str(),
+        surface = surface.as_str(),
+        stage,
+        error = %error,
+        "本机转发池启动失败"
+    );
+}
+
+fn map_local_gateway_pool_host_error(
+    pool_id: &str,
+    target_agent: AgentId,
+    surface: RouteDownstreamSurface,
+    stage: &'static str,
+    error: BridgeHostError,
+) -> String {
+    let message = map_bridge_host_error(error);
+    log_local_gateway_pool_error(pool_id, target_agent, surface, stage, &message);
+    message
+}
+
 fn map_bridge_host_error(error: BridgeHostError) -> String {
-    // Host error implementations intentionally contain no bearer; still use a
-    // stable GUI-facing code and do not serialize the Debug representation.
-    match &error {
-        BridgeHostError::Bind(io) if io.kind() == std::io::ErrorKind::AddrInUse => {
-            format!(
-                "本机端口已被占用。将自动换一个空闲端口并写回，请点重试。 [{CODE_BRIDGE_PORT_IN_USE}]"
-            )
-        }
-        BridgeHostError::Bind(_) => {
-            format!("本机转发无法监听端口，请点重试。 [{CODE_BRIDGE_PORT_IN_USE}]")
-        }
-        _ => format!("本机转发无法启动或停止，请点重试。 [{CODE_BRIDGE_START}]"),
-    }
+    // Host errors intentionally contain no bearer, but Bind wraps an OS error
+    // that may contain machine-specific paths or addresses. Log only stable
+    // variant/cause fields and keep those details out of the GUI string.
+    let (code, variant, cause, message) = match &error {
+        BridgeHostError::EmptyProfileId => (
+            CODE_BRIDGE_START,
+            "EmptyProfileId",
+            "profile_id_empty",
+            "本机转发配置缺少标识，请点重试。",
+        ),
+        BridgeHostError::EmptyLocalToken => (
+            CODE_BRIDGE_START,
+            "EmptyLocalToken",
+            "local_token_empty",
+            "本机转发入口 Key 为空，请先补充入口 Key 后点重试。",
+        ),
+        BridgeHostError::EmptyUpstreamUrl => (
+            CODE_BRIDGE_START,
+            "EmptyUpstreamUrl",
+            "upstream_url_empty",
+            "本机转发的上游地址为空，请检查登录配置后点重试。",
+        ),
+        BridgeHostError::InvalidUpstreamUrl => (
+            CODE_BRIDGE_START,
+            "InvalidUpstreamUrl",
+            "upstream_url_not_allowed",
+            "本机转发的上游地址不允许使用，请检查登录配置后点重试。",
+        ),
+        BridgeHostError::EmptyUpstreamToken => (
+            CODE_BRIDGE_START,
+            "EmptyUpstreamToken",
+            "upstream_login_empty",
+            "本机转发的上游登录信息为空，请重新登录后点重试。",
+        ),
+        BridgeHostError::HostClosing => (
+            CODE_BRIDGE_START,
+            "HostClosing",
+            "host_closing",
+            "本机转发正在退出，请稍后点重试。",
+        ),
+        BridgeHostError::ConflictingStart => (
+            CODE_BRIDGE_START,
+            "ConflictingStart",
+            "conflicting_configuration",
+            "本机转发配置与正在运行的实例冲突，请先停止后点重试。",
+        ),
+        BridgeHostError::Stopping => (
+            CODE_BRIDGE_START,
+            "Stopping",
+            "stopping",
+            "本机转发正在停止，请稍后点重试。",
+        ),
+        BridgeHostError::NotRunning => (
+            CODE_BRIDGE_START,
+            "NotRunning",
+            "not_running",
+            "本机转发当前未运行，请点重试。",
+        ),
+        BridgeHostError::StatePoisoned => (
+            CODE_BRIDGE_START,
+            "StatePoisoned",
+            "state_unavailable",
+            "本机转发状态暂时不可用，请重启应用后点重试。",
+        ),
+        BridgeHostError::Bind(io) if io.kind() == std::io::ErrorKind::AddrInUse => (
+            CODE_BRIDGE_PORT_IN_USE,
+            "Bind",
+            "address_in_use",
+            "本机端口已被占用，请更换端口后重试。",
+        ),
+        BridgeHostError::Bind(_) => (
+            CODE_BRIDGE_PORT_IN_USE,
+            "Bind",
+            "bind_failed",
+            "本机转发无法监听端口，可能是端口被占用或权限不足，请检查后点重试。",
+        ),
+        BridgeHostError::InvalidGatewayPort => (
+            CODE_BRIDGE_START,
+            "InvalidGatewayPort",
+            "gateway_port_invalid",
+            "本机转发端口无效，请点重试。",
+        ),
+    };
+    tracing::error!(
+        target: targets::GUI,
+        module = targets::GUI,
+        op = "map_bridge_host_error",
+        code,
+        variant,
+        cause,
+        "本机转发操作失败"
+    );
+    format!("{message} [{code}]")
 }
 
 /// Replace the raw English resolver failure with a Chinese sentence the

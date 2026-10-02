@@ -65,6 +65,12 @@ export async function logGuiEvent(
 
 /** Stable `[code]` suffix from core/GUI error strings, when present. */
 export function guiErrorCode(error: unknown): string | undefined {
+  if (error && typeof error === 'object' && 'code' in error) {
+    const code = (error as { code: unknown }).code;
+    const structured = safeGuiErrorCode(code);
+    if (structured) return structured;
+  }
+
   let text = '';
   if (typeof error === 'string') text = error.trim();
   else if (error instanceof Error) text = error.message.trim();
@@ -73,7 +79,55 @@ export function guiErrorCode(error: unknown): string | undefined {
     if (typeof message === 'string') text = message.trim();
   }
   const match = text.match(/\[([a-z0-9_.]+)\]\s*$/i);
-  return match?.[1];
+  return safeGuiErrorCode(match?.[1]);
+}
+
+const SIMPLE_GUI_ERROR_CODES = new Set([
+  'db',
+  'env_not_ready',
+  'invalid_arg',
+  'io',
+  'json',
+  'needs_attention',
+  'not_found',
+  'unsupported',
+]);
+
+const TRUSTED_GUI_ERROR_NAMESPACES = new Set([
+  'account',
+  'adapter',
+  'agent',
+  'backend',
+  'connection',
+  'config',
+  'env',
+  'install',
+  'kiro',
+  'mcp',
+  'oauth',
+  'paths',
+  'plugin',
+  'project',
+  'provider',
+  'route',
+  'route_pool',
+  'run',
+  'settings',
+  'skill',
+  'sub2api',
+  'ticket',
+]);
+
+/** Keep diagnostic codes machine-readable without ever treating arbitrary text as a code. */
+function safeGuiErrorCode(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const code = raw.trim();
+  if (!code || code.length > 120) return undefined;
+  if (SIMPLE_GUI_ERROR_CODES.has(code.toLowerCase())) return code;
+  const namespaced = code.replace(/^retryable:/i, '').toLowerCase();
+  if (!/^[a-z][a-z0-9_-]*(?:\.[a-z0-9_.-]+)+$/i.test(namespaced)) return undefined;
+  const namespace = namespaced.split('.')[0];
+  return TRUSTED_GUI_ERROR_NAMESPACES.has(namespace) ? code : undefined;
 }
 
 /** Static options (avoid module-init getBackend for tree-shaking / SSR-less safety). */

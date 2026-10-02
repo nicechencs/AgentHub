@@ -810,6 +810,7 @@ export default function ConnectionsPage() {
         initialBaseUrl={inspectTarget.mode === 'add' ? apiKeyDraft?.baseUrl : undefined}
         initialApiKey={inspectTarget.mode === 'add' ? apiKeyDraft?.apiKey : undefined}
         initialModel={inspectTarget.mode === 'add' ? apiKeyDraft?.model : undefined}
+        initialPiApi={inspectTarget.mode === 'add' ? apiKeyDraft?.piApi : undefined}
         compactGrokApiBackend={inspectTarget.mode === 'add' ? apiKeyDraft?.apiBackend : undefined}
         onOpenChange={(v) => {
           if (shouldIgnoreMenuDialogDismiss(ignoreMenuDialogDismissRef.current, v)) return;

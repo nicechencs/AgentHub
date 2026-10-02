@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -49,6 +49,7 @@ import {
   boardEndpointKeyTotals,
   buildBoardEndpointTypeRows,
   buildLocalGatewayControl,
+  localGatewayRetryAction as resolveLocalGatewayRetryAction,
   type BoardEndpointTypeRow,
   type LocalGatewayControl,
 } from '@/pages/routes/board/board-view-model';
@@ -241,6 +242,18 @@ export default function RoutesBoardPage() {
   const localGatewayError = profileErrors.__local_gateway__
     ?? localGateway.profileIds.map((id) => profileErrors[id]).find((error) => error != null)
     ?? null;
+  const localGatewayRetryAction = resolveLocalGatewayRetryAction(
+    localGateway,
+    localGatewayError != null,
+  );
+  const retryLocalGateway = useCallback(() => {
+    if (localGatewayRetryAction === 'stop') {
+      setStopOpen(true);
+      return;
+    }
+    if (localGatewayRetryAction !== 'start') return;
+    void handleStartLocalGateway().then((ok) => setGatewayRunning(ok));
+  }, [handleStartLocalGateway, localGatewayRetryAction]);
 
   const tokenRows = useMemo(
     () => buildLocalTokenRows(
@@ -320,12 +333,24 @@ export default function RoutesBoardPage() {
       ) : (
         <div className={pageRhythm.blocks}>
           {localGatewayError ? (
-            <AdapterErrorLines
-              error={localGatewayError}
-              fallback={localGateway.action === 'stop'
-                ? t('routes.board.entryStopFailed')
-                : t('routes.board.entryStartFailed')}
-            />
+            <div className="space-y-2">
+              <AdapterErrorLines
+                error={localGatewayError}
+                fallback={localGateway.action === 'stop'
+                  ? t('routes.board.entryStopFailed')
+                  : t('routes.board.entryStartFailed')}
+              />
+              {localGatewayRetryAction ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={localGatewayBusy || localGateway.transitioning}
+                  onClick={retryLocalGateway}
+                >
+                  {t('chrome.error.retry')}
+                </Button>
+              ) : null}
+            </div>
           ) : null}
           <PageSection
             first

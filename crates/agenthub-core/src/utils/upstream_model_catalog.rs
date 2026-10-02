@@ -1,12 +1,15 @@
 //! Where a login's model list comes from. Catalog URLs stay hardcoded.
-//! Live ids are fetched once, then cached on the login row (`extra` /
+//! Nonempty live ids are fetched once, then cached on the login row (`extra` /
 //! `meta.modelCatalog`) until the URL, key, or official login identity changes.
+//! Empty live probes use a short negative-cache window so a transient failure
+//! cannot hide newly available models permanently.
 //!
 //! Official login catalogs:
 //! - Codex ChatGPT: `GET https://chatgpt.com/backend-api/codex/models`
 //! - Grok / Claude / Pi official: no public catalog we can call with that login
 //! API Key / connection-pool settings: `{base}/v1/models` then `/models`.
 
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -97,7 +100,24 @@ pub fn fingerprint_apikey(agent: &str, settings: &Value) -> String {
 }
 
 pub fn cache_is_current(stored: &StoredModelCatalog, fingerprint: &str) -> bool {
-    stored.attempted && stored.fingerprint == fingerprint
+    cache_is_current_at(stored, fingerprint, Utc::now())
+}
+
+/// Empty non-custom catalogs are only a short-lived negative cache. A failed
+/// live probe must not make an empty model list permanent, while saved live or
+/// custom ids remain tied to their existing fingerprint indefinitely.
+fn cache_is_current_at(stored: &StoredModelCatalog, fingerprint: &str, now: DateTime<Utc>) -> bool {
+    if !stored.attempted || stored.fingerprint != fingerprint {
+        return false;
+    }
+    if stored.source == "custom" || !stored.models.is_empty() || !stored.extra_models.is_empty() {
+        return true;
+    }
+    let Ok(updated_at) = DateTime::parse_from_rfc3339(stored.updated_at.trim()) else {
+        return false;
+    };
+    let age = now.signed_duration_since(updated_at.with_timezone(&Utc));
+    age >= Duration::zero() && age <= Duration::minutes(5)
 }
 
 const BASE_POINTERS: &[&str] = &[

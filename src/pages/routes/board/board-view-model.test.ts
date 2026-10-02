@@ -10,6 +10,7 @@ import {
   buildBoardEndpointTypeRows,
   buildLocalGatewayControl,
   buildRouteBoardStatusRows,
+  localGatewayRetryAction,
   mergeRecentInbound,
   parseActivityFilter,
   partitionBoardRows,
@@ -47,6 +48,12 @@ function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>):
 }
 
 describe('buildLocalGatewayControl', () => {
+  it('keeps a failed start retryable when no listener action remains', () => {
+    expect(localGatewayRetryAction({ action: null }, true)).toBe('start');
+    expect(localGatewayRetryAction({ action: 'stop' }, true)).toBe('stop');
+    expect(localGatewayRetryAction({ action: null }, false)).toBeNull();
+  });
+
   it('has no master action when there is no local gateway', () => {
     expect(buildLocalGatewayControl([], {})).toMatchObject({
       action: null,

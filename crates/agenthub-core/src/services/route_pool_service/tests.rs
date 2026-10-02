@@ -1993,6 +1993,243 @@ fn refresh_local_token_models_unions_pool_logins_and_bypasses_live_cache() {
     assert_eq!(custom.models, vec!["model-b-custom"]);
 }
 
+fn codex_oauth_without_live_credentials(id: &str, account_id: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Codex,
+        kind: AccountKind::Oauth,
+        label: id.into(),
+        credentials: json!({}),
+        extra: json!({ "accountId": account_id }),
+        status: "active".into(),
+        is_current: false,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    }
+}
+
+#[test]
+fn codex_catalog_error_preserves_same_identity_nonempty_cache() {
+    use crate::utils::upstream_model_catalog::{
+        fingerprint_oauth, write_stored_catalog, StoredModelCatalog,
+    };
+
+    let (_dir, db, service, _) = tmp();
+    let accounts = AccountRepo::new(db.clone());
+    accounts
+        .create(&codex_oauth_without_live_credentials(
+            "codex-error",
+            "acct-1",
+        ))
+        .unwrap();
+    let mut account = accounts.get_by_id("codex-error").unwrap().unwrap();
+    let fingerprint = fingerprint_oauth("codex", "acct-1");
+    write_stored_catalog(
+        &mut account.extra,
+        &StoredModelCatalog {
+            fingerprint,
+            source: "live".into(),
+            models: vec!["cached-model".into()],
+            extra_models: Vec::new(),
+            attempted: true,
+            updated_at: "2026-01-01T00:00:00Z".into(),
+        },
+    );
+    accounts.update(&account).unwrap();
+
+    let pool = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Account, "codex-error")
+        .unwrap();
+    let error = service
+        .refresh_local_token_models(&pool.hub_token)
+        .unwrap_err();
+    assert_eq!(error.code(), "chatgpt_codex_models.credentials");
+
+    let saved = AccountRepo::new(db)
+        .get_by_id("codex-error")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        saved.extra["modelCatalog"]["models"],
+        json!(["cached-model"])
+    );
+    assert_eq!(saved.extra["modelCatalog"]["source"], "live");
+}
+
+#[test]
+fn codex_catalog_error_cools_empty_cache_and_still_surfaces_once() {
+    use crate::utils::upstream_model_catalog::{
+        cache_is_current, fingerprint_oauth, read_stored_catalog,
+    };
+
+    let (_dir, db, service, _) = tmp();
+    AccountRepo::new(db.clone())
+        .create(&codex_oauth_without_live_credentials(
+            "codex-empty",
+            "acct-1",
+        ))
+        .unwrap();
+    let pool = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Account, "codex-empty")
+        .unwrap();
+
+    let error = service
+        .refresh_local_token_models(&pool.hub_token)
+        .unwrap_err();
+    assert_eq!(error.code(), "chatgpt_codex_models.credentials");
+
+    let account = AccountRepo::new(db)
+        .get_by_id("codex-empty")
+        .unwrap()
+        .unwrap();
+    let stored = read_stored_catalog(&account.extra).expect("empty failure cooldown");
+    assert_eq!(stored.source, "empty");
+    assert!(stored.models.is_empty());
+    assert!(cache_is_current(
+        &stored,
+        &fingerprint_oauth("codex", "acct-1")
+    ));
+    let cached = service
+        .ensure_source_model_catalog(AdapterSourceKind::Account, "codex-empty")
+        .unwrap();
+    assert_eq!(cached.source, "empty");
+    assert!(cached.models.is_empty());
+}
+
+#[test]
+fn codex_catalog_error_drops_old_identity_cache_before_cooldown() {
+    use crate::utils::upstream_model_catalog::{
+        fingerprint_oauth, read_stored_catalog, write_stored_catalog, StoredModelCatalog,
+    };
+
+    let (_dir, db, service, _) = tmp();
+    let accounts = AccountRepo::new(db.clone());
+    accounts
+        .create(&codex_oauth_without_live_credentials(
+            "codex-identity",
+            "acct-new",
+        ))
+        .unwrap();
+    let mut account = accounts.get_by_id("codex-identity").unwrap().unwrap();
+    write_stored_catalog(
+        &mut account.extra,
+        &StoredModelCatalog {
+            fingerprint: fingerprint_oauth("codex", "acct-old"),
+            source: "live".into(),
+            models: vec!["old-account-model".into()],
+            extra_models: Vec::new(),
+            attempted: true,
+            updated_at: "2026-01-01T00:00:00Z".into(),
+        },
+    );
+    accounts.update(&account).unwrap();
+    let pool = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Account, "codex-identity")
+        .unwrap();
+
+    assert_eq!(
+        service
+            .refresh_local_token_models(&pool.hub_token)
+            .unwrap_err()
+            .code(),
+        "chatgpt_codex_models.credentials"
+    );
+    let saved = AccountRepo::new(db)
+        .get_by_id("codex-identity")
+        .unwrap()
+        .unwrap();
+    let stored = read_stored_catalog(&saved.extra).expect("new identity cooldown");
+    assert_eq!(stored.source, "empty");
+    assert!(stored.models.is_empty());
+    assert_eq!(stored.fingerprint, fingerprint_oauth("codex", "acct-new"));
+}
+
+#[test]
+fn model_catalog_cas_conflict_does_not_overwrite_new_login_fields() {
+    let (_dir, db, service, _) = tmp();
+    let accounts = AccountRepo::new(db.clone());
+    accounts
+        .create(&codex_oauth_without_live_credentials(
+            "catalog-cas-account",
+            "acct-1",
+        ))
+        .unwrap();
+    let stale_account = accounts.get_by_id("catalog-cas-account").unwrap().unwrap();
+    let mut current_account = stale_account.clone();
+    current_account.credentials = json!({ "access_token": "fresh-login-token" });
+    current_account.extra = json!({ "accountId": "acct-1", "refreshed": true });
+    current_account.updated_at = "t1".into();
+    accounts.update(&current_account).unwrap();
+
+    let account_error = service
+        .persist_account_model_catalog(&stale_account, "t0", "t2")
+        .unwrap_err();
+    assert_eq!(account_error.code(), "route.model_catalog.stale");
+    let saved_account = accounts.get_by_id("catalog-cas-account").unwrap().unwrap();
+    assert_eq!(
+        saved_account.credentials["access_token"],
+        "fresh-login-token"
+    );
+    assert_eq!(saved_account.extra["refreshed"], true);
+
+    let providers = ProviderRepo::new(db.clone());
+    providers
+        .create(&pool_owned_provider("catalog-cas-provider"))
+        .unwrap();
+    let stale_provider = providers
+        .get_by_id("catalog-cas-provider")
+        .unwrap()
+        .unwrap();
+    let mut current_provider = stale_provider.clone();
+    current_provider.settings_config = json!({ "apiKey": "fresh-provider-key" });
+    current_provider.meta = json!({ "refreshed": true });
+    current_provider.updated_at = "t1".into();
+    providers.update(&current_provider).unwrap();
+
+    let provider_error = service
+        .persist_provider_model_catalog(&stale_provider, "t0", "t2")
+        .unwrap_err();
+    assert_eq!(provider_error.code(), "route.model_catalog.stale");
+    let saved_provider = providers
+        .get_by_id("catalog-cas-provider")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        saved_provider.settings_config["apiKey"],
+        "fresh-provider-key"
+    );
+    assert_eq!(saved_provider.meta["refreshed"], true);
+}
+
+#[test]
+fn codex_catalog_error_keeps_route_model_fallback_available() {
+    let (_dir, db, service, _) = tmp();
+    AccountRepo::new(db.clone())
+        .create(&codex_oauth_without_live_credentials(
+            "codex-fallback",
+            "acct-1",
+        ))
+        .unwrap();
+    let pool = service
+        .ensure_default_pool(AgentId::Pi, RouteDownstreamSurface::Responses)
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Account, "codex-fallback")
+        .unwrap();
+
+    let listed = service.list_upstream_models_for_pool(&pool.id).unwrap();
+    assert!(!listed.is_empty());
+}
+
 fn isolated_hub() -> (tempfile::TempDir, crate::AgentHub) {
     let dir = tempfile::tempdir().unwrap();
     let skills = dir.path().join("skills");

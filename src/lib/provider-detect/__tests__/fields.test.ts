@@ -689,6 +689,36 @@ describe('provider-detect fields', () => {
     expect(parsed.providers).toBeUndefined();
   });
 
+  it('keeps and writes the Pi provider API protocol', () => {
+    const source = JSON.stringify({
+      models: {
+        providers: {
+          custom: {
+            api: 'vendor-legacy-protocol',
+            baseUrl: 'https://relay.example.com/v1',
+            apiKey: '***',
+            models: [{ id: 'old-model', name: 'Old Model' }],
+          },
+        },
+      },
+    });
+    const extracted = extractFormVars('pi', source, 'json');
+    expect(extracted.piApi).toBe('vendor-legacy-protocol');
+
+    const preserved = JSON.parse(applyFormVars('pi', source, 'json', extracted)) as {
+      models: { providers: { custom: { api: string } } };
+    };
+    expect(preserved.models.providers.custom.api).toBe('vendor-legacy-protocol');
+
+    const overridden = JSON.parse(applyFormVars('pi', source, 'json', {
+      ...extracted,
+      piApi: 'openai-responses',
+    })) as {
+      models: { providers: { custom: { api: string } } };
+    };
+    expect(overridden.models.providers.custom.api).toBe('openai-responses');
+  });
+
   it('does not write Pi auth.json for custom or models.json bind slots', () => {
     const out = applyFormVars('pi', '{}', 'json', {
       ...EMPTY_FORM_VARS,

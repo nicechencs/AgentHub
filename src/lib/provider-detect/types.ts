@@ -86,6 +86,8 @@ export interface ProviderFormVars {
   wireApi: string;
   /** Grok: api_backend */
   apiBackend: string;
+  /** Pi: models.json provider.api; kept as a string to preserve unknown existing values. */
+  piApi: string;
   providerSlug: string;
 }
 
@@ -103,6 +105,7 @@ export const EMPTY_FORM_VARS: ProviderFormVars = {
   reasoningEffort: '',
   wireApi: '',
   apiBackend: '',
+  piApi: '',
   providerSlug: 'custom',
 };
 

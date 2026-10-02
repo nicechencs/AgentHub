@@ -2,9 +2,15 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { adapterCommandError } from '@/lib/backend/contracts/adapter';
 import { flattenKeys } from '@/lib/i18n';
 import { en } from '@/lib/i18n/locales/en';
 import { zh } from '@/lib/i18n/locales/zh';
+import {
+  adapterErrorDetails,
+  adapterErrorRetryHint,
+  errorMessage,
+} from '@/pages/routes/shared/adapter-labels';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -122,4 +128,20 @@ describe('routes board user-facing copy', () => {
       expect(lookup(en, key), key).not.toMatch(BANNED_UI);
     }
   });
+});
+
+describe('routes board bridge failure wiring', () => {
+  it('keeps a safe backend detail visible alongside the retryable message', () => {
+    const error = adapterCommandError({
+      code: 'adapter.bridge_start',
+      message: '本机转发无法启动或停止，请点重试。',
+      details: '127.0.0.1:17034 already bound',
+      retryable: true,
+    });
+
+    expect(errorMessage(error, 'fallback')).toBe('本机转发无法启动或停止，请点重试。');
+    expect(adapterErrorDetails(error)).toBe('127.0.0.1:17034 already bound');
+    expect(adapterErrorRetryHint(error)).toBe('此错误可重试。');
+  });
+
 });

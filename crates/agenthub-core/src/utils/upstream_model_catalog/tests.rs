@@ -1,9 +1,10 @@
+use chrono::{Duration, Utc};
 use serde_json::json;
 
 use super::{
-    cache_is_current, catalog_endpoint, embedded_listed_models, fingerprint_apikey,
-    fingerprint_oauth, read_stored_catalog, with_wanted_models, write_stored_catalog,
-    SourceModelCatalog, StoredModelCatalog,
+    cache_is_current, cache_is_current_at, catalog_endpoint, embedded_listed_models,
+    fingerprint_apikey, fingerprint_oauth, read_stored_catalog, with_wanted_models,
+    write_stored_catalog, SourceModelCatalog, StoredModelCatalog,
 };
 
 #[test]
@@ -115,6 +116,60 @@ fn stored_catalog_roundtrip_and_cache_hit() {
     assert_eq!(read.models, vec!["gpt-5.4"]);
     assert!(cache_is_current(&read, "fp-1"));
     assert!(!cache_is_current(&read, "fp-2"));
+}
+
+#[test]
+fn empty_catalog_is_current_only_during_short_negative_cache_ttl() {
+    let now = Utc::now();
+    let fresh = StoredModelCatalog {
+        fingerprint: "fp".into(),
+        source: "empty".into(),
+        models: Vec::new(),
+        extra_models: Vec::new(),
+        attempted: true,
+        updated_at: (now - Duration::minutes(4)).to_rfc3339(),
+    };
+    assert!(cache_is_current_at(&fresh, "fp", now));
+
+    let stale = StoredModelCatalog {
+        updated_at: (now - Duration::minutes(6)).to_rfc3339(),
+        ..fresh.clone()
+    };
+    assert!(!cache_is_current_at(&stale, "fp", now));
+
+    let missing_timestamp = StoredModelCatalog {
+        updated_at: String::new(),
+        ..fresh.clone()
+    };
+    assert!(!cache_is_current_at(&missing_timestamp, "fp", now));
+
+    let future = StoredModelCatalog {
+        updated_at: (now + Duration::seconds(1)).to_rfc3339(),
+        ..fresh
+    };
+    assert!(!cache_is_current_at(&future, "fp", now));
+}
+
+#[test]
+fn nonempty_and_custom_catalogs_keep_long_lived_cache_behavior() {
+    let now = Utc::now();
+    let live = StoredModelCatalog {
+        fingerprint: "fp".into(),
+        source: "live".into(),
+        models: vec!["gpt-5.4".into()],
+        extra_models: Vec::new(),
+        attempted: true,
+        updated_at: "invalid".into(),
+    };
+    assert!(cache_is_current_at(&live, "fp", now));
+
+    let custom = StoredModelCatalog {
+        source: "custom".into(),
+        models: Vec::new(),
+        updated_at: "invalid".into(),
+        ..live
+    };
+    assert!(cache_is_current_at(&custom, "fp", now));
 }
 
 #[test]

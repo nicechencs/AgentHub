@@ -1879,9 +1879,18 @@ impl RoutePoolService {
     }
 
     fn live_models_for_member(&self, member: &RouteMember) -> Vec<String> {
-        self.ensure_source_model_catalog(member.source_kind, &member.source_id)
-            .map(|catalog| catalog.models)
-            .unwrap_or_default()
+        match self.ensure_source_model_catalog(member.source_kind, &member.source_id) {
+            Ok(catalog) => catalog.models,
+            Err(error) => {
+                tracing::warn!(
+                    error_code = error.code(),
+                    source_kind = member.source_kind.as_str(),
+                    source_id = %member.source_id,
+                    "route model catalog fetch failed; using fallback"
+                );
+                Vec::new()
+            }
+        }
     }
 
     /// Fetch once per URL/key/login identity, then reuse the cached list.
@@ -1909,6 +1918,7 @@ impl RoutePoolService {
                     .accounts
                     .get_by_id(source_id)?
                     .ok_or_else(|| AppError::NotFound(format!("account not found: {source_id}")))?;
+                let expected_updated_at = account.updated_at.clone();
                 let fingerprint = self.catalog_fingerprint_for_account(&account);
                 if let Some(stored) = read_stored_catalog(&account.extra) {
                     if cache_is_current(&stored, &fingerprint)
@@ -1917,7 +1927,41 @@ impl RoutePoolService {
                         return Ok(SourceModelCatalog::from_stored(&stored));
                     }
                 }
-                let models = self.fetch_live_models_for_account(&account);
+                let models = match self.fetch_live_models_for_account(&account) {
+                    Ok(models) => models,
+                    Err(error) => {
+                        let preserve = read_stored_catalog(&account.extra).is_some_and(|stored| {
+                            stored.fingerprint == fingerprint
+                                && (stored.source == "custom"
+                                    || !stored.models.is_empty()
+                                    || !stored.extra_models.is_empty())
+                        });
+                        if !preserve {
+                            let stored = StoredModelCatalog {
+                                fingerprint,
+                                source: "empty".into(),
+                                models: Vec::new(),
+                                extra_models: Vec::new(),
+                                attempted: true,
+                                updated_at: now(),
+                            };
+                            write_stored_catalog(&mut account.extra, &stored);
+                            if let Err(save_error) = self.persist_account_model_catalog(
+                                &account,
+                                &expected_updated_at,
+                                &stored.updated_at,
+                            ) {
+                                tracing::warn!(
+                                    error_code = save_error.code(),
+                                    source_kind = source_kind.as_str(),
+                                    source_id = %source_id,
+                                    "route model catalog cooldown was not saved"
+                                );
+                            }
+                        }
+                        return Err(error);
+                    }
+                };
                 let stored = StoredModelCatalog {
                     fingerprint,
                     source: if models.is_empty() {
@@ -1931,13 +1975,18 @@ impl RoutePoolService {
                     updated_at: now(),
                 };
                 write_stored_catalog(&mut account.extra, &stored);
-                self.accounts.update(&account)?;
+                self.persist_account_model_catalog(
+                    &account,
+                    &expected_updated_at,
+                    &stored.updated_at,
+                )?;
                 Ok(SourceModelCatalog::from_stored(&stored))
             }
             AdapterSourceKind::Provider => {
                 let mut provider = self.providers.get_by_id(source_id)?.ok_or_else(|| {
                     AppError::NotFound(format!("provider not found: {source_id}"))
                 })?;
+                let expected_updated_at = provider.updated_at.clone();
                 let fingerprint = crate::utils::upstream_model_catalog::fingerprint_apikey(
                     provider.agent_id.as_str(),
                     &provider.settings_config,
@@ -1963,7 +2012,11 @@ impl RoutePoolService {
                     updated_at: now(),
                 };
                 write_stored_catalog(&mut provider.meta, &stored);
-                self.providers.update(&provider)?;
+                self.persist_provider_model_catalog(
+                    &provider,
+                    &expected_updated_at,
+                    &stored.updated_at,
+                )?;
                 Ok(SourceModelCatalog::from_stored(&stored))
             }
         }
@@ -2065,8 +2118,24 @@ impl RoutePoolService {
             return Ok(Vec::new());
         };
         let members = self.pools.list_members(&pool_id)?;
+        let mut first_error = None;
         for member in members.iter().filter(|member| member.enabled) {
-            let _ = self.load_source_model_catalog(member.source_kind, &member.source_id, true);
+            if let Err(error) =
+                self.load_source_model_catalog(member.source_kind, &member.source_id, true)
+            {
+                tracing::warn!(
+                    error_code = error.code(),
+                    source_kind = member.source_kind.as_str(),
+                    source_id = %member.source_id,
+                    "route model catalog refresh failed"
+                );
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+        }
+        if let Some(error) = first_error {
+            return Err(error);
         }
         self.list_upstream_models_for_pool(&pool_id)
     }
@@ -2099,30 +2168,65 @@ impl RoutePoolService {
         }
     }
 
-    fn fetch_live_models_for_account(&self, account: &crate::models::Account) -> Vec<String> {
+    fn fetch_live_models_for_account(
+        &self,
+        account: &crate::models::Account,
+    ) -> Result<Vec<String>> {
         if account.kind == AccountKind::Oauth {
             return self.live_models_for_official_login(account);
         }
-        self.live_models_from_settings(&account.credentials)
+        Ok(self.live_models_from_settings(&account.credentials))
     }
 
-    fn live_models_for_official_login(&self, account: &crate::models::Account) -> Vec<String> {
+    fn live_models_for_official_login(
+        &self,
+        account: &crate::models::Account,
+    ) -> Result<Vec<String>> {
         match account.agent_id {
             AgentId::Codex => {
-                let Some(access) = crate::services::account_quota::extract_access_token(account)
-                else {
-                    return Vec::new();
-                };
-                let Some(account_id) =
+                let access = crate::services::account_quota::extract_access_token(account)
+                    .ok_or_else(|| {
+                        AppError::message(
+                            "chatgpt_codex_models.credentials",
+                            "Codex 登录信息不完整，请重新同步登录后再刷新模型。",
+                        )
+                    })?;
+                let account_id =
                     crate::services::account_quota::extract_chatgpt_account_id(account)
-                else {
-                    return Vec::new();
-                };
+                        .ok_or_else(|| {
+                            AppError::message(
+                                "chatgpt_codex_models.credentials",
+                                "Codex 登录信息不完整，请重新同步登录后再刷新模型。",
+                            )
+                        })?;
                 crate::utils::chatgpt_codex_models::list_chatgpt_codex_models(&access, &account_id)
-                    .unwrap_or_default()
             }
-            _ => Vec::new(),
+            _ => Ok(Vec::new()),
         }
+    }
+
+    fn persist_account_model_catalog(
+        &self,
+        account: &crate::models::Account,
+        expected_updated_at: &str,
+        updated_at: &str,
+    ) -> Result<()> {
+        self.accounts
+            .update_healed_fields(account, expected_updated_at, updated_at)
+            .map(|_| ())
+            .map_err(map_model_catalog_persist_error)
+    }
+
+    fn persist_provider_model_catalog(
+        &self,
+        provider: &crate::models::Provider,
+        expected_updated_at: &str,
+        updated_at: &str,
+    ) -> Result<()> {
+        self.providers
+            .update_healed_fields(provider, expected_updated_at, updated_at)
+            .map(|_| ())
+            .map_err(map_model_catalog_persist_error)
     }
 
     fn live_models_from_settings(&self, blob: &Value) -> Vec<String> {
@@ -2286,6 +2390,16 @@ impl RoutePoolService {
 
 /// Display-name sentinel: the pool hub token is not listed as an entry key.
 const HIDDEN_PRIMARY_ENTRY_NAME: &str = "\u{2060}";
+
+fn map_model_catalog_persist_error(error: AppError) -> AppError {
+    match error.code() {
+        "account.conflict" | "provider.conflict" => AppError::message(
+            "route.model_catalog.stale",
+            "登录信息已更新，请重新刷新模型。",
+        ),
+        _ => error,
+    }
+}
 
 fn now() -> String {
     Utc::now().to_rfc3339()

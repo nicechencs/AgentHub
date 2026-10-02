@@ -210,6 +210,44 @@ describe('tokenImportApiKeyDraft', () => {
       kind: 'messages',
       token: 'ahb_secret',
       path: '/v1/messages',
+      endpoint: null,
+      listedModels: [],
+    }, 'pi')).toEqual({
+      apiKey: 'ahb_secret',
+      piApi: 'anthropic-messages',
+    });
+    expect(tokenImportApiKeyDraft({
+      kind: 'responses_codex',
+      token: 'ahb_secret',
+      path: '/v1/responses',
+      endpoint: null,
+      listedModels: ['gpt-5.1-codex'],
+    }, 'pi')).toEqual({
+      apiKey: 'ahb_secret',
+      model: 'gpt-5.1-codex',
+      piApi: 'openai-responses',
+    });
+    expect(tokenImportApiKeyDraft({
+      kind: 'chat_completions',
+      token: 'ahb_secret',
+      path: '/v1/chat/completions',
+      endpoint: null,
+      listedModels: [],
+    }, 'pi')).toEqual({
+      apiKey: 'ahb_secret',
+      piApi: 'openai-completions',
+    });
+    expect(tokenImportApiKeyDraft({
+      kind: 'responses_grok',
+      token: 'ahb_secret',
+      path: '/v1/responses',
+      endpoint: null,
+      listedModels: [],
+    }, 'pi')).toBeNull();
+    expect(tokenImportApiKeyDraft({
+      kind: 'messages',
+      token: 'ahb_secret',
+      path: '/v1/messages',
       endpoint: '127.0.0.1:17034',
       listedModels: [],
     }, 'codex')).toBeNull();

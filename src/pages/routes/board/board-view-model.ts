@@ -90,6 +90,15 @@ export type LocalGatewayControl = {
   hasEnrolledLogins: boolean;
 };
 
+/** Keep a failed local-gateway action retryable even when its listener rows disappeared. */
+export function localGatewayRetryAction(
+  control: Pick<LocalGatewayControl, 'action'>,
+  hasError: boolean,
+): 'start' | 'stop' | null {
+  if (!hasError) return null;
+  return control.action === 'stop' ? 'stop' : 'start';
+}
+
 export function buildLocalGatewayControl(
   profiles: readonly Pick<AdapterProfile, 'id' | 'route' | 'sourceKind' | 'sourceId' | 'targetAgentId' | 'lastErrorCode'>[],
   bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,

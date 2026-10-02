@@ -123,9 +123,14 @@ fn startup_entry_restore_starts_default_pools_without_legacy_profiles() {
         );
 
         let host = Arc::new(BridgeRuntimeHost::new());
-        let status = start_local_gateway_entries(hub.clone(), host.clone(), true, true)
-            .await
-            .unwrap();
+        let status = start_local_gateway_entries(
+            hub.clone(),
+            host.clone(),
+            true,
+            LocalGatewayStartMode::RestoreBestEffort,
+        )
+        .await
+        .unwrap();
 
         assert!(status.running);
         assert!(status.restarting);
@@ -210,9 +215,14 @@ fn startup_entry_restore_starts_demoted_manual_dsh_pool() {
         );
 
         let host = Arc::new(BridgeRuntimeHost::new());
-        let status = start_local_gateway_entries(hub.clone(), host.clone(), true, true)
-            .await
-            .unwrap();
+        let status = start_local_gateway_entries(
+            hub.clone(),
+            host.clone(),
+            true,
+            LocalGatewayStartMode::RestoreBestEffort,
+        )
+        .await
+        .unwrap();
         sync_extra_local_bearers(hub.clone(), host.as_ref())
             .await
             .unwrap();
@@ -253,9 +263,14 @@ fn startup_entry_restore_keeps_legacy_edge_and_starts_other_pools() {
             .enroll_unified_gateway(&legacy_pool.id, legacy.port)
             .unwrap();
 
-        let status = start_local_gateway_entries(hub.clone(), host.clone(), true, true)
-            .await
-            .unwrap();
+        let status = start_local_gateway_entries(
+            hub.clone(),
+            host.clone(),
+            true,
+            LocalGatewayStartMode::RestoreBestEffort,
+        )
+        .await
+        .unwrap();
 
         assert!(status.running);
         assert_eq!(status.statuses.len(), 2);
@@ -286,13 +301,117 @@ fn startup_entry_restore_isolates_one_busy_pool() {
             .unwrap();
         let host = Arc::new(BridgeRuntimeHost::new());
 
-        let status = start_local_gateway_entries(hub.clone(), host.clone(), true, true)
-            .await
-            .unwrap();
+        let status = start_local_gateway_entries(
+            hub.clone(),
+            host.clone(),
+            true,
+            LocalGatewayStartMode::RestoreBestEffort,
+        )
+        .await
+        .unwrap();
 
         assert!(status.running);
         assert!(host.status(&busy_pool.id).unwrap().is_none());
         assert!(host.status(&healthy_pool.id).unwrap().is_some());
+        host.shutdown().await.unwrap();
+        drop(blocker);
+    });
+}
+
+#[test]
+fn manual_start_keeps_default_when_nondefault_pool_fails() {
+    tauri::async_runtime::block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
+        hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        let default_pool = hub
+            .route_pools()
+            .ensure_default_pool(AgentId::Kimi, RouteDownstreamSurface::ChatCompletions)
+            .unwrap();
+        let failed_pool = legacy_pool_fixture(&hub, "manual-bad-nondefault", AgentId::Dsh, false);
+        let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let busy_port = blocker.local_addr().unwrap().port();
+        hub.route_pools()
+            .enroll_unified_gateway(&failed_pool.id, busy_port)
+            .unwrap();
+
+        let host = Arc::new(BridgeRuntimeHost::new());
+        let status = start_local_gateway_entries(
+            hub,
+            host.clone(),
+            false,
+            LocalGatewayStartMode::ManualRequiredDefaults,
+        )
+        .await
+        .expect("a healthy default pool keeps manual start usable");
+
+        assert!(status.running);
+        assert!(host.status(&default_pool.id).unwrap().is_some());
+        assert!(host.status(&failed_pool.id).unwrap().is_none());
+        host.shutdown().await.unwrap();
+        drop(blocker);
+    });
+}
+
+#[test]
+fn manual_start_fails_when_default_pool_fails() {
+    tauri::async_runtime::block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
+        hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        let failed_pool = hub
+            .route_pools()
+            .ensure_default_pool(AgentId::Kimi, RouteDownstreamSurface::ChatCompletions)
+            .unwrap();
+        let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let busy_port = blocker.local_addr().unwrap().port();
+        hub.route_pools()
+            .enroll_unified_gateway(&failed_pool.id, busy_port)
+            .unwrap();
+
+        let host = Arc::new(BridgeRuntimeHost::new());
+        let error = start_local_gateway_entries(
+            hub,
+            host.clone(),
+            false,
+            LocalGatewayStartMode::ManualRequiredDefaults,
+        )
+        .await
+        .expect_err("a failed default pool must fail manual start");
+
+        assert!(error.contains("adapter.port_in_use"), "{error}");
+        assert!(host.status(&failed_pool.id).unwrap().is_none());
+        host.shutdown().await.unwrap();
+        drop(blocker);
+    });
+}
+
+#[test]
+fn manual_start_fails_when_only_nondefault_pool_fails() {
+    tauri::async_runtime::block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
+        hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        let failed_pool = legacy_pool_fixture(&hub, "manual-only-bad", AgentId::Dsh, false);
+        let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let busy_port = blocker.local_addr().unwrap().port();
+        hub.route_pools()
+            .enroll_unified_gateway(&failed_pool.id, busy_port)
+            .unwrap();
+
+        let host = Arc::new(BridgeRuntimeHost::new());
+        let error = start_local_gateway_entries(
+            hub,
+            host.clone(),
+            false,
+            LocalGatewayStartMode::ManualRequiredDefaults,
+        )
+        .await
+        .expect_err("a failed non-default pool is still an error when it is the only pool");
+
+        assert!(error.contains("上游地址不允许使用"), "{error}");
+        assert!(error.contains("adapter.bridge_start"), "{error}");
+        assert!(host.status(&failed_pool.id).unwrap().is_none());
         host.shutdown().await.unwrap();
         drop(blocker);
     });
@@ -321,9 +440,14 @@ fn gateway_enrollment_failure_compensates_new_edge() {
         );
         let host = Arc::new(BridgeRuntimeHost::new());
 
-        let error = start_local_gateway_entries(hub, host.clone(), false, false)
-            .await
-            .unwrap_err();
+        let error = start_local_gateway_entries(
+            hub,
+            host.clone(),
+            false,
+            LocalGatewayStartMode::ManualRequiredDefaults,
+        )
+        .await
+        .unwrap_err();
 
         assert!(
             error.contains("injected gateway enrollment failure"),
@@ -401,6 +525,101 @@ fn invalid_secret_reference_is_shown_in_chinese_for_claude_target() {
         ),
         "本机路由无法启动或停止 [adapter.bridge_start]"
     );
+}
+
+#[test]
+fn bridge_host_error_mapping_explains_each_variant_without_raw_details() {
+    let cases = [
+        (
+            BridgeHostError::EmptyProfileId,
+            "配置缺少标识",
+            "adapter.bridge_start",
+        ),
+        (
+            BridgeHostError::EmptyLocalToken,
+            "入口 Key 为空",
+            "adapter.bridge_start",
+        ),
+        (
+            BridgeHostError::EmptyUpstreamUrl,
+            "上游地址为空",
+            "adapter.bridge_start",
+        ),
+        (
+            BridgeHostError::InvalidUpstreamUrl,
+            "上游地址不允许",
+            "adapter.bridge_start",
+        ),
+        (
+            BridgeHostError::EmptyUpstreamToken,
+            "上游登录信息为空",
+            "adapter.bridge_start",
+        ),
+        (
+            BridgeHostError::HostClosing,
+            "正在退出",
+            "adapter.bridge_start",
+        ),
+        (
+            BridgeHostError::ConflictingStart,
+            "配置与正在运行的实例冲突",
+            "adapter.bridge_start",
+        ),
+        (
+            BridgeHostError::Stopping,
+            "正在停止",
+            "adapter.bridge_start",
+        ),
+        (
+            BridgeHostError::NotRunning,
+            "当前未运行",
+            "adapter.bridge_start",
+        ),
+        (
+            BridgeHostError::StatePoisoned,
+            "状态暂时不可用",
+            "adapter.bridge_start",
+        ),
+        (
+            BridgeHostError::InvalidGatewayPort,
+            "端口无效",
+            "adapter.bridge_start",
+        ),
+    ];
+    let mut seen = Vec::new();
+    for (error, reason, code) in cases {
+        let message = map_bridge_host_error(error);
+        assert!(
+            message.contains(reason),
+            "missing reason {reason}: {message}"
+        );
+        assert!(message.contains(code), "missing code {code}: {message}");
+        assert!(!message.contains("bearer"));
+        assert!(
+            !seen.contains(&message),
+            "duplicate mapped message: {message}"
+        );
+        seen.push(message);
+    }
+
+    let occupied = map_bridge_host_error(BridgeHostError::Bind(std::io::Error::new(
+        std::io::ErrorKind::AddrInUse,
+        "bearer=must-not-appear; C:\\secret\\socket",
+    )));
+    assert!(occupied.contains("端口已被占用"));
+    assert!(occupied.contains("adapter.port_in_use"));
+    assert!(!occupied.contains("must-not-appear"));
+    assert!(!occupied.contains("C:\\secret\\socket"));
+
+    let denied = map_bridge_host_error(BridgeHostError::Bind(std::io::Error::new(
+        std::io::ErrorKind::PermissionDenied,
+        "bearer=must-not-appear; C:\\secret\\socket",
+    )));
+    assert!(denied.contains("权限不足"));
+    assert!(denied.contains("adapter.port_in_use"));
+    assert!(!denied.contains("must-not-appear"));
+    assert!(!denied.contains("C:\\secret\\socket"));
+    assert_ne!(occupied, denied);
 }
 
 #[test]
@@ -1229,6 +1448,35 @@ fn kimi_source(id: &str, api_key: &str) -> Provider {
         created_at: "now".into(),
         updated_at: "now".into(),
     }
+}
+
+fn legacy_pool_fixture(
+    hub: &AgentHub,
+    id: &str,
+    target_agent_id: AgentId,
+    is_default: bool,
+) -> agenthub_core::models::RoutePool {
+    let profile = AdapterProfile {
+        id: id.into(),
+        name: id.into(),
+        source_kind: AdapterSourceKind::Account,
+        source_id: format!("missing-source-{id}"),
+        target_agent_id,
+        route: AdapterRoute::LocalBridge,
+        mode: agenthub_core::models::AdapterProfileMode::Api,
+        status: AdapterProfileStatus::Active,
+        rule_id: "test-rule".into(),
+        rule_version: "v1".into(),
+        generated_provider_id: None,
+        local_port: None,
+        auto_start: true,
+        last_error_code: None,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    };
+    hub.route_pools()
+        .create_legacy_pool(&profile, &format!("ahb_{id}"), is_default)
+        .unwrap()
 }
 
 fn restore_prepare_request(source_id: &str) -> AdapterBridgePrepareRequest {

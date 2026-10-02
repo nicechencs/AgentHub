@@ -9,6 +9,7 @@ import { isAgentHidden, visibleInstalledIds } from '@/lib/agent-visibility';
 import {
   buildConnectionsGuideUrl,
   type ConnectApiKeyDraft,
+  type PiProviderApi,
 } from '@/lib/connect-flow/connect-intent';
 import type { TranslateFn } from '@/lib/i18n';
 import {
@@ -188,10 +189,21 @@ export function tokenImportApiKeyDraft(
     endpointId: tokenImportSurface(row.kind),
   });
   const model = row.listedModels?.[0]?.trim() || '';
+  const piApi: PiProviderApi | undefined = agentId === 'pi'
+    ? row.kind === 'messages'
+      ? 'anthropic-messages'
+      : row.kind === 'responses_codex'
+        ? 'openai-responses'
+        : row.kind === 'chat_completions'
+          ? 'openai-completions'
+          : undefined
+    : undefined;
+  if (agentId === 'pi' && !piApi) return null;
   return {
     ...(parts.portPending ? {} : { baseUrl: parts.origin }),
     apiKey,
     ...(model ? { model } : {}),
+    ...(piApi ? { piApi } : {}),
     ...(agentId === 'grok'
       ? { apiBackend: row.kind === 'chat_completions' ? 'chat_completions' : 'responses' }
       : {}),

@@ -65,6 +65,7 @@ import {
 } from '@/lib/api/provider';
 import { runProviderSaveFlow } from '@/lib/api/provider-save';
 import type { AgentKey, Provider } from '@/lib/types';
+import type { PiProviderApi } from '@/lib/connect-flow/connect-intent';
 import { cn } from '@/lib/utils';
 import {
   applyFormVars,
@@ -202,6 +203,7 @@ export function ProviderEditDialog({
   initialBaseUrl,
   initialApiKey,
   initialModel,
+  initialPiApi,
 }: {
   agentId: AgentKey;
   open: boolean;
@@ -222,6 +224,7 @@ export function ProviderEditDialog({
   initialBaseUrl?: string;
   initialApiKey?: string;
   initialModel?: string;
+  initialPiApi?: PiProviderApi;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -460,7 +463,11 @@ export function ProviderEditDialog({
     const draftKey = (initialApiKey ?? compactInitialApiKey) ?? '';
     const draftModel = initialModel?.trim() || '';
     const hasDraft = Boolean(
-      draftUrl || draftKey || draftModel || (agentId === 'grok' && compactGrokApiBackend),
+      draftUrl
+      || draftKey
+      || draftModel
+      || (agentId === 'pi' && initialPiApi)
+      || (agentId === 'grok' && compactGrokApiBackend),
     );
     const customEndpoint = compact || hasDraft;
     setUseOfficial(customEndpoint ? false : agentHasOfficialApiTemplate(agentId));
@@ -472,6 +479,7 @@ export function ProviderEditDialog({
         ...(draftUrl ? { baseUrl: draftUrl } : {}),
         ...(draftKey ? { apiKey: writableSecret(draftKey) } : {}),
         ...(draftModel ? { model: draftModel } : {}),
+        ...(agentId === 'pi' && initialPiApi ? { piApi: initialPiApi } : {}),
         ...(agentId === 'grok' && compactGrokApiBackend
           ? { apiBackend: compactGrokApiBackend }
           : {}),
@@ -502,6 +510,7 @@ export function ProviderEditDialog({
     initialBaseUrl,
     initialApiKey,
     initialModel,
+    initialPiApi,
     t,
   ]);
 

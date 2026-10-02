@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LogLevel } from '@/lib/types';
+import { guiErrorCode } from './settings';
 import {
   closeToTraySettingValue,
   resolveCloseToTray,
@@ -44,6 +45,30 @@ describe('settings log helpers', () => {
     expect(clamp(0)).toBe(1);
     expect(clamp(14)).toBe(14);
     expect(clamp(400)).toBe(365);
+  });
+
+  it('prefers a structured backend code and accepts retryable adapter codes', () => {
+    expect(guiErrorCode({
+      code: 'adapter.bridge_start',
+      message: '本机转发无法启动或停止，请点重试。',
+    })).toBe('adapter.bridge_start');
+    expect(guiErrorCode({
+      code: 'retryable:adapter.port_in_use',
+      message: '端口被占用',
+    })).toBe('retryable:adapter.port_in_use');
+  });
+
+  it('falls back to bracketed codes but rejects arbitrary secret-like values', () => {
+    expect(guiErrorCode(new Error('listener failed [adapter.bridge_start]')))
+      .toBe('adapter.bridge_start');
+    expect(guiErrorCode({ code: 'sk-live-example-secret', message: 'listener failed' }))
+      .toBeUndefined();
+    expect(guiErrorCode({ code: 'sk.live.secret.value', message: 'listener failed' }))
+      .toBeUndefined();
+    expect(guiErrorCode({ code: 'eyJhbGciOiJIUzI1NiJ9.e30.sig', message: 'listener failed' }))
+      .toBeUndefined();
+    expect(guiErrorCode({ code: 'raw key value', message: 'listener failed [adapter.bridge_stop]' }))
+      .toBe('adapter.bridge_stop');
   });
 });
 

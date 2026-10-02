@@ -26,17 +26,34 @@ export type ConnectGuide = {
   resumeAgentId: AgentKey | null;
 };
 
+export type PiProviderApi =
+  | 'anthropic-messages'
+  | 'openai-responses'
+  | 'openai-completions';
+
 /** Prefill for Connections 「添加 API Key」. Lives on location.state, never in the URL. */
 export type ConnectApiKeyDraft = {
   baseUrl?: string;
   apiKey?: string;
   model?: string;
   apiBackend?: 'responses' | 'chat_completions';
+  piApi?: PiProviderApi;
 };
 
 export const CONNECT_API_KEY_DRAFT_STATE = 'connectApiKeyDraft';
 
 const GUIDE_INTENTS = new Set<string>(['import-login', 'add-key', 'oauth']);
+const PI_PROVIDER_APIS = new Set<PiProviderApi>([
+  'anthropic-messages',
+  'openai-responses',
+  'openai-completions',
+]);
+
+function parsePiProviderApi(raw: unknown): PiProviderApi | undefined {
+  return typeof raw === 'string' && PI_PROVIDER_APIS.has(raw as PiProviderApi)
+    ? raw as PiProviderApi
+    : undefined;
+}
 
 export function parseConnectGuideIntent(raw: string | null | undefined): ConnectGuideIntent | null {
   if (raw == null || !GUIDE_INTENTS.has(raw)) return null;
@@ -126,11 +143,13 @@ export function readConnectApiKeyDraft(state: unknown): ConnectApiKeyDraft | nul
   const apiBackend = draft.apiBackend === 'responses' || draft.apiBackend === 'chat_completions'
     ? draft.apiBackend
     : undefined;
-  if (!baseUrl && !apiKey && !model && !apiBackend) return null;
+  const piApi = parsePiProviderApi(draft.piApi);
+  if (!baseUrl && !apiKey && !model && !apiBackend && !piApi) return null;
   return {
     ...(baseUrl ? { baseUrl } : {}),
     ...(apiKey ? { apiKey } : {}),
     ...(model ? { model } : {}),
     ...(apiBackend ? { apiBackend } : {}),
+    ...(piApi ? { piApi } : {}),
   };
 }
