@@ -18,6 +18,7 @@ const (
 	typeHandshake           = "Handshake"
 	typeAcquireOrRenewOwner = "AcquireOrRenewOwner"
 	typeStatus              = "Status"
+	typeStart               = "Start"
 	typeActivateProbeListen = "ActivateProbeListen"
 	typeStop                = "Stop"
 
@@ -50,6 +51,7 @@ var handshakeCapabilities = []string{
 	"control.handshake",
 	"control.status",
 	"control.acquire_owner",
+	"control.start",
 	"control.activate_probe_listen",
 }
 
@@ -137,6 +139,12 @@ type ProbeFixture struct {
 	IngressKey      string `json:"ingress_key"`
 	UpstreamBaseURL string `json:"upstream_base_url"`
 	FixtureModel    string `json:"fixture_model"`
+}
+
+// StartPayload is the product Start input for this isolated slice.
+// Secrets stay in probe.json; control JSON must not carry them.
+type StartPayload struct {
+	ListenPort *int `json:"listen_port,omitempty"`
 }
 
 func payloadHash(raw json.RawMessage) string {

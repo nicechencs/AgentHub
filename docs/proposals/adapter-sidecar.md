@@ -3,7 +3,7 @@ title: Go 路由替换方案
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-10-03
+updated: 2026-10-04
 ---
 
 # Go 路由替换方案
@@ -14,7 +14,8 @@ updated: 2026-10-03
 
 - 默认本机路由仍由 Tauri 进程内的 `BridgeRuntimeHost` 提供。
 - 登录、连接、路线选择、数据库和 Agent 配置写入仍由 core 管理。
-- `go/agenthub-adapterd` 已有隔离 Messages 切片：`Handshake`、`Status`、`AcquireOrRenewOwner`、探测专用 `ActivateProbeListen`，以及合成 Key 的 Messages JSON/SSE。
+- `go/agenthub-adapterd` 已有隔离 Messages 切片：`Handshake`、`Start`、`Status`、`Stop`、`AcquireOrRenewOwner`、探测专用 `ActivateProbeListen`，以及合成 Key 的 Messages JSON/SSE。
+- 应用侧已有隔离监督器（`start_go_route_isolated` / `stop_go_route_isolated` / `get_go_route_isolated_status`）和看板「Go 路由」条，使用测试连接池、临时目录和非默认端口；不是默认本机转发。
 - `scripts/route-runtime-probe/messages-isolated.sh` 只使用临时目录、临时端口和受控 loopback 上游，不是默认网关。
 
 现行功能仍以[本机路由 API](../reference/local-route-api.md)、[路由兼容性](../reference/route-compatibility.md)和 [STATUS](../STATUS.md)为准。
@@ -145,7 +146,9 @@ Go 覆盖当前开放协议并完成目标平台的打包、启动、退出和�
 
 ## 下一步
 
-建议下一次开发只做“应用控制 Go Messages”：确定最小 `Start` 输入和 `Status` 输出，接通测试连接池的启动、请求、停止和失败展示。完成并检查这一条后，再决定下一条，不提前实现后续切片。
+切片 1「应用控制 Go Messages」已在隔离目录接通：最小 `Start` 输入（空 payload，密钥在 `probe.json`）、`Status` 输出、应用启动/停止/失败展示，以及合成 Key 的 Messages JSON/SSE。默认本机转发仍是进程内 `BridgeRuntimeHost`。
+
+建议下一次只做切片 2「补齐连接池运行」。完成并检查那一条后，再决定下一条，不提前实现后续切片。
 
 ## 相关页面
 

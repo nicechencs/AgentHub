@@ -15,6 +15,7 @@ import {
   resetMockAdapters,
   restoreMockRouteMembership,
 } from './adapter';
+import { createMockGoRouteIsolatedPort } from './go-route-isolated';
 import { createMockAgentPort, resetMockAgentStatuses, resetMockAgentVisibility } from './agent';
 import { createMockBackupPort } from './backup';
 import { createMockCatalogPort, resetMockAgentCatalog } from './catalog';
@@ -112,6 +113,7 @@ export const createBackend: CreateBackend = () => {
     features: { ...MOCK_BACKEND_FEATURES },
     account: createMockAccountPort(),
     adapter,
+    goRouteIsolated: createMockGoRouteIsolatedPort(),
     ticket,
     catalog: createMockCatalogPort(),
     config: createMockConfigPort(),

@@ -60,7 +60,7 @@ func main() {
 	fmt.Fprintf(os.Stdout, "agenthub-adapterd control socket: %s\n", rt.ControlSocket())
 	fmt.Fprintf(os.Stdout, "agenthub-adapterd pid: %d\n", os.Getpid())
 	fmt.Fprintf(os.Stdout, "agenthub-adapterd log: %s\n", rt.LogFile())
-	fmt.Fprintf(os.Stdout, "agenthub-adapterd messages port (inactive until ActivateProbeListen): %d\n", *listenPort)
+	fmt.Fprintf(os.Stdout, "agenthub-adapterd messages port (inactive until Start): %d\n", *listenPort)
 
 	if err := rt.ServeControl(ctx); err != nil && ctx.Err() == nil {
 		fmt.Fprintf(os.Stderr, "agenthub-adapterd control: %v\n", err)

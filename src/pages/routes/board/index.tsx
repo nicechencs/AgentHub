@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -28,7 +28,15 @@ import { Hint, Tip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import { agentDisplayName } from '@/config/agents';
 import { getLocalGatewayStatus, listLocalTokens } from '@/lib/api/adapter';
+import {
+  getGoRouteIsolatedStatus,
+  startGoRouteIsolated,
+  stopGoRouteIsolated,
+  type GoRouteIsolatedState,
+  type GoRouteIsolatedStatus,
+} from '@/lib/api/go-route-isolated';
 import type { LocalTokenRecord } from '@/lib/backend/contracts/adapter';
+import { BackendUnavailableError } from '@/lib/backend/contracts/errors';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import {
   isLocalEndpointKind,
@@ -73,6 +81,139 @@ function localGatewayStatusLabel(control: LocalGatewayControl, t: TranslateFn): 
   if (control.running) return t('routes.board.entryRunning');
   if (control.action === 'start') return t('routes.board.entryStopped');
   return t('routes.board.entryEmpty');
+}
+
+const GO_ISOLATED_STOPPED: GoRouteIsolatedStatus = {
+  state: 'stopped',
+  listenReady: false,
+  port: null,
+  lastError: null,
+  home: null,
+};
+
+function goIsolatedStatusLabel(state: GoRouteIsolatedState, t: TranslateFn): string {
+  if (state === 'starting') return t('routes.board.goIsolatedStarting');
+  if (state === 'ready') return t('routes.board.goIsolatedReady');
+  if (state === 'failed') return t('routes.board.goIsolatedFailed');
+  return t('routes.board.goIsolatedStopped');
+}
+
+function goIsolatedBadgeVariant(
+  state: GoRouteIsolatedState,
+): 'success' | 'warning' | 'danger' | 'default' {
+  if (state === 'ready') return 'success';
+  if (state === 'starting') return 'warning';
+  if (state === 'failed') return 'danger';
+  return 'default';
+}
+
+function failedGoIsolatedStatus(error: unknown, home: string | null): GoRouteIsolatedStatus {
+  const lastError = error instanceof Error
+    ? error.message
+    : typeof error === 'string'
+      ? error
+      : null;
+  return {
+    state: 'failed',
+    listenReady: false,
+    port: null,
+    lastError,
+    home,
+  };
+}
+
+function GoIsolatedStrip() {
+  const { t } = useI18n();
+  const [status, setStatus] = useState<GoRouteIsolatedStatus>(GO_ISOLATED_STOPPED);
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getGoRouteIsolatedStatus()
+      .then((next) => {
+        if (!cancelled) setStatus(next);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        if (error instanceof BackendUnavailableError) return;
+        setStatus(failedGoIsolatedStatus(error, null));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const run = useCallback(async (action: 'start' | 'stop') => {
+    if (busyRef.current || status.state === 'starting') return;
+    busyRef.current = true;
+    setBusy(true);
+    if (action === 'start') {
+      setStatus((current) => ({
+        ...current,
+        state: 'starting',
+        lastError: null,
+      }));
+    }
+    try {
+      const next = action === 'start'
+        ? await startGoRouteIsolated()
+        : await stopGoRouteIsolated();
+      setStatus(next);
+    } catch (error) {
+      setStatus((current) => failedGoIsolatedStatus(error, current.home));
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }, [status.state]);
+
+  const disabled = busy || status.state === 'starting';
+
+  return (
+    <Card className="p-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium">{t('routes.board.goIsolatedTitle')}</p>
+            <Badge variant={goIsolatedBadgeVariant(status.state)}>
+              {goIsolatedStatusLabel(status.state, t)}
+            </Badge>
+          </div>
+          <p className="mt-1 text-xs text-secondary">{t('routes.board.goIsolatedHint')}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            disabled={disabled}
+            onClick={() => {
+              void run('start');
+            }}
+          >
+            {t('routes.board.goIsolatedStart')}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={disabled}
+            onClick={() => {
+              void run('stop');
+            }}
+          >
+            {t('routes.board.goIsolatedStop')}
+          </Button>
+        </div>
+      </div>
+      {status.state === 'failed' ? (
+        <div className="mt-2">
+          <AdapterErrorLines
+            error={status.lastError}
+            fallback={t('routes.board.goIsolatedFailed')}
+          />
+        </div>
+      ) : null}
+    </Card>
+  );
 }
 
 function rememberKind(raw: string): LocalEndpointKind | 'all' {
@@ -326,6 +467,8 @@ export default function RoutesBoardPage() {
         description={fleetLabel}
         descriptionTip={t('routes.board.descriptionTip')}
       />
+
+      <GoIsolatedStrip />
 
       {profileState === 'error' ? (
         <ErrorState

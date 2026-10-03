@@ -189,6 +189,8 @@ func (rt *Runtime) HandleControl(raw []byte) Reply {
 		reply = rt.handleAcquire(env)
 	case typeStatus:
 		reply = rt.handleStatus(env)
+	case typeStart:
+		reply = rt.handleStart(env)
 	case typeActivateProbeListen:
 		reply = rt.handleActivateProbe(env)
 	case typeStop:
@@ -466,43 +468,92 @@ func (rt *Runtime) statusSnapshot() (StatusSuccess, error) {
 	}, nil
 }
 
-func (rt *Runtime) handleActivateProbe(env Envelope) Reply {
+func (rt *Runtime) requireOwner(env Envelope) *Reply {
 	if fail := rt.requireHandshake(env); fail != nil {
-		return *fail
+		return fail
 	}
 	rt.mu.Lock()
+	defer rt.mu.Unlock()
 	if rt.ownerTerm == 0 || env.OwnerTerm == nil || *env.OwnerTerm != rt.ownerTerm {
-		rt.mu.Unlock()
-		return rt.fail(env.Type, env.RequestID, errNotOwner, "ActivateProbeListen requires the current owner_term", false)
+		fail := rt.failUnlocked(env.Type, env.RequestID, errNotOwner, env.Type+" requires the current owner_term", false)
+		return &fail
 	}
 	if env.OwnerID != rt.ownerID {
-		rt.mu.Unlock()
-		return rt.fail(env.Type, env.RequestID, errNotOwner, "owner_id does not match", false)
+		fail := rt.failUnlocked(env.Type, env.RequestID, errNotOwner, "owner_id does not match", false)
+		return &fail
 	}
 	if time.Now().After(rt.ownerLeaseUntil) {
-		rt.mu.Unlock()
-		return rt.fail(env.Type, env.RequestID, errNotOwner, "owner lease has expired", false)
+		fail := rt.failUnlocked(env.Type, env.RequestID, errNotOwner, "owner lease has expired", false)
+		return &fail
 	}
+	return nil
+}
+
+func (rt *Runtime) handleStart(env Envelope) Reply {
+	return rt.startFromProbeFixture(env, "isolated Start; not default gateway")
+}
+
+func (rt *Runtime) handleActivateProbe(env Envelope) Reply {
+	return rt.startFromProbeFixture(env, "probe-only activate; not product Start")
+}
+
+func (rt *Runtime) applyOptionalStartPort(raw json.RawMessage) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	var payload StartPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return fmt.Errorf("Start payload is not valid JSON")
+	}
+	if payload.ListenPort == nil {
+		return nil
+	}
+	port := *payload.ListenPort
+	if port == productDefaultPort {
+		return fmt.Errorf("refusing product default listen port %d", productDefaultPort)
+	}
+	if port < 0 || port > 65535 {
+		return fmt.Errorf("invalid listen port %d", port)
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.listenReady {
+		return nil
+	}
+	rt.listenPort = port
+	return nil
+}
+
+func (rt *Runtime) startFromProbeFixture(env Envelope, note string) Reply {
+	if fail := rt.requireOwner(env); fail != nil {
+		return *fail
+	}
+	if env.Type == typeStart {
+		if err := rt.applyOptionalStartPort(env.Payload); err != nil {
+			return rt.fail(env.Type, env.RequestID, errInvalidRequest, err.Error(), false)
+		}
+	}
+	rt.mu.Lock()
 	if rt.listenReady {
 		port := rt.actualPort
 		epoch := rt.instanceEpoch
 		rt.mu.Unlock()
 		return Reply{
 			OK:            true,
-			Type:          typeActivateProbeListen,
+			Type:          env.Type,
 			RequestID:     env.RequestID,
 			InstanceEpoch: epoch,
 			Payload: marshalPayload(map[string]any{
 				"listen_ready": true,
 				"port":         port,
-				"note":         "probe-only activate; not product CommitDesired",
+				"note":         note,
 			}),
 		}
 	}
 	rt.mu.Unlock()
 
 	if !isScratchHome(rt.home) {
-		return rt.fail(env.Type, env.RequestID, errProbeOnlyRejected, "ActivateProbeListen is scratch-only", false)
+		return rt.fail(env.Type, env.RequestID, errProbeOnlyRejected, env.Type+" is scratch-only", false)
 	}
 	fixturePath := defaultProbeFixture(rt.home)
 	raw, err := os.ReadFile(fixturePath)
@@ -527,16 +578,16 @@ func (rt *Runtime) handleActivateProbe(env Envelope) Reply {
 	port := rt.actualPort
 	epoch := rt.instanceEpoch
 	rt.mu.Unlock()
-	rt.logf("probe messages listening on 127.0.0.1:%d (not product CommitDesired)", port)
+	rt.logf("messages listening on 127.0.0.1:%d (%s)", port, note)
 	return Reply{
 		OK:            true,
-		Type:          typeActivateProbeListen,
+		Type:          env.Type,
 		RequestID:     env.RequestID,
 		InstanceEpoch: epoch,
 		Payload: marshalPayload(map[string]any{
 			"listen_ready": true,
 			"port":         port,
-			"note":         "probe-only activate; not product CommitDesired",
+			"note":         note,
 		}),
 	}
 }
