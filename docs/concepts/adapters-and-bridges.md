@@ -56,7 +56,7 @@ Adapter profile 是一条“来源登录 → 目标 Agent”的受管记录，�
 
 ## Go 路由程序的当前边界
 
-树中已有隔离目录下的 `agenthub-adapterd` Messages 切片，以及看板「Go 路由」条的启动/停止；使用临时目录和非默认端口，还不是默认本机路由。当前生产监听、排空和恢复仍在 Tauri 桌面进程内。
+树中已有隔离目录下的 `agenthub-adapterd` Messages 切片（含连接池调度），以及看板「Go 路由」条的启动/停止；使用临时目录和非默认端口，还不是默认本机路由。当前生产监听、排空和恢复仍在 Tauri 桌面进程内。
 
 后续替换只把监听、协议转换和池内调度移到 Go。Account、Provider、Connection、ActiveBinding、数据库和 Agent 配置仍由 core service 管理；Go 不维护第二套产品状态，也不直接写数据库或本机配置。最小接入和分步切换见 [Go 路由替换方案](../proposals/adapter-sidecar.md)。
 

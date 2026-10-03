@@ -42,6 +42,7 @@ type Runtime struct {
 	lastError   *LastError
 
 	probe *ProbeFixture
+	pool  *Pool
 
 	idempotency map[string]idempotentEntry
 
@@ -415,12 +416,15 @@ func (rt *Runtime) handleStatus(env Envelope) Reply {
 	}
 	body := marshalPayload(status)
 	rt.mu.Lock()
-	secret := ""
-	if rt.probe != nil {
-		secret = rt.probe.IngressKey
+	secrets := make([]string, 0, 4)
+	if rt.probe != nil && rt.probe.IngressKey != "" {
+		secrets = append(secrets, rt.probe.IngressKey)
+	}
+	if rt.pool != nil {
+		secrets = append(secrets, rt.pool.Secrets()...)
 	}
 	rt.mu.Unlock()
-	if statusContainsSecret(body, secret) {
+	if statusContainsAnySecret(body, secrets) {
 		return rt.fail(env.Type, env.RequestID, errSecretOnControl, "status refused because it would include a secret", false)
 	}
 	rt.mu.Lock()
@@ -452,19 +456,30 @@ func (rt *Runtime) statusSnapshot() (StatusSuccess, error) {
 		p := port
 		portPtr = &p
 	}
+	var schedule string
+	var memberCount, healthyCount int
+	if rt.pool != nil {
+		snap := rt.pool.Snapshot(time.Now())
+		schedule = snap.SchedulePolicy
+		memberCount = snap.MemberCount
+		healthyCount = snap.HealthyMemberCount
+	}
 	return StatusSuccess{
-		InstanceID:      rt.instanceID,
-		InstanceEpoch:   rt.instanceEpoch,
-		OwnerTerm:       term,
-		ActiveRevision:  nil,
-		ActiveHash:      nil,
-		Prepared:        []byte("null"),
-		Lifecycle:       rt.lifecycle,
-		ListenReady:     rt.listenReady,
-		Port:            portPtr,
-		InFlightCount:   rt.inFlight,
-		OwnerLeaseValid: rt.ownerTerm > 0 && time.Now().Before(rt.ownerLeaseUntil),
-		LastError:       rt.lastError,
+		InstanceID:         rt.instanceID,
+		InstanceEpoch:      rt.instanceEpoch,
+		OwnerTerm:          term,
+		ActiveRevision:     nil,
+		ActiveHash:         nil,
+		Prepared:           []byte("null"),
+		Lifecycle:          rt.lifecycle,
+		ListenReady:        rt.listenReady,
+		Port:               portPtr,
+		InFlightCount:      rt.inFlight,
+		OwnerLeaseValid:    rt.ownerTerm > 0 && time.Now().Before(rt.ownerLeaseUntil),
+		LastError:          rt.lastError,
+		SchedulePolicy:     schedule,
+		MemberCount:        memberCount,
+		HealthyMemberCount: healthyCount,
 	}, nil
 }
 
@@ -564,15 +579,24 @@ func (rt *Runtime) startFromProbeFixture(env Envelope, note string) Reply {
 	if err := json.Unmarshal(raw, &fixture); err != nil {
 		return rt.fail(env.Type, env.RequestID, errConfigMismatch, "probe fixture is not valid JSON", false)
 	}
-	if fixture.IngressKey == "" || fixture.UpstreamBaseURL == "" {
+	if fixture.IngressKey == "" || (strings.TrimSpace(fixture.UpstreamBaseURL) == "" && len(fixture.Members) == 0) {
 		return rt.fail(env.Type, env.RequestID, errConfigMismatch, "probe fixture is incomplete", false)
 	}
-	if err := loopbackURL(fixture.UpstreamBaseURL); err != nil {
-		return rt.fail(env.Type, env.RequestID, errScopeMismatch, "probe upstream must be loopback", false)
+	if strings.TrimSpace(fixture.UpstreamBaseURL) != "" {
+		if err := loopbackURL(fixture.UpstreamBaseURL); err != nil {
+			return rt.fail(env.Type, env.RequestID, errScopeMismatch, "probe upstream must be loopback", false)
+		}
 	}
 
 	if err := rt.startMessagesLocked(fixture); err != nil {
-		return rt.fail(env.Type, env.RequestID, errPortInUse, "messages listener failed to bind", false)
+		switch {
+		case err == errIncompletePool || err == errInvalidPolicy:
+			return rt.fail(env.Type, env.RequestID, errConfigMismatch, "probe fixture is incomplete", false)
+		case strings.Contains(err.Error(), "loopback"):
+			return rt.fail(env.Type, env.RequestID, errScopeMismatch, "probe upstream must be loopback", false)
+		default:
+			return rt.fail(env.Type, env.RequestID, errPortInUse, "messages listener failed to bind", false)
+		}
 	}
 	rt.mu.Lock()
 	port := rt.actualPort
@@ -593,8 +617,13 @@ func (rt *Runtime) startFromProbeFixture(env Envelope, note string) Reply {
 }
 
 func (rt *Runtime) startMessagesLocked(fixture ProbeFixture) error {
+	pool, err := NewPoolFromFixture(fixture)
+	if err != nil {
+		return err
+	}
 	rt.mu.Lock()
 	rt.probe = &fixture
+	rt.pool = pool
 	host := rt.listenHost
 	port := rt.listenPort
 	rt.mu.Unlock()
@@ -696,6 +725,12 @@ func (rt *Runtime) ingressKey() string {
 		return ""
 	}
 	return rt.probe.IngressKey
+}
+
+func (rt *Runtime) currentPool() *Pool {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return rt.pool
 }
 
 func (rt *Runtime) upstreamBase() string {
