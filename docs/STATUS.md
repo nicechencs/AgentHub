@@ -3,7 +3,7 @@ title: AgentHub 当前实现状态
 type: status
 status: current
 owner: maintainers
-updated: 2026-09-30
+updated: 2026-10-03
 ---
 
 # 当前实现状态
