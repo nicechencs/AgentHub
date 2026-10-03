@@ -3,14 +3,14 @@ title: 插件（extension / plugin）管理
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-09-29
+updated: 2026-10-03
 ---
 
 # 插件（extension / plugin）管理
 
 > 状态：proposed。列表、启停、安装/卸载已落地；更新和 Codex / Pi 写入仍是提案。现行行为见 [STATUS](../STATUS.md) 与 [页面模式](../ui/page-patterns.md)。
 
-产品对象是各家的 plugin / extension 包，不是 MCP server。`/mcp` 保持只读 MCP 清单，不改名。
+产品对象是各家的 plugin / extension 包，不是 MCP server，也不是 AgentHub 自身的官方扩展。`/plugins` 与[模块化提案「功能模块与官方扩展」](modularity.md#8-功能模块与官方扩展)不是同一对象。`/mcp` 保持只读 MCP 清单，不改名。
 
 ## 1. 当前基线
 
@@ -72,7 +72,8 @@ updated: 2026-09-29
 
 ## 6. 非目标
 
-- AgentHub 运行插件代码或当 MCP host。
+- AgentHub 运行 `/plugins` 管理的厂商包代码，或当 MCP host。
+- 把本页做成 AgentHub 官方扩展、动态插件 ABI 或插件商店 / SDK。
 - 合并 Skills 市场、MCP registry、各家插件市场为一个商店；自建跨 Agent 商店。
 - 本地 MCP 网关、加密凭据库、国产 OAuth。
 - 把 VS Code / Cursor IDE 扩展市场当成 Cursor Agent 插件源。
@@ -81,6 +82,7 @@ updated: 2026-09-29
 
 ## 7. 相关页面
 
+- [模块化提案「功能模块与官方扩展」](modularity.md#8-功能模块与官方扩展)：AgentHub 官方扩展，与本页厂商插件不是同一对象。
 - [插件、MCP 与技能](../concepts/plugins-and-mcp.md)
 - [Agent 插件表面](../reference/agent-plugin-surfaces.md)
 - [MCP inventory](../reference/mcp-inventory.md)
