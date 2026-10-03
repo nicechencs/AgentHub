@@ -7,8 +7,10 @@ import {
 } from '@/lib/backend/contracts';
 import {
   mapCoreAccountView,
+  mapCoreImportLiveReport,
   type CoreAccount,
   type CoreAccountSwitchResult,
+  type CoreImportLiveReport,
 } from '@/lib/backend/contracts/account-map';
 import { unsupportedError } from '@/lib/backend/contracts/errors';
 import {
@@ -114,11 +116,11 @@ export function createTauriAccountPort(): AccountPort {
 
     async importCurrentLogin(agentId) {
       try {
-        const row = await invoke<CoreAccount>('import_account_live', {
+        const report = await invoke<CoreImportLiveReport>('import_account_live', {
           agentId,
           name: null,
         });
-        return mapCoreAccountView(row).account;
+        return mapCoreImportLiveReport(report);
       } catch (e) {
         log.error('import_account_live failed', e);
         throw e;

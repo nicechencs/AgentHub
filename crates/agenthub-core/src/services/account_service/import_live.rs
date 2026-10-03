@@ -6,17 +6,57 @@ use uuid::Uuid;
 use crate::adapters::AgentAdapter;
 use crate::error::{AppError, Result};
 use crate::models::{
-    attach_persisted_surface, Account, AgentId, Capability, LiveAccount, PersistedTicketSurface,
-    TicketSurface,
+    attach_persisted_surface, Account, AgentId, Capability, ImportLiveFailedLogin,
+    ImportLiveReport, ImportLiveRestoredLogin, LiveAccount, PersistedTicketSurface, TicketSurface,
+    TRASH_HOME_CONNECTIONS,
 };
 use crate::services::adapter_projection::projection_import_error;
 use crate::services::AdapterRouteService;
+use crate::storage::ConnectionTrashRepo;
 
 use super::surface::*;
 use super::{AccountService, MAX_ACCOUNT_LABEL_LEN};
 
+/// Result of writing one local login into the pool.
+pub(super) enum LiveUpsertOutcome {
+    /// Stored. `restored` is set when the login came back from the login
+    /// recycle bin instead of being created anew.
+    Imported {
+        account: Account,
+        restored: Option<ImportLiveRestoredLogin>,
+    },
+    SkippedInTrash,
+}
+
+/// How a live upsert treats a matching recycle-bin login.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum TrashMatch {
+    /// Legacy rule (Kiro refresh): restore only when the row becomes current,
+    /// otherwise leave it in the recycle bin and store nothing.
+    SkipUnlessCurrent,
+    /// 「导入本机登录」: a login the user imports again always comes back.
+    /// A match in the login recycle bin is restored; a match that only sits
+    /// in the connection pool recycle bin stays there and the import creates
+    /// a new connection.
+    RestoreOnImport,
+}
+
 impl AccountService {
+    /// Import the local login and return only the focused row. Kept for CLI
+    /// and older callers; the desktop uses [`Self::import_live_report`].
     pub fn import_live(&self, agent: AgentId, name: Option<&str>) -> Result<Account> {
+        self.import_live_report(agent, name)?
+            .account
+            .ok_or_else(|| AppError::message("account.import", "live import produced no accounts"))
+    }
+
+    /// User-triggered import with what was restored, skipped or failed, so the
+    /// UI can explain the result.
+    pub fn import_live_report(
+        &self,
+        agent: AgentId,
+        name: Option<&str>,
+    ) -> Result<ImportLiveReport> {
         let started = Instant::now();
         let result = self.import_live_inner(agent, name);
         if result.is_ok() {
@@ -26,7 +66,11 @@ impl AccountService {
         result
     }
 
-    pub(super) fn import_live_inner(&self, agent: AgentId, name: Option<&str>) -> Result<Account> {
+    pub(super) fn import_live_inner(
+        &self,
+        agent: AgentId,
+        name: Option<&str>,
+    ) -> Result<ImportLiveReport> {
         // Pi stores multi-provider credentials in one auth.json — expand to
         // one pool row per provider so Connections can show each OAuth login.
         if agent == AgentId::Pi {
@@ -54,17 +98,17 @@ impl AccountService {
         // Grok nested auth.json slots import one row per person, like Pi
         // providers. Keep an existing current if that person is still in the
         // file; otherwise activate the default `::client` slot, not last-sorted.
+        let mut report = ImportLiveReport::default();
         let mut grants = Vec::new();
-        let mut blocked_projection = false;
         for live in lives {
             if self.classify_live_account(agent, &live)?.is_projection() {
-                blocked_projection = true;
+                report.skipped_local_route += 1;
                 continue;
             }
             grants.push(live);
         }
         if grants.is_empty() {
-            if blocked_projection {
+            if report.skipped_local_route > 0 {
                 return Err(projection_import_error());
             }
             return Err(AppError::message(
@@ -85,20 +129,43 @@ impl AccountService {
             }
         }
         for live in others {
-            self.upsert_live_account(adapter.as_ref(), agent, live, None, false)?;
+            let outcome = self.upsert_live_account_outcome(
+                adapter.as_ref(),
+                agent,
+                live,
+                None,
+                false,
+                TrashMatch::RestoreOnImport,
+            )?;
+            record_import_outcome(&mut report, outcome, false);
         }
         let live = chosen_live.ok_or_else(|| {
             AppError::message("account.import", "live import produced no accounts")
         })?;
-        self.upsert_live_account(adapter.as_ref(), agent, live, name, true)?
-            .ok_or_else(|| AppError::message("account.import", "live import produced no accounts"))
+        let outcome = self.upsert_live_account_outcome(
+            adapter.as_ref(),
+            agent,
+            live,
+            name,
+            true,
+            TrashMatch::RestoreOnImport,
+        )?;
+        record_import_outcome(&mut report, outcome, true);
+        if report.account.is_none() {
+            return Err(AppError::message(
+                "account.import",
+                "live import produced no accounts",
+            ));
+        }
+        Ok(report)
     }
 
     /// Import each Pi auth.json provider as its own pool account.
-    /// Returns the last imported account for UI focus. Pi providers are
+    /// `account` is the last imported row for UI focus. Pi providers are
     /// concurrent entries in one live file, so import does not guess a global
-    /// current provider.
-    pub(super) fn import_pi_providers_inner(&self, name: Option<&str>) -> Result<Account> {
+    /// current provider. One failing provider does not hide the ones that
+    /// already imported: failures are collected and reported together.
+    pub(super) fn import_pi_providers_inner(&self, name: Option<&str>) -> Result<ImportLiveReport> {
         let adapter = self
             .registry
             .require(AgentId::Pi, Capability::AccountSwitch)?;
@@ -110,21 +177,32 @@ impl AccountService {
                 "Pi auth.json has no provider credentials to import".into(),
             ));
         }
+        self.import_pi_live_entries(adapter.as_ref(), lives, name)
+    }
 
+    /// Body of the Pi import once auth.json is expanded. Split out so the
+    /// per-entry reporting can be tested without the global Pi config dir.
+    /// Caller holds the Pi live lock.
+    pub(super) fn import_pi_live_entries(
+        &self,
+        adapter: &dyn AgentAdapter,
+        lives: Vec<LiveAccount>,
+        name: Option<&str>,
+    ) -> Result<ImportLiveReport> {
+        let mut report = ImportLiveReport::default();
         let mut grants = Vec::new();
-        let mut blocked_projection = false;
         for live in lives {
             if self
                 .classify_live_account(AgentId::Pi, &live)?
                 .is_projection()
             {
-                blocked_projection = true;
+                report.skipped_local_route += 1;
                 continue;
             }
             grants.push(live);
         }
         if grants.is_empty() {
-            if blocked_projection {
+            if report.skipped_local_route > 0 {
                 return Err(projection_import_error());
             }
             return Err(AppError::message(
@@ -133,18 +211,68 @@ impl AccountService {
             ));
         }
         let n = grants.len();
-        let mut last = None;
+        let mut errors = Vec::new();
         for (i, live) in grants.into_iter().enumerate() {
             let display_name = if i + 1 == n { name } else { None };
-            if let Some(account) =
-                self.upsert_live_account(adapter.as_ref(), AgentId::Pi, live, display_name, false)?
-            {
-                last = Some(account);
+            let entry_label = live
+                .label_hint
+                .as_deref()
+                .map(str::trim)
+                .filter(|label| !label.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("Pi #{}", i + 1));
+            match self.upsert_live_account_outcome(
+                adapter,
+                AgentId::Pi,
+                live,
+                display_name,
+                false,
+                TrashMatch::RestoreOnImport,
+            ) {
+                Ok(outcome) => record_import_outcome(&mut report, outcome, true),
+                Err(error) => {
+                    tracing::warn!(
+                        module = crate::logging::targets::ACCOUNT,
+                        agent = "pi",
+                        code = %error.code(),
+                        "Pi import entry failed"
+                    );
+                    report.failed.push(ImportLiveFailedLogin {
+                        label: entry_label,
+                        code: error.code().to_string(),
+                        message: error.to_string(),
+                    });
+                    errors.push(error);
+                }
             }
         }
-        last.ok_or_else(|| AppError::message("account.import", "Pi import produced no accounts"))
+        if report.account.is_some() {
+            return Ok(report);
+        }
+        if errors.len() == 1 {
+            return Err(errors.remove(0));
+        }
+        if !report.failed.is_empty() {
+            let details = report
+                .failed
+                .iter()
+                .map(|failed| format!("{}：{}", failed.label, failed.message))
+                .collect::<Vec<_>>()
+                .join("；");
+            return Err(AppError::message(
+                "account.import",
+                format!("{} 个登录都没导入成功。{details}", report.failed.len()),
+            ));
+        }
+        Err(AppError::message(
+            "account.import",
+            "Pi import produced no accounts",
+        ))
     }
 
+    /// Kept for callers that only need the stored row (Kiro refresh, tests).
+    /// A login whose match sits in the recycle bin yields `None` unless it
+    /// becomes current.
     pub(super) fn upsert_live_account(
         &self,
         adapter: &dyn AgentAdapter,
@@ -153,6 +281,30 @@ impl AccountService {
         name: Option<&str>,
         make_current: bool,
     ) -> Result<Option<Account>> {
+        Ok(
+            match self.upsert_live_account_outcome(
+                adapter,
+                agent,
+                live,
+                name,
+                make_current,
+                TrashMatch::SkipUnlessCurrent,
+            )? {
+                LiveUpsertOutcome::Imported { account, .. } => Some(account),
+                LiveUpsertOutcome::SkippedInTrash => None,
+            },
+        )
+    }
+
+    pub(super) fn upsert_live_account_outcome(
+        &self,
+        adapter: &dyn AgentAdapter,
+        agent: AgentId,
+        live: LiveAccount,
+        name: Option<&str>,
+        make_current: bool,
+        trash_match: TrashMatch,
+    ) -> Result<LiveUpsertOutcome> {
         if live.agent != agent {
             return Err(AppError::InvalidArg(format!(
                 "adapter returned account for {}, expected {}",
@@ -161,16 +313,23 @@ impl AccountService {
             )));
         }
 
-        if let Some(trash_id) = self.matching_live_trash_id(adapter, agent, &live)? {
-            if !make_current {
+        let trash_home = match trash_match {
+            TrashMatch::SkipUnlessCurrent => None,
+            TrashMatch::RestoreOnImport => Some(TRASH_HOME_CONNECTIONS),
+        };
+        let mut restored = None;
+        if let Some(entry) = self.matching_live_trash_entry(adapter, agent, &live, trash_home)? {
+            if trash_match == TrashMatch::SkipUnlessCurrent && !make_current {
                 tracing::debug!(
                     module = crate::logging::targets::ACCOUNT,
                     agent = agent.as_str(),
-                    "live import skipped a recycle-bin login"
+                    "live upsert skipped a recycle-bin login"
                 );
-                return Ok(None);
+                return Ok(LiveUpsertOutcome::SkippedInTrash);
             }
+            let (trash_id, label) = entry;
             self.connections.restore_trash(&trash_id)?;
+            restored = Some(label);
         }
 
         let display = name
@@ -211,8 +370,42 @@ impl AccountService {
             row.extra.clone(),
             make_current,
         )
-        .map(|committed| Some(committed.stored))
+        .map(|committed| LiveUpsertOutcome::Imported {
+            restored: restored.map(|label| ImportLiveRestoredLogin {
+                id: committed.stored.id.clone(),
+                label,
+            }),
+            account: committed.stored,
+        })
         .map_err(|error| error.into_error())
+    }
+
+    /// Recycle-bin login with the same authorization (and, for Pi, the same
+    /// provider): `(recycle-bin id, label)`, so an import can say what it
+    /// restored. `home` limits the search to one recycle bin.
+    fn matching_live_trash_entry(
+        &self,
+        adapter: &dyn AgentAdapter,
+        agent: AgentId,
+        live: &LiveAccount,
+        home: Option<&str>,
+    ) -> Result<Option<(String, String)>> {
+        let now = chrono::Utc::now()
+            .format("%Y-%m-%d %H:%M:%S%.6f")
+            .to_string();
+        let items = ConnectionTrashRepo::new(self.db.clone()).list(Some(agent), home, &now)?;
+        Ok(items.iter().find_map(|item| {
+            let account = item.account.as_ref()?;
+            (same_live_slot(agent, &live.credentials, &account.credentials)
+                && accounts_same_authorization(adapter, live.kind, &live.credentials, account))
+            .then(|| {
+                let label = Some(item.label.trim())
+                    .filter(|label| !label.is_empty())
+                    .unwrap_or(account.label.as_str())
+                    .to_string();
+                (item.id.clone(), label)
+            })
+        }))
     }
 
     /// Add the ticket surface to a prospective row before its first database
@@ -326,5 +519,19 @@ fn copy_missing_extra_string(from: &Value, into: &mut Value, key: &str) {
     };
     if let Some(obj) = into.as_object_mut() {
         obj.insert(key.into(), json!(value));
+    }
+}
+
+/// Fold one upsert result into the import report. `focus` marks the row the
+/// UI should select afterwards.
+fn record_import_outcome(report: &mut ImportLiveReport, outcome: LiveUpsertOutcome, focus: bool) {
+    if let LiveUpsertOutcome::Imported { account, restored } = outcome {
+        report.imported_count += 1;
+        if let Some(restored) = restored {
+            report.restored_from_trash.push(restored);
+        }
+        if focus {
+            report.account = Some(account);
+        }
     }
 }

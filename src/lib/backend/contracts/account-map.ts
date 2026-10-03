@@ -27,6 +27,51 @@ export interface CoreAccountSwitchResult {
   backfilledAccountId?: string | null;
 }
 
+/**
+ * Mirrors Rust `ImportLiveRestoredLogin` (camelCase): a login this import
+ * brought back from the recycle bin. `id` is the restored connection.
+ */
+export interface ImportLoginRestored {
+  id: string;
+  label: string;
+}
+
+/** Mirrors Rust `ImportLiveFailedLogin` (camelCase). */
+export interface ImportLoginFailed {
+  label: string;
+  code: string;
+  message: string;
+}
+
+/** Mirrors Rust `ImportLiveReport` returned by `import_account_live`. */
+export interface CoreImportLiveReport {
+  account?: CoreAccount | null;
+  importedCount?: number;
+  restoredFromTrash?: ImportLoginRestored[];
+  skippedLocalRoute?: number;
+  failed?: ImportLoginFailed[];
+}
+
+/** UI view of a user-triggered「导入本机登录」. */
+export interface ImportLoginReport {
+  account: Account | null;
+  importedCount: number;
+  restoredFromTrash: ImportLoginRestored[];
+  skippedLocalRoute: number;
+  failed: ImportLoginFailed[];
+}
+
+export function mapCoreImportLiveReport(raw: CoreImportLiveReport): ImportLoginReport {
+  const account = raw.account ? mapCoreAccountView(raw.account).account : null;
+  return {
+    account,
+    importedCount: raw.importedCount ?? (account ? 1 : 0),
+    restoredFromTrash: raw.restoredFromTrash ?? [],
+    skippedLocalRoute: raw.skippedLocalRoute ?? 0,
+    failed: raw.failed ?? [],
+  };
+}
+
 export function mapCoreAccount(a: CoreAccount): Account {
   const extra = a.extra ?? {};
   const credentials = a.credentials ?? {};

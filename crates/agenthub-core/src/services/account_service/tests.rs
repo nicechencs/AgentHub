@@ -5052,3 +5052,340 @@ fn probe_live_auth_does_not_duplicate_projection_kind() {
         vec![crate::services::ADAPTER_PROJECTION_KIND.to_owned()]
     );
 }
+
+fn pi_two_provider_lives() -> Vec<LiveAccount> {
+    let body = json!({
+        "anthropic": {"type": "oauth", "access": "anthropic-access", "refresh": "anthropic-refresh"},
+        "xai": {"type": "oauth", "access": "xai-access", "refresh": "xai-refresh"}
+    });
+    crate::adapters::pi_auth::expand_auth_to_live_accounts(&body).unwrap()
+}
+
+fn pi_row_for(svc: &AccountService, provider: &str) -> Account {
+    svc.repo()
+        .list(Some(AgentId::Pi))
+        .unwrap()
+        .into_iter()
+        .find(|row| row.credentials["provider"] == provider)
+        .unwrap_or_else(|| panic!("pi row for {provider}"))
+}
+
+#[test]
+fn pi_import_restores_a_login_from_the_recycle_bin() {
+    let (_root, svc, adapter) = live_svc(AgentId::Pi);
+    let first = svc
+        .import_pi_live_entries(adapter.as_ref(), pi_two_provider_lives(), None)
+        .unwrap();
+    assert_eq!(first.imported_count, 2);
+    assert!(first.restored_from_trash.is_empty());
+
+    let xai = pi_row_for(&svc, "xai");
+    svc.delete(&xai.id, AgentId::Pi).unwrap();
+
+    let report = svc
+        .import_pi_live_entries(adapter.as_ref(), pi_two_provider_lives(), None)
+        .unwrap();
+    assert_eq!(report.imported_count, 2);
+    assert_eq!(report.skipped_local_route, 0);
+    assert!(report.failed.is_empty());
+    assert_eq!(report.restored_from_trash.len(), 1);
+    assert_eq!(report.restored_from_trash[0].id, xai.id);
+    assert_eq!(report.restored_from_trash[0].label, xai.label);
+    assert!(
+        svc.connections
+            .list_trash(Some(AgentId::Pi))
+            .unwrap()
+            .is_empty(),
+        "importing again restores the recycle-bin login"
+    );
+    assert_eq!(pi_row_for(&svc, "xai").id, xai.id, "same row comes back");
+    assert_eq!(svc.repo().list(Some(AgentId::Pi)).unwrap().len(), 2);
+}
+
+#[test]
+fn pi_import_restores_every_login_when_all_are_in_the_recycle_bin() {
+    let (_root, svc, adapter) = live_svc(AgentId::Pi);
+    svc.import_pi_live_entries(adapter.as_ref(), pi_two_provider_lives(), None)
+        .unwrap();
+    for provider in ["anthropic", "xai"] {
+        let row = pi_row_for(&svc, provider);
+        svc.delete(&row.id, AgentId::Pi).unwrap();
+    }
+
+    let report = svc
+        .import_pi_live_entries(adapter.as_ref(), pi_two_provider_lives(), None)
+        .unwrap();
+    assert!(report.account.is_some());
+    assert_eq!(report.imported_count, 2);
+    assert_eq!(report.restored_from_trash.len(), 2);
+    assert_eq!(svc.repo().list(Some(AgentId::Pi)).unwrap().len(), 2);
+    assert!(svc
+        .connections
+        .list_trash(Some(AgentId::Pi))
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn pi_import_leaves_pool_recycle_bin_alone_and_adds_a_new_connection() {
+    let (_root, svc, adapter) = live_svc(AgentId::Pi);
+    svc.import_pi_live_entries(adapter.as_ref(), pi_two_provider_lives(), None)
+        .unwrap();
+    let xai = pi_row_for(&svc, "xai");
+    svc.delete(&xai.id, AgentId::Pi).unwrap();
+    let trash_id = svc.connections.list_trash(Some(AgentId::Pi)).unwrap()[0]
+        .id
+        .clone();
+    crate::storage::ConnectionTrashRepo::new(svc.db.clone())
+        .update_home(&trash_id, crate::models::TRASH_HOME_ROUTE_POOL)
+        .unwrap();
+
+    let report = svc
+        .import_pi_live_entries(adapter.as_ref(), pi_two_provider_lives(), None)
+        .unwrap();
+    assert_eq!(report.imported_count, 2);
+    assert!(report.restored_from_trash.is_empty());
+    let new_xai = pi_row_for(&svc, "xai");
+    assert_ne!(new_xai.id, xai.id, "a new connection, not the pool's row");
+    let trash = svc.connections.list_trash(Some(AgentId::Pi)).unwrap();
+    assert_eq!(trash.len(), 1, "connection pool recycle bin is untouched");
+    assert_eq!(trash[0].id, trash_id);
+}
+#[test]
+fn pi_import_keeps_imported_entries_when_one_entry_fails() {
+    let (_root, svc, adapter) = live_svc(AgentId::Pi);
+    let mut lives = pi_two_provider_lives();
+    // An entry the adapter attributes to another agent fails validation.
+    let mut broken = lives[0].clone();
+    broken.agent = AgentId::Grok;
+    broken.label_hint = Some("broken entry".into());
+    lives.insert(0, broken);
+
+    let report = svc
+        .import_pi_live_entries(adapter.as_ref(), lives, None)
+        .unwrap();
+    assert_eq!(report.imported_count, 2);
+    assert_eq!(report.failed.len(), 1);
+    assert_eq!(report.failed[0].label, "broken entry");
+    assert_eq!(report.failed[0].code, "invalid_arg");
+    assert!(report.account.is_some());
+    assert_eq!(svc.repo().list(Some(AgentId::Pi)).unwrap().len(), 2);
+}
+
+#[test]
+fn pi_import_combines_errors_when_every_entry_fails() {
+    let (_root, svc, adapter) = live_svc(AgentId::Pi);
+    let lives: Vec<LiveAccount> = pi_two_provider_lives()
+        .into_iter()
+        .map(|mut live| {
+            live.agent = AgentId::Grok;
+            live
+        })
+        .collect();
+
+    let error = svc
+        .import_pi_live_entries(adapter.as_ref(), lives, None)
+        .unwrap_err();
+    assert_eq!(error.code(), "account.import");
+    assert!(error.to_string().contains("2 个登录都没导入成功"));
+    assert!(svc.repo().list(Some(AgentId::Pi)).unwrap().is_empty());
+}
+
+#[test]
+fn import_live_report_restores_grok_people_from_the_recycle_bin() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: grok_two_slot_auth_json("rt-1", "rt-2"),
+        label_hint: Some("grok-oauth".into()),
+        extra: json!({"source": "auth.json"}),
+    });
+    let first = svc.import_live_report(AgentId::Grok, None).unwrap();
+    assert_eq!(first.imported_count, 2);
+    let second_person = svc
+        .repo()
+        .list(Some(AgentId::Grok))
+        .unwrap()
+        .into_iter()
+        .find(|row| row.credentials.to_string().contains("uid-2"))
+        .expect("second Grok person");
+    svc.delete(&second_person.id, AgentId::Grok).unwrap();
+
+    let report = svc.import_live_report(AgentId::Grok, None).unwrap();
+    assert_eq!(report.imported_count, 2);
+    assert_eq!(report.skipped_local_route, 0);
+    assert_eq!(
+        report.restored_from_trash.len(),
+        1,
+        "the non-default person comes back from the recycle bin"
+    );
+    assert_eq!(report.restored_from_trash[0].id, second_person.id);
+    assert!(svc
+        .connections
+        .list_trash(Some(AgentId::Grok))
+        .unwrap()
+        .is_empty());
+    assert_eq!(svc.repo().list(Some(AgentId::Grok)).unwrap().len(), 2);
+    let account = report.account.expect("account");
+    assert!(account.credentials.to_string().contains("uid-1"));
+    assert_eq!(
+        svc.import_live(AgentId::Grok, None).unwrap().id,
+        account.id,
+        "import_live keeps returning the focused row"
+    );
+}
+fn pi_api_key_live(provider: &str, key: &str) -> LiveAccount {
+    let body = json!({ provider: { "type": "api_key", "key": key } });
+    crate::adapters::pi_auth::expand_auth_to_live_accounts(&body)
+        .unwrap()
+        .remove(0)
+}
+
+fn pi_api_key_rows(svc: &AccountService, provider: &str) -> Vec<Account> {
+    svc.repo()
+        .list(Some(AgentId::Pi))
+        .unwrap()
+        .into_iter()
+        .filter(|row| row.kind == AccountKind::ApiKey && row.credentials["provider"] == provider)
+        .collect()
+}
+
+#[test]
+fn pi_background_sync_adds_api_key_when_provider_has_none() {
+    let (_root, svc, adapter) = live_svc(AgentId::Pi);
+    let live = pi_api_key_live("deepseek", "sk-fake-deepseek-aaaa1111");
+    let created = svc
+        .reconcile_live_account_with_activate(adapter.as_ref(), AgentId::Pi, live, false)
+        .unwrap()
+        .expect("first deepseek key becomes a connection");
+    assert_eq!(created.credentials["provider"], "deepseek");
+    assert!(!created.is_current);
+    assert_eq!(pi_api_key_rows(&svc, "deepseek").len(), 1);
+}
+
+#[test]
+fn pi_background_sync_skips_new_key_when_provider_already_has_one() {
+    let (_root, svc, adapter) = live_svc(AgentId::Pi);
+    svc.import_pi_live_entries(
+        adapter.as_ref(),
+        vec![pi_api_key_live("deepseek", "sk-fake-deepseek-aaaa1111")],
+        None,
+    )
+    .unwrap();
+    let stale = pi_api_key_live("deepseek", "sk-fake-deepseek-bbbb2222");
+    let outcome = svc
+        .reconcile_live_account_with_activate(adapter.as_ref(), AgentId::Pi, stale, false)
+        .unwrap();
+    assert!(outcome.is_none());
+    let rows = pi_api_key_rows(&svc, "deepseek");
+    assert_eq!(rows.len(), 1, "a different key must not add a second row");
+    assert_eq!(rows[0].credentials["api_key"], "sk-fake-deepseek-aaaa1111");
+
+    // The same key still matches the existing row exactly.
+    let same = pi_api_key_live("deepseek", "sk-fake-deepseek-aaaa1111");
+    let matched = svc
+        .reconcile_live_account_with_activate(adapter.as_ref(), AgentId::Pi, same, false)
+        .unwrap()
+        .expect("exact match keeps working");
+    assert_eq!(matched.id, rows[0].id);
+}
+
+#[test]
+fn pi_background_sync_keeps_trashed_key_in_trash() {
+    let (_root, svc, adapter) = live_svc(AgentId::Pi);
+    svc.import_pi_live_entries(
+        adapter.as_ref(),
+        vec![pi_api_key_live("deepseek", "sk-fake-deepseek-aaaa1111")],
+        None,
+    )
+    .unwrap();
+    let row = pi_api_key_rows(&svc, "deepseek").remove(0);
+    svc.delete(&row.id, AgentId::Pi).unwrap();
+
+    let outcome = svc
+        .reconcile_live_account_with_activate(
+            adapter.as_ref(),
+            AgentId::Pi,
+            pi_api_key_live("deepseek", "sk-fake-deepseek-aaaa1111"),
+            false,
+        )
+        .unwrap();
+    assert!(outcome.is_none());
+    assert!(pi_api_key_rows(&svc, "deepseek").is_empty());
+    assert_eq!(
+        svc.connections.list_trash(Some(AgentId::Pi)).unwrap().len(),
+        1
+    );
+}
+
+#[test]
+fn pi_background_sync_other_provider_key_is_not_blocked() {
+    let (_root, svc, adapter) = live_svc(AgentId::Pi);
+    svc.import_pi_live_entries(
+        adapter.as_ref(),
+        vec![pi_api_key_live("deepseek", "sk-fake-deepseek-aaaa1111")],
+        None,
+    )
+    .unwrap();
+    let created = svc
+        .reconcile_live_account_with_activate(
+            adapter.as_ref(),
+            AgentId::Pi,
+            pi_api_key_live("openai", "sk-fake-openai-cccc3333"),
+            false,
+        )
+        .unwrap()
+        .expect("another provider's first key is added");
+    assert_eq!(created.credentials["provider"], "openai");
+    assert_eq!(pi_api_key_rows(&svc, "deepseek").len(), 1);
+    assert_eq!(pi_api_key_rows(&svc, "openai").len(), 1);
+}
+
+#[test]
+fn pi_trash_match_is_per_provider_for_shared_key() {
+    let (_root, svc, adapter) = live_svc(AgentId::Pi);
+    let shared = "sk-fake-shared-dddd4444";
+    svc.import_pi_live_entries(
+        adapter.as_ref(),
+        vec![pi_api_key_live("deepseek", shared)],
+        None,
+    )
+    .unwrap();
+    let row = pi_api_key_rows(&svc, "deepseek").remove(0);
+    svc.delete(&row.id, AgentId::Pi).unwrap();
+
+    // Manual import: the same key under another provider is not "in trash".
+    let report = svc
+        .import_pi_live_entries(
+            adapter.as_ref(),
+            vec![pi_api_key_live("openai", shared)],
+            None,
+        )
+        .unwrap();
+    assert!(report.restored_from_trash.is_empty());
+    assert_eq!(report.imported_count, 1);
+    assert_eq!(pi_api_key_rows(&svc, "openai").len(), 1);
+    assert!(pi_api_key_rows(&svc, "deepseek").is_empty());
+    assert_eq!(
+        svc.connections.list_trash(Some(AgentId::Pi)).unwrap().len(),
+        1
+    );
+
+    // Background sync: same rule.
+    let openai = pi_api_key_rows(&svc, "openai").remove(0);
+    svc.repo().delete(&openai.id).unwrap();
+    let created = svc
+        .reconcile_live_account_with_activate(
+            adapter.as_ref(),
+            AgentId::Pi,
+            pi_api_key_live("openai", shared),
+            false,
+        )
+        .unwrap();
+    assert!(
+        created.is_some(),
+        "deepseek trash row must not block openai"
+    );
+    assert!(pi_api_key_rows(&svc, "deepseek").is_empty());
+}

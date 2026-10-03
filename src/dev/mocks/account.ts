@@ -220,7 +220,13 @@ export function createMockAccountPort(): AccountPort {
         lastUsedAt: new Date().toISOString(),
       };
       mockState[agentId].push(acc);
-      return { ...acc };
+      return {
+        account: { ...acc },
+        importedCount: 1,
+        restoredFromTrash: [],
+        skippedLocalRoute: 0,
+        failed: [],
+      };
     },
 
     async oauthSupported(agentId) {

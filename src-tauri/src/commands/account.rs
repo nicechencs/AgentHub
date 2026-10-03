@@ -2,7 +2,7 @@
 //!
 //! All responses that may contain credentials are redacted before return.
 
-use agenthub_core::models::{Account, AccountSwitchResult, AuthState};
+use agenthub_core::models::{Account, AccountSwitchResult, AuthState, ImportLiveReport};
 use agenthub_core::AgentHub;
 use tauri::State;
 
@@ -40,7 +40,7 @@ pub async fn import_account_live(
     state: State<'_, AppState>,
     agent_id: String,
     name: Option<String>,
-) -> Result<Account, String> {
+) -> Result<ImportLiveReport, String> {
     let hub = state.hub_arc()?;
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
@@ -257,13 +257,13 @@ fn import_account_live_inner(
     hub: &AgentHub,
     agent_id: &str,
     name: Option<&str>,
-) -> Result<Account, String> {
+) -> Result<ImportLiveReport, String> {
     let agent = parse_agent(agent_id)?;
-    let item = hub
+    let report = hub
         .accounts()
-        .import_live(agent, name)
+        .import_live_report(agent, name)
         .map_err(|e| map_err_string("import_account_live", e))?;
-    Ok(item.redacted())
+    Ok(report.redacted())
 }
 
 // Referenced only from `tests.rs` in this crate; keep for test coverage.

@@ -161,3 +161,61 @@ fn missing_json_keys_are_none_and_unknown_keys_stay_on_value() {
     assert_eq!(a.extra["custom"], 1);
     assert_eq!(a.credentials["api_key"], "sk");
 }
+
+#[test]
+fn import_live_report_wire_shape_is_camel_case_and_redacted() {
+    let report = ImportLiveReport {
+        account: Some(Account {
+            id: "a1".into(),
+            agent_id: AgentId::Pi,
+            kind: AccountKind::ApiKey,
+            label: "work".into(),
+            credentials: json!({"format": "api_key", "api_key": "sk-secret-value-1234"}),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t".into(),
+            updated_at: "t".into(),
+        }),
+        imported_count: 1,
+        restored_from_trash: vec![ImportLiveRestoredLogin {
+            id: "trash-1".into(),
+            label: "old".into(),
+        }],
+        skipped_local_route: 2,
+        failed: vec![ImportLiveFailedLogin {
+            label: "bad".into(),
+            code: "invalid_arg".into(),
+            message: "nope".into(),
+        }],
+    };
+    let wire = serde_json::to_value(report.redacted()).unwrap();
+    assert_eq!(wire["importedCount"], 1);
+    assert_eq!(wire["restoredFromTrash"][0]["id"], "trash-1");
+    assert_eq!(wire["restoredFromTrash"][0]["label"], "old");
+    assert_eq!(wire["skippedLocalRoute"], 2);
+    assert_eq!(wire["failed"][0]["code"], "invalid_arg");
+    assert_eq!(wire["account"]["id"], "a1");
+    assert!(!wire.to_string().contains("sk-secret-value-1234"));
+}
+
+#[test]
+fn import_live_report_redacts_secrets_in_failed_messages_and_labels() {
+    let report = ImportLiveReport {
+        restored_from_trash: vec![ImportLiveRestoredLogin {
+            id: "trash-1".into(),
+            label: "key sk-trashsecretvalue123456".into(),
+        }],
+        failed: vec![ImportLiveFailedLogin {
+            label: "pi:deepseek sk-labelsecretvalue123456".into(),
+            code: "invalid_arg".into(),
+            message: "upstream rejected api_key=sk-messagesecretvalue123456".into(),
+        }],
+        ..Default::default()
+    };
+    let wire = serde_json::to_value(report.redacted()).unwrap().to_string();
+    assert!(!wire.contains("trashsecretvalue123456"), "{wire}");
+    assert!(!wire.contains("labelsecretvalue123456"), "{wire}");
+    assert!(!wire.contains("messagesecretvalue123456"), "{wire}");
+    assert!(wire.contains("invalid_arg"));
+}

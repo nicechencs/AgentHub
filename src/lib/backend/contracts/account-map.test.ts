@@ -5,6 +5,7 @@ import {
   liveAuthOf,
   mapCoreAccount,
   mapCoreAccountView,
+  mapCoreImportLiveReport,
   savedAuthFromCore,
   savedAuthOf,
   type CoreAccount,
@@ -588,5 +589,30 @@ describe('AccountAuthView provenance', () => {
     ).toBe('renewable');
     expect(liveAuthOf({ ...view.account, liveAuthHealth: 'needs_login' })).toBe('needs_login');
     expect(liveAuthOf(mapCoreAccount(core({ id: 'a1' })))).toBe('unset');
+  });
+});
+
+describe('mapCoreImportLiveReport', () => {
+  it('maps the import report and fills defaults for older backends', () => {
+    const mapped = mapCoreImportLiveReport({
+      account: core({ id: 'pi-1', agentId: 'pi', label: 'Anthropic' }),
+      importedCount: 2,
+      restoredFromTrash: [{ id: 'pi-2', label: 'xAI' }],
+      skippedLocalRoute: 1,
+      failed: [{ label: 'bad', code: 'invalid_arg', message: 'nope' }],
+    });
+    expect(mapped.account?.id).toBe('pi-1');
+    expect(mapped.importedCount).toBe(2);
+    expect(mapped.restoredFromTrash).toEqual([{ id: 'pi-2', label: 'xAI' }]);
+    expect(mapped.skippedLocalRoute).toBe(1);
+    expect(mapped.failed).toHaveLength(1);
+
+    expect(mapCoreImportLiveReport({ account: null })).toEqual({
+      account: null,
+      importedCount: 0,
+      restoredFromTrash: [],
+      skippedLocalRoute: 0,
+      failed: [],
+    });
   });
 });

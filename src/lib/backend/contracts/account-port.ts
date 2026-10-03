@@ -1,6 +1,6 @@
 import type { Account, AgentKey } from '@/lib/types';
 import type { RouteSchedulePolicy } from '@/lib/backend/contracts/adapter';
-import type { AccountAuthView } from './account-map';
+import type { AccountAuthView, ImportLoginReport } from './account-map';
 import { normalizeAuthHealth, type AuthHealth } from './auth-state';
 
 /** PKCE start result from backend. */
@@ -160,7 +160,8 @@ export interface AccountPort {
     accountId: string,
     opts: { label?: string | null; key?: string | null },
   ): Promise<Account>;
-  importCurrentLogin(agentId: AgentKey): Promise<Account>;
+  /** User import of this computer's login, with what was skipped or failed. */
+  importCurrentLogin(agentId: AgentKey): Promise<ImportLoginReport>;
   /** Whether any OAuth login option is available for this agent. */
   oauthSupported(agentId: AgentKey): Promise<boolean>;
   /** List OAuth login options (Pi returns multi-provider catalog). */

@@ -3,7 +3,7 @@
 use std::io::{self, Read};
 
 use agenthub_core::error::{AppError, Result};
-use agenthub_core::models::{Account, AccountSwitchResult, AgentId};
+use agenthub_core::models::{Account, AccountSwitchResult, AgentId, ImportLiveReport};
 use agenthub_core::AgentHub;
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 
@@ -37,8 +37,46 @@ pub fn import(
         ),
         assume_yes,
     )?;
-    let item = hub.accounts().import_live(agent, name)?;
-    emit_one(&item, format)
+    let report = hub.accounts().import_live_report(agent, name)?.redacted();
+    if !matches!(format, OutputFormat::Quiet) {
+        for line in import_report_notes(&report) {
+            eprintln!("{line}");
+        }
+    }
+    match report.account {
+        Some(item) => emit_one(&item, format),
+        None => Err(AppError::message(
+            "account.import",
+            "live import produced no accounts",
+        )),
+    }
+}
+
+/// Plain-language notes for logins restored, skipped or failed. Labels and
+/// messages come from an already redacted report, so no key text is printed.
+pub(crate) fn import_report_notes(report: &ImportLiveReport) -> Vec<String> {
+    let mut lines = Vec::new();
+    for restored in &report.restored_from_trash {
+        lines.push(format!("restored from the recycle bin: {}", restored.label));
+    }
+    if report.skipped_local_route > 0 {
+        lines.push(format!(
+            "skipped: {} entr{} written by a local route",
+            report.skipped_local_route,
+            if report.skipped_local_route == 1 {
+                "y"
+            } else {
+                "ies"
+            }
+        ));
+    }
+    for failed in &report.failed {
+        lines.push(format!(
+            "failed: {} ({}): {}",
+            failed.label, failed.code, failed.message
+        ));
+    }
+    lines
 }
 
 /// Add an API key account. `--key -` reads from stdin.

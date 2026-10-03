@@ -213,7 +213,25 @@ impl AccountService {
             return Ok(None);
         }
 
-        if stable_live_identity(adapter, live.kind, &live.credentials).is_none() {
+        if agent == AgentId::Pi && live.kind == AccountKind::ApiKey {
+            // Pi API keys carry no email/sub. Background sync only adopts a
+            // provider's key while the pool has no API-key row for that
+            // provider yet. Once it does, a different key in auth.json is
+            // either a stale key the user replaced in AgentHub or a manual
+            // edit; neither may resurrect as a new connection. Manual import
+            // stays the way to add it.
+            if rows.iter().any(|row| {
+                row.kind == AccountKind::ApiKey
+                    && same_live_slot(agent, &live.credentials, &row.credentials)
+            }) {
+                tracing::debug!(
+                    module = targets::ACCOUNT,
+                    agent = agent.as_str(),
+                    "Pi provider already has an API-key connection; not adding another"
+                );
+                return Ok(None);
+            }
+        } else if stable_live_identity(adapter, live.kind, &live.credentials).is_none() {
             // API-key / file snapshots often have no email/sub. Exact
             // authorization already matched above; anything else stays
             // fail-closed instead of inventing a pool row.
@@ -629,8 +647,9 @@ impl AccountService {
         let items = ConnectionTrashRepo::new(self.db.clone()).list(Some(agent), None, &now)?;
         Ok(items.iter().find_map(|item| {
             let account = item.account.as_ref()?;
-            accounts_same_authorization(adapter, live.kind, &live.credentials, account)
-                .then(|| item.id.clone())
+            (same_live_slot(agent, &live.credentials, &account.credentials)
+                && accounts_same_authorization(adapter, live.kind, &live.credentials, account))
+            .then(|| item.id.clone())
         }))
     }
 

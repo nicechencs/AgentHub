@@ -12,7 +12,7 @@ import {
   clearLiveAuthProbeCache as clearProbeCache,
   probeLiveAuthWithPort,
 } from '@/lib/backend/contracts/live-auth-probe-cache';
-import { unwrapAccounts } from '@/lib/backend/contracts/account-map';
+import { unwrapAccounts, type ImportLoginReport } from '@/lib/backend/contracts/account-map';
 import type { Account, AgentKey } from '@/lib/types';
 import type { RouteSchedulePolicy } from '@/lib/backend/contracts/adapter';
 import { OAUTH_WAIT_TIMEOUT_SECS } from '@/lib/backend/contracts/oauth-constants';
@@ -20,6 +20,7 @@ import { OAUTH_WAIT_TIMEOUT_SECS } from '@/lib/backend/contracts/oauth-constants
 export type {
   CoreAccount,
   CoreAccountSwitchResult,
+  ImportLoginReport,
 } from '@/lib/backend/contracts/account-map';
 export { mapCoreAccount } from '@/lib/backend/contracts/account-map';
 export type {
@@ -113,10 +114,20 @@ export async function updateApiKeyAccount(
   return account;
 }
 
-export async function importCurrentLogin(agentId: AgentKey): Promise<Account> {
-  const account = await getBackend().account.importCurrentLogin(agentId);
+/** Import and return what was skipped (recycle bin, local route) or failed. */
+export async function importCurrentLoginWithReport(agentId: AgentKey): Promise<ImportLoginReport> {
+  const report = await getBackend().account.importCurrentLogin(agentId);
   authStateChanged(agentId);
-  return account;
+  return report;
+}
+
+/** Import and return only the focused login (auto import, refresh flows). */
+export async function importCurrentLogin(agentId: AgentKey): Promise<Account> {
+  const report = await importCurrentLoginWithReport(agentId);
+  if (!report.account) {
+    throw new Error('live import produced no accounts [account.import]');
+  }
+  return report.account;
 }
 
 export async function oauthSupported(agentId: AgentKey): Promise<boolean> {

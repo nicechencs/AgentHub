@@ -93,6 +93,40 @@ pub struct AccountSwitchResult {
     pub backfilled_account_id: Option<String>,
 }
 
+/// A local login the import brought back from the login recycle bin instead
+/// of creating it anew. `id` is the restored connection row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportLiveRestoredLogin {
+    pub id: String,
+    pub label: String,
+}
+
+/// A local login entry that failed to import while others in the same file
+/// were imported (Pi multi-provider auth.json).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportLiveFailedLogin {
+    pub label: String,
+    pub code: String,
+    pub message: String,
+}
+
+/// Outcome of a user-triggered「导入本机登录」.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportLiveReport {
+    /// Row the UI should focus after import.
+    pub account: Option<Account>,
+    /// Number of rows created or updated by this import.
+    pub imported_count: usize,
+    /// Logins that were in the login recycle bin and came back with this import.
+    pub restored_from_trash: Vec<ImportLiveRestoredLogin>,
+    /// Entries skipped because they were written by a local route.
+    pub skipped_local_route: usize,
+    pub failed: Vec<ImportLiveFailedLogin>,
+}
+
 fn insert_extra_string(extra: &mut Value, key: &str, value: String) {
     if let Value::Object(map) = extra {
         map.insert(key.into(), json!(value));
@@ -258,6 +292,36 @@ impl AccountSwitchResult {
             account: self.account.redacted(),
             backup: self.backup.clone(),
             backfilled_account_id: self.backfilled_account_id.clone(),
+        }
+    }
+}
+
+impl ImportLiveReport {
+    /// Safe for the UI: the focused row is redacted, and free-text labels /
+    /// error messages go through the shared secret scrubber.
+    pub fn redacted(&self) -> Self {
+        use crate::utils::redact::redact_text;
+        Self {
+            account: self.account.as_ref().map(Account::redacted),
+            imported_count: self.imported_count,
+            restored_from_trash: self
+                .restored_from_trash
+                .iter()
+                .map(|restored| ImportLiveRestoredLogin {
+                    id: restored.id.clone(),
+                    label: redact_text(&restored.label),
+                })
+                .collect(),
+            skipped_local_route: self.skipped_local_route,
+            failed: self
+                .failed
+                .iter()
+                .map(|failed| ImportLiveFailedLogin {
+                    label: redact_text(&failed.label),
+                    code: failed.code.clone(),
+                    message: redact_text(&failed.message),
+                })
+                .collect(),
         }
     }
 }

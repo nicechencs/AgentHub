@@ -51,6 +51,7 @@ import type { AgentKey } from '@/lib/types';
 import { ApiKeyAccountDialog } from '@/components/connections/ApiKeyAccountDialog';
 import { ProviderEditDialog } from '@/components/connections/ProviderEditDialog';
 import { ConnectionTrashButton } from './ConnectionTrashButton';
+import { importLoginErrorNotice, importLoginReportNotice } from './import-login-notice';
 import { TicketAddMenu, TicketDetailPanel, TicketWalletList } from './TicketWalletList';
 import {
   activeBindingForAgent,
@@ -96,6 +97,7 @@ import {
 } from '@/components/ui/dialog';
 import {
   importCurrentLogin,
+  importCurrentLoginWithReport,
   probeLiveAuth,
   refreshQuota,
   refreshToken,
@@ -107,6 +109,7 @@ import type { ConnectionUsageSummary } from '@/lib/backend/contracts/usage-types
 import { importProviderLive } from '@/lib/api/provider';
 import { getSettings } from '@/lib/api/settings';
 import type { Account, Provider } from '@/lib/types';
+import type { ImportLoginReport } from '@/lib/api/account';
 import { StorageKey } from '@/lib/ui-preferences';
 import {
   canAutoImportProbe,
@@ -746,28 +749,42 @@ export default function ConnectionsPage() {
     const coexistenceNotice = importCoexistenceNotice;
     setImportingAccount(true);
     try {
-      const imported =
-        liveImportAction(importDialogMode, addAgentId) === 'provider'
-          ? await importProviderLive(addAgentId)
-          : await importCurrentLogin(addAgentId);
-      const label = 'label' in imported ? imported.label : imported.name;
+      let label: string;
+      let report: ImportLoginReport | null = null;
+      if (liveImportAction(importDialogMode, addAgentId) === 'provider') {
+        label = (await importProviderLive(addAgentId)).name;
+      } else {
+        report = await importCurrentLoginWithReport(addAgentId);
+        label = report.account?.label ?? '';
+      }
       setLoginImportOpen(false);
-      toast({
-        title: t('connections.import.toastOk'),
-        description: coexistenceNotice
-          ? t('connections.import.toastOkCoexist', { label })
-          : t('connections.import.toastOkDesc', { label }),
-        variant: 'success',
-      });
+      const baseDescription = coexistenceNotice
+        ? t('connections.import.toastOkCoexist', { label })
+        : t('connections.import.toastOkDesc', { label });
+      if (report) {
+        const notice = importLoginReportNotice(report, baseDescription, t);
+        toast({
+          title: notice.title,
+          description: notice.description,
+          variant: notice.variant,
+        });
+      } else {
+        toast({
+          title: t('connections.import.toastOk'),
+          description: baseDescription,
+          variant: 'success',
+        });
+      }
       await poolReload().catch(() => {});
       setDiscoveryDismissed(true);
       await loadWallet();
       handleGuideSucceeded();
     } catch (e) {
+      const notice = importLoginErrorNotice(e, t);
       toast({
-        title: t('connections.import.toastFail'),
-        description: e instanceof Error ? e.message : String(e),
-        variant: 'danger',
+        title: notice.title,
+        description: notice.description,
+        variant: notice.variant,
       });
     } finally {
       setImportingAccount(false);

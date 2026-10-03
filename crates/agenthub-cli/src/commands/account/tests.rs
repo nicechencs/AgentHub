@@ -61,3 +61,33 @@ fn emit_one_and_list_quiet_ok() {
     emit_list(&[sample()], OutputFormat::Quiet).unwrap();
     emit_one(&sample(), OutputFormat::Quiet).unwrap();
 }
+
+#[test]
+fn import_report_notes_name_restores_skips_and_failures_without_keys() {
+    use agenthub_core::models::{ImportLiveFailedLogin, ImportLiveRestoredLogin};
+    let report = ImportLiveReport {
+        restored_from_trash: vec![ImportLiveRestoredLogin {
+            id: "a1".into(),
+            label: "pi:deepseek".into(),
+        }],
+        skipped_local_route: 1,
+        failed: vec![ImportLiveFailedLogin {
+            label: "pi:xai".into(),
+            code: "invalid_arg".into(),
+            message: "bad api_key=sk-cli-secret-value-123456".into(),
+        }],
+        ..Default::default()
+    }
+    .redacted();
+    let text = import_report_notes(&report).join(
+        "
+",
+    );
+    assert!(
+        text.contains("restored from the recycle bin: pi:deepseek"),
+        "{text}"
+    );
+    assert!(text.contains("local route"), "{text}");
+    assert!(text.contains("failed: pi:xai"), "{text}");
+    assert!(!text.contains("cli-secret-value-123456"), "{text}");
+}
