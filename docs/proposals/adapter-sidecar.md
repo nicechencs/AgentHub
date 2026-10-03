@@ -12,7 +12,7 @@ updated: 2026-10-03
 
 ## 1. 当前基线
 
-当前本机转发在 Tauri 进程内，调查基线为本地 annotated tag `baseline/routes-before-extension-20261003`，指向完整 SHA `7c2b6fe2be67bbaa0b509deee6d6002981c60fd9`（短 SHA `7c2b6fe2`）；该 tag 未推送且不是发布 tag，作为固定比较点，后续不得移动或覆盖。日志与验收记录必须写实际构建提交 SHA，不能把基线 tag 当作新版测试结果；基线排除本轮未提交提案，本轮仅修改方案文档。历史修复主题不能代替当前故障复现。
+当前本机转发在 Tauri 进程内，调查基线为 annotated tag `baseline/routes-before-extension-20261003`，指向完整 SHA `7c2b6fe2be67bbaa0b509deee6d6002981c60fd9`（短 SHA `7c2b6fe2`）。该 tag 建立时仅在本地、未推送且不是发布 tag；它是固定比较点，后续不得移动或覆盖。基线不包含本方案提交。日志与验收记录必须写实际构建提交 SHA，不能把基线 tag 当作新版测试结果；历史修复主题不能代替当前故障复现。
 
 | 已有部分 | 当前位置及职责 |
 |---|---|
@@ -57,7 +57,7 @@ flowchart LR
 
 | 负责人 | 拥有的职责 | 不得承担 |
 |---|---|---|
-| core 应用用例 | 路线规划、希望运行的配置、登录管理、Agent 配置写入、数据库迁移、写入补偿 | 根据保存的配置猜测转发正在运行 |
+| core 应用用例 | 路线规划、希望运行的配置、登录管理、Agent 配置写入、数据库迁移、写入补偿、应用数据目录的唯一写入所有者锁 | 根据保存的配置猜测转发正在运行 |
 | 独立路由程序 | loopback 监听、执行 core 授权的池策略、协议转换、请求取消、健康、排空、实际状态 | 读写领域表、修改 Agent 或登录文件、复制登录刷新规则 |
 | 路由页面 | 展示、输入、错误和恢复入口 | 自行选路线、启动第二套写流程 |
 | 官方扩展管理 | 固定注册、进程监督、版本校验、启停协调 | 任意加载第三方代码或默认常驻转发 |
@@ -71,11 +71,13 @@ flowchart LR
 | 候选操作 | 语义 |
 |---|---|
 | `Handshake` | 检查运行协议、配置格式、扩展包版本及应用数据目录范围，返回本次进程实例标识 |
-| `AcquireOrRenewOwner` | 当前 core 所有者取得或续期运行许可；同时只能有一个写入所有者 |
-| `BootstrapDesired` | 仅限新 `instance_epoch` 的已认证唯一 owner，接受一次完整的已持久 desired 版本；不得伪造旧 actual 或绕过后续版本规则 |
-| `ApplyDesired` | 按基准版本应用完整网关配置快照；返回实际版本、端口和 `created`/`replaced`/`reused` 结果 |
-| `GetOperation` | 查询指定操作是否执行，供超时后的核实与恢复使用 |
-| `Status` | 返回实例标识、实际配置版本、生命周期、端口、活动请求数和脱敏错误；不含入口 Key 或上游登录信息 |
+| `AcquireOrRenewOwner` | 当前 core 所有者取得或续期运行许可；首次取得或接管发放本 `instance_epoch` 内单调递增的 `owner_term`，正常续期不改变 term；取得许可本身不激活监听 |
+| `BootstrapDesired` | 仅限新 `instance_epoch` 的已认证唯一 owner，接受一次完整的已持久 desired 版本并建立 `prepared`；`active` 保持 `null`，不得伪造旧 actual 或绕过后续版本规则 |
+| `PrepareDesired` | 按当前 `active` 的基准版本准备完整网关配置快照；允许旧 `active` 与新 `prepared` 并存，不接受旧 `owner_term` |
+| `CommitDesired` | 以准备令牌和操作幂等键原子地把 `prepared` 晋升为 `active`；不得把 bootstrap 或核对成功当作提交成功 |
+| `AbortDesired` | 只撤销指定操作的 `prepared`，不撤销仍有效的 `active` |
+| `GetOperation` | 查询 `in_progress`、`prepared`、`committed`、`aborted`、`expired` 或 `unknown`，并同时返回当前 `active`/`prepared` 状态，供超时后的核实与恢复使用；`in_progress` 表示已接受但尚未完成，`unknown` 只表示没有可核实记录；历史提交不表示新实例仍在服务 |
+| `Status` | 返回实例标识、`active_revision`/`active_hash`、可选 `prepared`、生命周期、端口、活动请求数和脱敏错误；不含入口 Key 或上游登录信息 |
 | `Drain` / `Stop` | 停止接新请求、限时排空，确认释放监听；不能代替 core 解除连接和恢复 Agent 配置 |
 
 登录通道分开定义：core 提供 `ResolveAuth` 和入口 Key 解析能力，独立程序仅可解析当前获准快照中的引用，按成员、协议、用途和最低有效期取得内存登录材料。官方登录刷新在 core 中执行，Go 不复制 `refresh token` 处理逻辑。
@@ -84,9 +86,20 @@ flowchart LR
 
 通道身份与启动实例经受保护的启动通道建立，不使用模型请求的入口 Key 作为控制权限。登录材料和启动认证秘密不进入 `argv`、普通控制消息、错误、操作记录或日志；独立程序不持久保存它们。仅有随机名称或 loopback 地址不算访问控制。
 
-入口 Key 授权不采用缓存的 Key 到池判定：每个新的 HTTP 请求（包括 `/health`、`/models` 和模型请求）都经私密 core 通道调用候选 `ValidateIngressKey`，由 core 校验入口 Key 是否有效并解析目标池；扩展不得缓存这项判定。普通 IPC 控制消息不带入口 Key；core 不可达时拒绝新 HTTP 请求。
+入口 Key 授权不采用缓存的 Key 到池判定：每个新的 HTTP 请求（包括 `/health`、`/models` 和模型请求）都经私密 core 通道调用候选 `ValidateIngressKey`，由 core 校验入口 Key 是否有效并解析目标池；扩展不得缓存这项判定。普通 IPC 控制消息不带入口 Key；core 不可达时拒绝新 HTTP 请求。core 也取得当前应用数据目录的唯一写入所有者锁；CLI 只能读，或经该 owner 发起写入，不能各自写数据库。
 
-上游登录材料可以按成员、协议、用途和最短有效期做有界内存缓存，但这和入口 Key 的无缓存判定是两件事。正常更换登录只影响新请求；明确撤销时，core 先撤销相应引用，扩展拒绝新请求，并按已声明的在途策略处理已经授权的请求。首期候选策略是让已授权在途请求继续到客户端取消或自然结束；若上游登录材料被明确撤销，则由 core 发出取消指令，扩展终止对应请求，禁止换池或重放。登录材料和入口 Key 均不得出现在错误、操作记录或日志中。core 不可达时受第 5 节运行许可限制，不允许无限使用缓存登录。
+上游登录材料可以按成员、协议、用途和最短有效期做有界内存缓存，但这和入口 Key 的无缓存判定是两件事。`auth_generation` 与入口 Key 授权 `generation` 均由唯一 core 分配，并绑定不透明的 `source`/`key_id`、用途、`instance_epoch` 与 `owner_term`；`ResolveAuth` 和 `ValidateIngressKey` 的每个回复都带对应 generation。runner 只保留撤销 watermark，不缓存入口 Key 判定；旧 generation 的迟到回复不得恢复授权或登录材料。正常刷新或替换登录材料只更新后续请求，不自动取消已授权请求；明确撤销的策略与正常刷新分开。
+
+撤销必须先提高对应 watermark、清理旧 auth 缓存并丢弃迟到回复，再按在途策略处理已授权请求。线性化点是 core 持久化撤销并收到当前实例屏障 ack；未知或失联只记录 `pending`，不能误报删除完成。owner 失效立即阻止新请求，重连必须先 reconcile 撤销屏障。首期候选策略是让未受撤销影响的已授权在途请求继续到客户端取消或自然结束；若上游登录材料或入口 Key 已明确撤销，则 core 发出取消指令，扩展终止对应请求，禁止换池或重放。
+
+删除或轮转必须拒绝实际已失效的入口 Key；如果删除主 Key 的同时晋升另一个仍有效的 Key，被晋升 Key 保持有效。仅改变 Key 角色不等于轮转，不新增独立晋升 API，也不要求因角色变化拒绝所有旧 Key。登录材料和入口 Key 均不得出现在错误、操作记录或日志中。core 不可达时受第 5 节运行许可限制，不允许无限使用缓存登录。
+
+| 迟到事件 | 处理 |
+|---|---|
+| 旧 `auth_generation` 的 `ResolveAuth` 回复 | 比较 `instance_epoch`、`owner_term`、generation 与撤销 watermark；任一不匹配即丢弃，不写入缓存、不恢复请求 |
+| 旧 `generation` 的 `ValidateIngressKey` 回复 | 丢弃并让该 HTTP 请求重新经当前 core 校验；不能沿用旧目标池或报告 Key 仍有效 |
+| 旧 owner 的撤销/取消通知 | 比较 epoch 和 term；旧 term 永久拒绝，当前 owner 先 reconcile 撤销屏障，再处理在途请求 |
+| core 失联或状态未知 | 仅记 `pending`，阻止新请求，不能把删除、轮转或取消报告为完成 |
 
 ## 5. 状态、版本和生命周期
 
@@ -98,9 +111,23 @@ flowchart LR
 
 配置采用持久单调 `config_revision` 与规范化快照 `hash`；它们是拟新增的契约，不等同于当前局部 `policy_revision` 或索引 `generation`。core 的版本分配和待完成操作保存在既有应用存储，所需字段及迁移另列实现任务，不在本轮修改数据库。
 
-低版本拒绝；同版本同 `hash` 幂等；同版本异 `hash` 冲突；高版本需匹配 `base_revision` 后原子替换。恢复旧内容也必须分配新的前向 `config_revision`，其 `base_revision` 必须匹配当前实际 `applied_revision` 和 `expected_epoch`；它只能产生“新版本含旧内容”，不能把实际版本号倒退。CAS 一旦观察到后续成功版本，就不能撤销或覆盖该版本。新请求取得新快照，在途请求保留已有快照。快照只覆盖配置，健康、冷却、轮询位置和续聊状态的保留或失效规则必须分别定义，不能盲目清空或复制不兼容状态。
+低版本拒绝；同版本同 `hash` 幂等；同版本异 `hash` 冲突；高版本需匹配 `base_revision` 后原子替换。恢复旧内容也必须分配新的前向 `config_revision`，其 `base_revision` 必须匹配当前 `active_revision` 和 `expected_epoch`；它只能产生“新版本含旧内容”，不能把实际版本号倒退。CAS 一旦观察到后续成功版本，就不能撤销或覆盖该版本。新请求取得新快照，在途请求保留已有快照。快照只覆盖配置，健康、冷却、轮询位置和续聊状态的保留或失效规则必须分别定义，不能盲目清空或复制不兼容状态。
 
-每次启动生成新的 `instance_epoch`；新 epoch 明确从 actual 空、未应用状态开始，`applied_revision=null`，不能把旧进程的 actual 伪装成当前运行。变更带 `expected_epoch`，迟到的旧实例响应不能更新当前界面。只有已认证的唯一 owner 可以通过一次受限 `BootstrapDesired` 接受 core 已持久化的完整 desired revision；bootstrap 成功后才记录本 epoch 的 `applied_revision`，随后所有变更遵循普通 `base_revision`/CAS 规则，失败则继续保持空、未应用状态。所有请求还有应用数据目录范围及 owner 标识，防止不同安装或旧 core 接管错误进程。
+状态至少分开保存 `active_revision`/`active_hash` 与可选的 `prepared { revision, hash, operation_id, token_expiry, base_active_revision }`；若实现保留 `applied_revision`，它只能是当前 `active_revision` 的兼容别名，不能另成第三种事实。`BootstrapDesired` 只建立 `prepared`，新 epoch 的 `active` 保持 `null`；`CommitDesired` 才把 prepared 原子晋升为 active。旧 active 与新 prepared 可以并存；`AbortDesired` 或准备过期只撤准备，不撤仍有效的 active。
+
+| 状态转换 | 规则 |
+|---|---|
+| `empty -> prepared` | 新 epoch 的 `BootstrapDesired` 只建立准备，不能接收模型请求 |
+| `prepared -> active` | `CommitDesired` 原子晋升，active 才开始接收新请求 |
+| `active(v) + prepared(w) -> commit active(w)` | 旧版本继续可见，提交成功后新请求使用 `w` |
+| `abort` 或过期 | 撤掉 prepared，保持 `active(v)`；若原本为空则保持 `active=null` |
+| owner 失效或明确停止 | 撤 prepared、拒绝新请求并排空，清理登录缓存及监听；同一 runner 保留已提交的 `active(v)` 作为版本基准，生命周期为不可服务，不能据此显示 running |
+| 同一 epoch 的新 owner 接管 | 递增 term，完成旧请求排空及撤销屏障核对；core 分配新的前向版本 `w`，以 `base_active_revision=v` 执行 prepare/commit，核实实际可服务后恢复；不得再次 bootstrap |
+| runner 重新启动 | 新 epoch 的 `active=null`，通过 bootstrap 建立准备再 commit，不继承旧实例 actual |
+
+每次启动生成新的 `instance_epoch`；新 epoch 明确从 actual 空、未应用状态开始，`active_revision=null`，不能把旧进程的 actual 伪装成当前运行。变更带 `expected_epoch`，迟到的旧实例响应不能更新当前界面。runner 在同一 epoch 内发放单调递增的 `owner_term`；只有原 owner 已撤销或过期后才能接管并递增 term。旧 epoch 或旧 term 的控制命令、准备令牌、异步登录回复和取消通知永久拒绝；所有请求必须同时匹配 `instance_epoch` 与 `owner_term`。所有请求还有应用数据目录范围及 owner 标识，防止不同安装或旧 core 接管错误进程。
+
+`active_revision` 表示本实例已提交的配置版本，不单独表示正在服务。接新请求还必须同时满足有效 owner 许可、生命周期可服务、监听就绪以及当前授权校验。同 epoch 停止或 owner 丢失时保留的版本基准不得重新使用旧登录缓存；新 owner 清理旧 term 缓存并按 core 持久状态重建撤销 watermark 后，使用新的前向 revision 重新提交。该恢复路径也覆盖同 runner 的停止后再启动；bootstrap 仍只用于新 epoch 的空实例。
 
 ### 首个可写版本的退出行为
 
@@ -126,7 +153,7 @@ flowchart LR
 
 1. core 重新调用 `plan()`，获取相关写入门，保存旧配置快照和待完成操作；记录本次所属实例与基准版本。
 2. 扩展准备监听和完整配置，取得受限登录材料；新建入口在 core 确认前不接受模型请求。已有入口的旧版本继续按已授权状态服务。
-3. core 保存连接及 Agent 配置，随后确认扩展提交运行版本；只有两侧已核对一致，应用用例才报告成功。
+3. core 保存连接及 Agent 配置，随后以准备令牌调用 `CommitDesired` 原子晋升运行版本；只有两侧已核对一致，应用用例才报告成功。
 4. 任一步失败先查询实际结果，再逆序恢复。core 负责恢复文件和领域状态；扩展补偿必须比较实例及实际版本，不能撤销后来成功的新配置。
 5. 程序不可达或实例已换时，记录待恢复及原因，显示 `retryable`/`needs_attention`，并在重连后核对；不得猜成功或停止可能属于后续操作的监听。
 
@@ -138,11 +165,11 @@ flowchart LR
 2. 执行预检：完整网关的能力矩阵、扩展包版本、配置快照、授权引用和目标平台门槛都已满足，差异只能是最后的 bind；预检不写 Agent 或真实用户配置。
 3. 请求旧 host `Drain`，等待在途请求按策略结束，并通过独立状态和端口探测确认监听已经释放；锁文件或 PID 不能单独作为释放证明。
 4. 旧端口确认释放后启动 Go，完成受保护 `Handshake`、唯一 owner 认证和一次 `BootstrapDesired`；Go 保持 `prepared`，即使 bootstrap 和核对已成功，也拒绝模型请求，直到 core 显式确认运行提交。
-5. 核对每个池、模型索引、协议能力、授权状态、实际 `applied_revision`、`instance_epoch` 和共享端口，确认它们与目标快照一致。
-6. 只有全部核对成功，core 才保存使用者状态和相关 Agent 配置，随后显式提交运行（候选消息 `CommitDesired`）并核对实际 `active`、版本和端口；两侧一致后才解除写入冻结并报告成功。提交或确认超时先查询 `GetOperation` 和实际状态，不假定成功，也不盲目重复激活。
+5. 核对每个池、模型索引、协议能力及授权状态；此时必须是 `active=null`，`prepared.revision/hash` 等于目标快照，epoch、term 及共享端口匹配，不能提前把目标版本记为 active。
+6. 只有全部核对成功，core 才保存使用者状态和相关 Agent 配置，随后显式提交运行（候选消息 `CommitDesired`）并核对 active 等于目标、prepared 已清空、生命周期可服务及端口就绪；两侧一致后才解除写入冻结并报告成功。提交或确认超时先查询 `GetOperation` 和实际状态，不假定成功，也不盲目重复激活。
 7. 任一步失败先停止 Go，并确认本次 Go 已释放共享端口，再恢复旧 host。恢复旧内容必须生成新的前向 `config_revision`：旧 host 原实例仍在时，仅对旧 host 自己的 `expected_epoch` 和实际 `base_revision` 做 CAS；旧 host 已重启为新 epoch、空状态时，使用受限 `BootstrapDesired` 恢复新版本。不得将 Go 的 epoch 或 actual 继承给 Rust host。恢复两侧配置并确认旧 host 实际 active 后才解除冻结、报告回退完成；无法确认端口释放或恢复结果时标为 `needs_attention`，禁止并行 bind，等待人工或受控恢复，且不得重放模型请求。
 
-实现时将 `ApplyDesired` 分成准备、提交、条件撤销的具体消息，并定义准备过期清理。准备令牌必须引用 owner、实例、操作和版本，不能只凭 `profile id` 撤销。完整快照提交需要短时网关串行门；既有 `profile`/`target` 写入门继续由 core 管理，统一锁顺序必须在实现前完成调用链审查，排空不持有全局门。
+实现时将准备、提交、条件撤销定义为 `PrepareDesired`、`CommitDesired`、`AbortDesired`，并定义准备过期清理。准备令牌必须引用 owner、`owner_term`、实例、操作和版本，不能只凭 `profile id` 撤销。完整快照提交需要短时网关串行门；既有 `profile`/`target` 写入门继续由 core 管理，统一锁顺序必须在实现前完成调用链审查，排空不持有全局门。
 
 跨进程超时表示结果未知。相同 `request_id` 与相同 `payload hash` 可在明确保留期内查询或重试；相同 id 不同 payload 拒绝。查询未知或记录已过期时先核对状态，不换新 id 盲目重做。运行记录仅保存非敏感操作元数据、结果和版本，设容量与保留期；它不是第二份领域状态，也不保证跨崩溃 `exactly-once`。模型 POST 请求不使用这套控制重试机制。
 
@@ -168,12 +195,12 @@ Go 是候选实现，不是已选定的全量重写语言。默认保留旧 Rust
 
 ## 9. 分阶段实施与门槛
 
-以下任务顺序表示依赖，进入下一阶段必须有实际运行证据；本轮只有方案与文档检查。
+以下任务顺序表示依赖，进入下一阶段必须有实际运行证据；本轮只有方案与文档检查。B 阶段可以先在当前 Windows 平台做只读试验，结果只进入该平台隔离的 C/D 证据；macOS/Linux 同时补权限、打包和恢复证据，不能把 Windows 通过等同整体通过。E 的完整交付必须覆盖所有目标平台和架构，未覆盖的平台不得宣称可用。
 
 | 阶段 | 范围与负责人 | 完成证据 |
 |---|---|---|
 | A 基线与接口 | core 负责人梳理当前故障、写入门、协议边界和运行契约；验证负责人补外部进程黑盒工具 | 能按旧实现复现并分类故障；明确租约、版本、补偿和锁顺序；不改领域行为 |
-| B 只读原型 | 运行负责人创建固定注册、握手、状态及进程监督；平台负责人验证本地 IPC | 三平台确认权限、实例身份、版本不兼容、单实例、程序丢失、owner 断开；不写 Agent 配置 |
+| B 只读原型 | 运行负责人创建固定注册、握手、状态及进程监督；先由当前 Windows 平台验证，再由其他平台补证据 | 当前平台确认权限、实例身份、版本不兼容、单实例、程序丢失、owner 断开；不写 Agent 配置；不能把单平台通过当整体通过 |
 | C Go 转发试点 | Go 负责人仅负责独立程序；core 负责人提供受限登录材料与运行客户端 | 隔离池 `Messages` JSON/SSE、两轮、取消、owner 失联、幂等、未知结果与端口竞争通过；尚不接真实 Agent 配置写入 |
 | D 应用写入整合 | core 负责人接准备/提交/条件补偿及运行恢复；前端负责人仅改展示和契约；始终使用隔离数据目录、非默认端口和测试 Agent | 只验证测试 Agent 的写入、失败、两侧崩溃、Key 轮转及停用恢复；不写真实用户配置、不接管默认网关；正式同口切换必须等 E 的完整能力矩阵和三平台门槛通过 |
 | E 覆盖与交付 | 协议负责人逐条扩展；平台负责人处理同包构建、签名与升级 | 拟切换网关使用的全部协议通过矩阵；三平台升级/降级/失败恢复通过；GUI/CLI 读到一致状态 |
@@ -181,23 +208,52 @@ Go 是候选实现，不是已选定的全量重写语言。默认保留旧 Rust
 
 每阶段独立审查实际差异，材料包括版本、范围、运行日志、失败注入和回退结果。首次 CLI 只读状态可在 B 阶段接入；CLI 写入必须经过唯一 core 所有者，不能独自运行第二份领域写流程。
 
+### E 阶段升级与恢复
+
+官方扩展必须随整包升级：先暂存并校验新包，保留可回退的旧包；core 持久化 `pending upgrade` 阶段、旧/新包身份和 desired 版本，但不保存 secret。升级时先排空并释放监听，再以新 `instance_epoch` 启动新包、执行 bootstrap/prepare，待 core 保存并核实后才 `CommitDesired`。失败时必须确认新 runner 已释放端口，再以旧包、新 epoch 和新的前向 revision 恢复；Windows 上被占用的运行文件不得原地覆盖，重启后按 pending 记录核对实际状态，不能猜升级成功。
+
+普通回退只在 core 配置与数据格式向后兼容时成立；涉及不可逆数据库迁移时另行设计迁移与回退路径，本方案不声称可回退。
+
 ## 10. 验收矩阵与停止条件
 
 | 风险面 | 必须观察到的结果 |
 |---|---|
-| 控制与版本 | 重复命令、乱序配置、旧 epoch、同版本异 hash、应答丢失和崩溃均不误报成功或回滚新配置 |
+| 控制与版本 | 重复命令、乱序配置、旧 epoch/term、同版本异 hash、应答丢失和崩溃均不误报成功或回滚新配置；`active`/`prepared` 分离可核对 |
 | 进程与权限 | 非授权通道被拒绝；双实例、残留锁、端口被占、core EOF、半开连接与崩溃循环有界处理 |
 | API 与模型目录 | 保持现行路径、别名、方法错误和脱敏错误语义；模型列表与请求使用同一代解析配置 |
 | 三类协议 | Messages、Responses、Chat Completions 各自验证 JSON/SSE；转换边单独验证，不用一种协议替代另一种 |
 | 流与工具 | Unicode/分片、背压、空闲超时、工具调用回填、多轮续聊完整；工具不重复执行，未支持字段按现行契约明确处理 |
 | 池运行状态 | 同协议优先/轮询、健康冷却、会话保持、登录更新、成员删除与续聊状态可解释；默认关闭的混合供应商边不被打开 |
 | 入口 Key 授权 | 每个新 HTTP 请求（含 `/health`、`/models`）都由私密 core 校验有效性并解析池；不缓存 Key 到池的判定，core 不可达即拒绝新请求 |
-| Key 删除与晋升 | 删除入口 Key、轮转和主 Key 晋升只有在探测确认旧 Key 的新请求已被拒绝后才报告完成；具名 Key 删除、主 Key 晋升与撤销并发结果可核对 |
-| 撤销失联与在途请求 | core 失联不延长入口 Key 授权；已授权在途请求按明确撤销策略完成或被取消，不换池、不重放，且状态可解释 |
+| Key 删除与晋升 | 删除或轮转只有在撤销持久化、当前实例屏障 ack 且探测确认实际失效的 Key 被拒绝后才报告完成；删除主 Key 后晋升的有效 Key 保持可用，仅角色改变不触发撤销；并发结果可核对 |
+| 撤销失联与在途请求 | core 失联不延长入口 Key 授权；旧 generation/owner 通知被丢弃；已授权在途请求按明确撤销策略完成或被取消，不换池、不重放，且状态可解释 |
 | 取消与排空 | 下游取消终止上游；在途数量回到零或明确超时；停止后释放端口，失联不无限使用缓存 Key |
 | 写入与恢复 | 运行准备失败、配置保存失败、确认丢失和补偿失败均可恢复，不留下指向失效入口的配置而报告成功 |
 | 交付与回退 | Windows/macOS/Linux 对应包含可执行程序；冷启动、签名、版本匹配、失败更新和回退可复现 |
 | 信息泄露 | argv、普通 IPC、状态、监控、日志和运行记录均不含登录材料、入口 Key 或真实请求正文 |
+
+### C/D 隔离运行与证据
+
+C/D 进程必须使用绝对临时 `AGENTHUB_HOME`、临时端口和受控 loopback 上游。`AGENTHUB_HOME` 只隔离应用数据，不隔离 Agent 家目录；测试实例关闭自动导入本机登录，启动前必须列出实际所有数据、Agent 配置及日志读写路径，规范化后逐一验证处于 scratch 范围内。执行文件和系统库另设只读允许清单，不因此放开宿主登录文件。若发现路径越界或没有路径隔离能力，则不得运行 D，改用独立测试用户或其他隔离环境；不得修改宿主用户级配置。
+
+自动 probe 禁止未列出的外网访问、真实登录和真实 Agent 用户目录。已有 `preflight` 只能以合成参数和受控上游纳入本阶段证据；真实参数入口保留给手动真机验收，不能替代隔离证据。
+
+旧 Rust 与 Go 必须使用同一 fixture、schema 和请求序列。规范化只允许预先声明的动态 id、时间等字段；不能删除事件顺序、工具次数或错误语义。差异按当前契约裁决，源码中的错误不能直接抄成 golden。C 正确性用例至少运行 3 遍，并预先声明并发档位（建议 `1/4/16`）；结构安全错误零容忍。性能阈值由 A 阶段先测旧版，再冻结并发档位、平台硬件和预算；C 的结果不能反过来调高阈值。
+
+E 的合成受控上游观察门槛候选为连续 24 小时、至少 1000 请求、至少 20 条 5 分钟长流，以及每个关键崩溃恢复注入至少 3 遍；这些数值须由 A 阶段确认，当前均不是已测结果。真实付费上游不得镜像请求，也不用于千次压测。
+
+| 注入点 | 预期状态与清理 | 必须留存的证据 |
+|---|---|---|
+| `prepare` 失败 | `active` 不变，清理过期 prepared/临时监听 | 操作状态、端口探测、清理结果 |
+| `save` 失败 | `prepared` 可撤销，领域写入回到原状态 | core 持久化记录、回滚核对 |
+| `commit` 丢 ack | 查询后只接受已核实的 active，未知则 pending | operation/status 对照、重连核对 |
+| core EOF | owner 失效、拒绝新请求、排空并释放资源 | epoch/term、请求计数、端口释放 |
+| core 重启而 runner 仍存活 | 旧 term 不可用；核对排空与屏障，基于保留版本准备新前向 revision，commit 后才服务 | 新旧 term、active/prepared、迟到指令拒绝与重新激活结果 |
+| Go 崩溃 | 无自动重放，确认失败进程资源释放后再恢复 | 崩溃日志、恢复 epoch/revision、清理结果 |
+| Key 迟到回复 | 丢弃旧 generation，保持撤销 watermark | generation、watermark、请求拒绝结果 |
+| 升级失败 | 新 runner 释放后旧包新 epoch 恢复 | pending upgrade、包身份、回退核对 |
+
+每次运行记录实际构建 SHA、dirty 补丁指纹、平台/架构、`run_id`、fixture 版本、配置 `active`/`prepared`、epoch/term、注入点、结果和清理情况。临时产物候选路径为 `.tmp/route-runtime-probe/<run_id>/`；写入 stdout/stderr 前先脱敏。日志、status 和控制记录扫描 Key 与正文，扫描失败即阻断；不得记录真实 prompt 或工具参数。
 
 现有 `scripts/route-messages-preflight.sh` 只覆盖模型列表与 `Messages` 两轮；browser E2E 使用 mock，不能证明真实后端。需新增非 Rust 的三协议、进程故障、取消、日志脱敏及打包黑盒工具，工具尚不存在，不提供虚构的可用命令。
 
@@ -207,22 +263,26 @@ Go 是候选实现，不是已选定的全量重写语言。默认保留旧 Rust
 
 ## 11. 实现前仍需确定
 
-首期已给出推荐职责与生命周期，但下列工程选择在对应阶段完成前不能视为已批准实现：
+本页拟新增的运行消息、字段、阈值、目录和工具都是 `proposed` 候选，当前均未实现，也不构成现行接口；第 1 节及链接页面描述的既有接口仍按其现行契约使用。首期已给出推荐职责与生命周期，但下列工程选择在对应阶段完成前不能视为已批准实现：
 
-1. A 阶段：完整快照字段、规范化 `hash`、`revision` 存储及迁移、锁顺序、准备/提交/撤销消息、操作保留期与请求状态保留规则。
-2. B 阶段：Rust/Go IPC 库、Windows/Unix 权限、实例认证、有界重启和心跳/排空参数的实测值。
-3. C/D 阶段：第一测试池的合成 fixture、登录引用撤销和在途请求策略、Go 能力矩阵与真实 Agent 验收范围。
-4. E 阶段：每个平台/架构的构建、签名、包内版本/`hash` 核对与原子升级回退；首期扩展随桌面包更新，不独立下载更新。
+1. A 阶段：完整快照字段、规范化 `hash`、`revision` 存储及迁移、锁顺序、owner/auth generation 规则、准备/提交/撤销消息、操作留存与 reconcile 决策表。
+2. B 阶段：Rust/Go IPC 库、Windows/Unix 权限、实例认证、有界重启和心跳/排空参数的实测值；单平台结果不能代表整体通过。
+3. C/D 阶段：第一测试池的合成 fixture、登录引用撤销和在途请求策略、Go 能力矩阵、隔离路径和证据格式，以及真实 Agent 验收范围。
+4. E 阶段：每个平台/架构的构建、签名、包内版本/`hash` 核对、升级 pending 记录与原子升级回退；首期扩展随桌面包更新，不独立下载更新。
 5. F 阶段：是否需要完整后台以及无界面 core 所有者如何交付；未解决前保持首期退出语义。
+
+### A 阶段退出门槛
+
+A 阶段必须交付窄消息、状态和错误 schema，冻结 owner/auth generation 的作用域、owner_term 接管时的缓存清理与撤销 watermark 规则、锁顺序、操作留存与 reconcile 决策表，提供可复现 fixture 对照和故障计划，并写明隔离路径与证据格式。缺项可以继续设计和补证据，但不能进入 B 的原型实现；不得借此扩大为通用插件 SDK。
 
 ## 12. 下一阶段任务
 
 | 任务 | 负责人和范围 | 交付与边界 |
 |---|---|---|
-| A：core 契约梳理 | core 负责人基于已定位的 `adapter_control/{contract,status}.rs` 和 `adapter_bridge_controller` 函数 | 只产窄运行接口、状态模型和锁顺序设计，不拆整个 core；必须先明确 revision、epoch、bootstrap、Key 授权和同口 saga 的契约 |
+| A：core 契约梳理 | core 负责人基于已定位的 `adapter_control/{contract,status}.rs` 和 `adapter_bridge_controller` 函数 | 只产窄运行接口、状态/错误模型和锁顺序设计，不拆整个 core；交付 A 阶段退出门槛要求的 generation、操作留存、reconcile、fixture/故障与隔离证据契约 |
 | 独立验证设计 | 独立验证负责人设计现有 preflight 之外的合成进程 probe | 候选目录为 `scripts/route-runtime-probe/`，当前明确未创建；覆盖进程、端口、IPC、撤销和日志脱敏，不接真实用户请求 |
-| B：平台只读 IPC 实验 | 平台负责人按 A 的窄接口做 Windows/macOS/Linux 本地 IPC 只读实验 | 只验证权限、实例身份、EOF、版本和状态读取，不写 Agent 配置，不绑定默认网关 |
-| 共用字段归属 | 指定一名 core 负责人维护 revision、epoch、owner、状态和错误字段 | 其他实现只能消费契约，不在各自模块复制字段或定义第二份领域状态 |
+| B：平台只读 IPC 实验 | 平台负责人按 A 的窄接口先做当前 Windows 本地 IPC 只读实验，其他平台并行补证据 | 当前平台只验证权限、实例身份、EOF、版本和状态读取，不写 Agent 配置，不绑定默认网关；单平台结果不代表整体通过 |
+| 共用字段归属 | 指定一名 core 负责人维护 revision、epoch、owner/auth generation、状态和错误字段 | 其他实现只能消费契约，不在各自模块复制字段或定义第二份领域状态；以上均为 proposed，当前未实现 |
 
 A 交付并完成独立审查后才能进入 B 的原型实现；在此之前不发布、不打新的发版 tag、不触碰真实用户数据。已授权的本地基线 tag 仅作为固定比较标记，不受此发版限制影响。
 
