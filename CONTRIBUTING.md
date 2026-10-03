@@ -31,6 +31,7 @@ pnpm tauri:dev        # 真实 Tauri 桌面端
 
 - 日常开发分支是 `dev`。从 `dev` 创建短期工作分支，PR 的目标分支是 `dev`。
 - `release` 是正式发版线，不用于日常集成；**禁止直接在 `release` 上提交**，只能将 `dev` 合入 `release` 后再打 tag。守卫说明见 [release 分支保护](docs/guides/release-branch-protection.md)。
+- **`dev-rust`** 是当前 Rust 版本的冻结备份。不允许再提交，不允许删除，不允许合并入内容。插件化和用 Go 实现的路由留在其他分支。规则见 [`.github/rulesets/dev-rust-frozen.json`](.github/rulesets/dev-rust-frozen.json)。
 - PR 描述应说明行为变化、影响范围、验证命令和文档变化。涉及界面时使用 `pnpm dev:mock` 的合成数据，不提交真实账号、令牌、路径或日志。
 - 安全问题不要创建公开 Issue；按 [SECURITY.md](SECURITY.md) 私下披露。
 

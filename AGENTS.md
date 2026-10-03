@@ -7,6 +7,7 @@
 红线之外的补充禁止项与 Chat 阅读路径见 [自动化 Agent 短手册](docs/guides/agent-short-handbook.md)。产品关闭边原文仍以 [产品边界](docs/decisions/product-boundaries.md) 为准，不要只靠本段推断。
 
 - 日常开发和 PR 合入 **`dev`**。不要直接在 `release` 上提交；`release` 只用于正式发版。
+- **`dev-rust`** 不允许再提交，不允许删除，不允许合并入内容。这是当前 Rust 版本的冻结备份；插件化，以及用 Go 实现的路由，都不要进入这条分支。
 - 凭据落盘加密无必要，沿用现有存储；不得派生 keyring、AES、主密码或密文迁移任务。国产 OAuth 适配、把 OAuth 转成 API 或伪装成 API Key 均为范围外；用户明确推翻前不得讨论或实施。
 - 所有 API Key 都可以分享（含 WorkBuddy / ZCode 等上配置的），不按所属 Agent 挡在连接池外。国产官方登录不能分享或接到其他工具；现有国产路由只认官方 API Key，不得把 Key 边扩成 OAuth 边。
 - 对用户说话、写界面和提示时，用对方已经在用的词或界面上的词。
