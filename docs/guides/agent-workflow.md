@@ -3,7 +3,7 @@ title: Agent 协作指南
 type: guide
 status: current
 owner: maintainers
-updated: 2026-09-29
+updated: 2026-10-03
 ---
 
 # Agent 协作指南
@@ -56,7 +56,7 @@ updated: 2026-09-29
 
 ### 全项目体检
 
-体检不是日常审查，默认只读。唯一可写的仓库文件是本次报告 `docs/reviews/<YYYY-MM-DD>-project-review-<HEAD前8位>.md`；不覆盖已有报告，同一 HEAD 的同一次体检可继续更新同一文件。
+体检不是日常审查，默认只读。唯一可写的仓库文件是本次报告 `docs/archive/<YYYY-MM-DD>-project-review-<HEAD前8位>.md`；不覆盖已有报告，同一 HEAD 的同一次体检可继续更新同一文件。`docs/reviews/` 已迁入归档，不再作为现行目录。
 
 1. 子 Agent 只读，不再派生；只有主 Agent 写报告。
 2. 候选问题先标「待核实」，核实后改为确认、误报、已存在或范围外。正式问题要有源码、测试、运行结果或明确契约；风格偏好和项目明确不做的事不算缺陷。

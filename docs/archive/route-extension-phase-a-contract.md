@@ -1,18 +1,20 @@
 ---
-title: 路由官方扩展 A 阶段纸面契约
-type: proposal
-status: proposed
+title: 路由官方扩展 A 阶段纸面契约（已取代）
+type: archive
+status: archived
 owner: maintainers
 updated: 2026-10-03
 ---
 
-# 路由官方扩展 A 阶段纸面契约
+# 路由官方扩展 A 阶段纸面契约（已取代）
 
-本文冻结[路由官方扩展与独立运行方案](adapter-sidecar.md) A 阶段的纸面契约：窄运行接口、`active`/`prepared` 分离、锁顺序、版本与撤销水位、操作留存、fixture/故障计划以及隔离路径与证据格式。这些都是 `proposed` 候选，**不能当现行产品接口；整份 A 尚未通过，现仅授权隔离目录下的 Go Messages 切片（Handshake、Status、进程监督与合成 Key 的 Messages），不授权默认网关切换、真实配置写入、插件商店或 E/F**。本页不写 Go、不拆进程、不做插件平台或 IPC 原型。
+> **Archived documentation.** 本页记录曾考虑的复杂控制协议，已由[Go 路由替换方案](../proposals/adapter-sidecar.md)取代，不是实施门槛或现行接口。
+
+本文冻结[路由官方扩展与独立运行方案](../proposals/adapter-sidecar.md) A 阶段的纸面契约：窄运行接口、`active`/`prepared` 分离、锁顺序、版本与撤销水位、操作留存、fixture/故障计划以及隔离路径与证据格式。这些都是 `proposed` 候选，**不能当现行产品接口；整份 A 尚未通过，现仅授权隔离目录下的 Go Messages 切片（`Handshake`、`Status`、`AcquireOrRenewOwner` acquire/renew、probe-only `ActivateProbeListen` 与合成 Key 的 Messages JSON/SSE），不授权默认网关切换、真实配置写入、插件商店或 E/F**。`ActivateProbeListen` 不是产品 `CommitDesired` / `PrepareDesired` / `BootstrapDesired`。本页不做插件平台或把隔离切片扩成 live sidecar。
 
 现行写入入口仍是 `AdapterControl` 的 `plan` / `bind` / `unbind` 与进程内 `adapter_bridge_controller`；现行状态 DTO 仍是带 `local_token` 的 `AdapterBridgeStatus`。下面的 `RouteRuntimeControl` 消息不得替代这些现行接口。
 
-对齐[模块化提案「功能模块与官方扩展」](modularity.md#8-功能模块与官方扩展)：路由是首个随应用交付、固定注册的官方扩展候选；登录与连接仍由 core 唯一负责；不把所有功能改成可下载插件，不引入动态 ABI 或第二份领域库。产品边界仍以[产品边界](../decisions/product-boundaries.md)为准，本页不改。
+对齐[模块化提案「功能模块与官方扩展」](../proposals/modularity.md#8-功能模块与-go-路由程序)：路由是首个随应用交付、固定注册的官方扩展候选；登录与连接仍由 core 唯一负责；不把所有功能改成可下载插件，不引入动态 ABI 或第二份领域库。产品边界仍以[产品边界](../decisions/product-boundaries.md)为准，本页不改。
 
 ## 1. 范围与非目标
 
@@ -21,9 +23,9 @@ updated: 2026-10-03
 | 冻结候选消息字段、前置条件、成功/失败与错误码 | 实现、调用或发布这些消息 |
 | 按现有 `adapter_control` 与 `adapter_bridge_controller` 调用链写出锁顺序设计 | 改 Rust / TypeScript、改锁实现、改数据库迁移 |
 | 冻结 generation、watermark、reconcile 与操作留存规则 | 把提案写成「A 已通过、可以做 B」 |
-| 写明 fixture 对照、故障计划、隔离目录与证据格式 | 创建会跑起来的 probe 脚本，或接入真实用户数据 |
+| 写明 fixture 对照、故障计划、隔离目录与证据格式 | 把隔离 Messages probe 扩成 A 所需的三协议 / 故障 / 撤销证据，或接入真实用户数据 |
 
-候选标识仍是 `agenthub.routes`，候选二进制名仍是 `agenthub-adapterd`，均非当前可用接口。调查基线仍是 annotated tag `baseline/routes-before-extension-20261003`（`7c2b6fe2be67bbaa0b509deee6d6002981c60fd9`），本契约不移动该 tag。
+候选标识仍是 `agenthub.routes`，候选二进制名仍是 `agenthub-adapterd`，均非当前产品可用接口。隔离 scratch 下的 v0 控制面已经可运行。调查基线仍是 annotated tag `baseline/routes-before-extension-20261003`（`7c2b6fe2be67bbaa0b509deee6d6002981c60fd9`），本契约不移动该 tag。
 
 ## 2. 通道、信封与禁止项
 
@@ -509,38 +511,38 @@ core 在握手、重连、提交超时、崩溃恢复后按本表核对，不得
 
 ## 9. A 阶段退出门槛清单
 
-对照提案第 9、12 节。本 PR 只做纸面冻结，**不过 B**：不写 Go、不拆进程、不做插件平台、不做 IPC 原型。缺「仍缺」项可以继续设计，但不能进入 B 的原型实现。
+对照提案第 9、12 节。纸面契约仍只冻结候选，**不过 B**：不做插件平台、不把隔离切片当成 live sidecar 或产品 `CommitDesired`。缺「仍缺」项可以继续设计，但不能进入 B 的原型实现。隔离 Messages 切片已落地，不等于 A 通过。
 
 ### 9.1 提案第 9 节 A 行
 
-| 完成证据 | 本 PR |
+| 完成证据 | 本契约 |
 |---|---|
 | 能按旧实现复现并分类故障 | **仍缺、因此不能进 B**：本页按现有调用链分类了启停、补偿、端口占用、排空持锁与不确定结果，但没有真实运行日志复现 |
-| 明确租约、版本、补偿和锁顺序 | **本 PR 已纸面冻结**（第 5–8 节） |
-| 不改领域行为 | **本 PR 已纸面冻结**：无 Rust/TS/库表改动 |
+| 明确租约、版本、补偿和锁顺序 | **已纸面冻结**（第 5–8 节） |
+| 不改领域行为 | **已纸面冻结**：纸面契约不改 Rust/TS/库表 |
 
 ### 9.2 提案第 12 节 A 行与共用字段
 
-| 交付 | 本 PR |
+| 交付 | 本契约 |
 |---|---|
-| 窄运行接口、状态/错误模型 | **本 PR 已纸面冻结**（第 2–4 节） |
-| 锁顺序设计，不拆整个 core | **本 PR 已纸面冻结**（第 5 节） |
-| owner/auth generation 作用域、接管清缓存、撤销 watermark | **本 PR 已纸面冻结**（第 6 节） |
-| 操作留存与 reconcile 决策表 | **本 PR 已纸面冻结**（第 7–8 节） |
-| fixture/故障与隔离证据契约 | **本 PR 已纸面冻结**（第 10 节，只写契约） |
+| 窄运行接口、状态/错误模型 | **已纸面冻结**（第 2–4 节） |
+| 锁顺序设计，不拆整个 core | **已纸面冻结**（第 5 节） |
+| owner/auth generation 作用域、接管清缓存、撤销 watermark | **已纸面冻结**（第 6 节） |
+| 操作留存与 reconcile 决策表 | **已纸面冻结**（第 7–8 节） |
+| fixture/故障与隔离证据契约 | **已纸面冻结**（第 10 节，只写契约） |
 | `revision` 存储及数据库迁移 | **仍缺、因此不能进 B**：字段已点名，本轮明确不改库 |
-| 独立验证 probe 脚本（`scripts/route-runtime-probe/`） | **仍缺、因此不能进 B**：本 PR 按要求不创建可运行脚本 |
+| 独立验证 probe 脚本（`scripts/route-runtime-probe/`） | **隔离 Messages 已有、A 仍缺因此不能进 B**：`messages-isolated.sh` 覆盖进程与合成 Key Messages；尚缺三协议、故障、撤销、脱敏与打包证据 |
 | 按旧实现实测性能阈值、并发档位、24h/1000/20 长流数值确认 | **仍缺、因此不能进 B**：提案写明当前不是已测结果 |
 | A 交付后的独立审查 | **仍缺、因此不能进 B**：提案要求独立审查后才能进入 B |
-| B 的 Windows 只读 IPC 实验 | **仍缺、因此不能进 B**：本 PR 明确不过 B |
+| B 的 Windows 只读 IPC 实验 | **仍缺、因此不能进 B**：本契约明确不过 B |
 
-### 9.3 本 PR 明确排除
+### 9.3 本页明确排除
 
-不写 Go；不新增二进制；不拆进程；不做插件平台 / SDK / ABI；不改回收站策略；不改 `docs/STATUS.md`；不改产品边界；不改发版；不打 tag；不合 `release`；不把本页候选说成已经实现。
+隔离 Go Messages 切片已经存在，不在此重复实现。不做插件平台 / SDK / ABI；不把 `ActivateProbeListen` 写成产品 `CommitDesired`；不改回收站策略；不改产品边界；不改发版；不打 tag；不合 `release`；不把本页候选说成已经实现；不把隔离切片说成 live sidecar。
 
 ## 10. fixture 对照、故障计划、隔离路径与证据格式
 
-本节只写契约。不创建 probe 脚本，不接真实用户数据，不修改宿主用户级配置。候选目录 `scripts/route-runtime-probe/` 与临时产物 `.tmp/route-runtime-probe/<run_id>/` **当前明确未创建**。
+本节只写契约。不接真实用户数据，不修改宿主用户级配置。隔离 Messages probe 已有 `scripts/route-runtime-probe/messages-isolated.sh`；A 所需的三协议 / 故障 / 撤销 / 脱敏脚本仍缺。临时产物仍落在运行时 scratch（脚本使用 `/tmp/agenthub-route-runtime-probe/<run_id>/`），不是产品数据目录。
 
 ### 10.1 对照规则
 
@@ -590,7 +592,7 @@ C/D 若将来运行，必须满足：
 
 ### 10.4 证据格式
 
-每次运行记录（将来由尚未创建的工具写入 `.tmp/route-runtime-probe/<run_id>/`）：
+每次运行记录（隔离 Messages probe 写入其 scratch `evidence.json`；其余 A 证据工具尚未创建）：
 
 | 字段 | 要求 |
 |---|---|
@@ -611,7 +613,7 @@ C/D 若将来运行，必须满足：
 
 ## 相关页面
 
-- [路由官方扩展与独立运行方案](adapter-sidecar.md)：本契约所对齐的提案；整份 A 尚未通过，现仅授权隔离目录下的 Go Messages 切片（Handshake、Status、进程监督与合成 Key 的 Messages），不授权默认网关切换、真实配置写入、插件商店或 E/F。
-- [模块化与边界收紧](modularity.md#8-功能模块与官方扩展)：功能模块与官方扩展的产品对齐。
+- [路由官方扩展与独立运行方案](../proposals/adapter-sidecar.md)：本契约所对齐的提案；整份 A 尚未通过，现仅授权隔离目录下的 Go Messages 切片（`Handshake`、`Status`、`AcquireOrRenewOwner`、probe-only `ActivateProbeListen` 与合成 Key 的 Messages），不授权默认网关切换、真实配置写入、插件商店或 E/F。
+- [模块化与边界收紧](../proposals/modularity.md#8-功能模块与-go-路由程序)：功能模块与官方扩展的产品对齐。
 - [本机路由 API](../reference/local-route-api.md)与[路由兼容性](../reference/route-compatibility.md)：现行 HTTP 契约，对照时的裁决真源。
 - [产品边界](../decisions/product-boundaries.md)：本页不改变的产品规则。
