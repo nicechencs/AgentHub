@@ -35,6 +35,7 @@ updated: 2026-09-30
 - 同步候选由 `canSyncConnectionToPool`（`src/components/login-kernel/eligibility.ts`）决定：所有 API Key 都可同步；官方登录只有 Claude / Codex / Grok；国产官方登录不能分享；已在连接池里的登录不再列出。
 - 在连接池里编辑从连接页来的官方登录时，先复制成池里自己的一份（连接页那份保留），再问要不要把模型写回连接页。连接页和连接池相互独立，回收站也分开。
 - Routes 二级导航：board / pool / tokens / activity（`/routes` 进看板）。
+- 2026-10-03 真窗：取消正在用的 Pi 接入已过（连接不再使用，本机文件回到接入前）。删除正在用的官方登录若没成功，本机文件和默认都不改，再次导入的确认可以点（框里说明同时有 API Key 和官方登录，按服务商分行，不猜一份当前登录）。Claude 先写进去再恢复这一段还没测到，不能算过。
 
 ### Sub2API
 
