@@ -3,7 +3,7 @@ title: Future Proposals
 type: navigation
 status: current
 owner: maintainers
-updated: 2026-09-29
+updated: 2026-10-03
 ---
 
 # Proposals
@@ -26,9 +26,9 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 |---|---|---|
 | [Chat 统一体验与跨环境开发](chat-unified-experience.md) | 部分落地 | 如何共用聊天交互、逐家接入 Agent，并在换电脑或换开发 Agent 后复现和验收？用户标准见 [Chat 体验标杆](../ui/chat-experience-bar.md)。 |
 | [可选本机命令护栏](chat-tool-guard.md) | 未落地 | 占位，暂不实现。 |
-| [adapter-sidecar.md](adapter-sidecar.md) | 未落地 | 能否由一个用户级进程托管长期运行的本机路由，GUI 和 CLI 只做客户端？ |
+| [路由官方扩展与独立运行](adapter-sidecar.md) | 未落地 | 如何固定注册官方扩展、分离运行与登录职责，并以 Go 小范围试点验证进程隔离、写入补偿及回退？首期仍依赖 core 存活，完整后台另设门槛。 |
 | [tray-background-modes.md](tray-background-modes.md) | 部分落地 | 关窗后能否释放 WebView 内存，而不改变路由归属和退出语义？关窗策略已抽到 `src-tauri/src/window_policy.rs`。 |
-| [modularity.md](modularity.md) | 部分落地 | 在更大的进程拆分之前，先收紧哪些单一来源和用例边界？ |
+| [模块化与边界收紧](modularity.md) | 部分落地 | 如何先收紧模块接口，再选择有明确收益的官方扩展，而不把所有功能一次变成插件平台？ |
 | [接入 Kiro（kiro-cli）](agent-kiro.md) | 大部分落地 | 剩 Skills / MCP。现行以 [STATUS](../STATUS.md) 为准。 |
 | [Kiro HTTP / 本机转发](agent-kiro-http.md) | 大部分落地 | 剩企业 IdC / `profileArn` 验收、打印路径流式、主机迁移。 |
 | [国内自动更新镜像（R2）](update-mirror-r2.md) | 代码已落地 | 剩云端运维配置和国内真机验收。 |
