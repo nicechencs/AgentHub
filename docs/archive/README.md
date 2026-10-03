@@ -39,7 +39,8 @@
 | [chat-host-depth.md](chat-host-depth.md) | Chat host-depth proposal, moved from `docs/proposals/` on 2026-09-29; slices A–E and G–I merged, F cancelled | Current facts: `docs/STATUS.md`; remaining Chat work: `docs/proposals/chat-unified-experience.md` |
 | [ui-audit-2026-09-07/README.md](ui-audit-2026-09-07/README.md) | 2026-09-07 UI audit and implementation notes, moved from `docs/reviews/` on 2026-09-29 | Re-check table inside; current UI rules: `docs/ui/design-system.md` and `docs/ui/page-patterns.md` |
 | [recent-fix-review.md](recent-fix-review.md) | 2026-08-26 fix recap | Current facts: `docs/STATUS.md` |
-| [route-extension-a-stage-paper-freeze.md](route-extension-a-stage-paper-freeze.md) | A 阶段纸面冻结里「不写 Go / probe 未创建」的过时现在时 | Live: [A 阶段纸面契约](../proposals/route-extension-phase-a-contract.md)、[官方扩展评估](../proposals/official-extension-go-slice-review.md) |
+| [route-extension-a-stage-paper-freeze.md](route-extension-a-stage-paper-freeze.md) | A 阶段纸面冻结里「不写 Go / probe 未创建」的过时现在时 | Live: [A 阶段纸面契约](../proposals/route-extension-phase-a-contract.md) |
+| [official-extension-go-slice-review-2026-10-03.md](official-extension-go-slice-review-2026-10-03.md) | 2026-10-03 官方扩展与 Go 切片 **NO-GO（改造）** 评估原文 | Live: [A 阶段纸面契约](../proposals/route-extension-phase-a-contract.md)、[路由官方扩展](../proposals/adapter-sidecar.md) |
 
 ## Removed historical bodies
 

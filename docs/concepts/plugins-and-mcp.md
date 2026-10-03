@@ -5,12 +5,12 @@ status: current
 owner: maintainers
 audience: product, frontend, and core contributors
 source-of-truth: SkillService, mcp_inventory.rs, mcp_manage.rs, plugin_inventory.rs, plugin_apply.rs, vendor plugin CLIs, and linked reference pages
-updated: 2026-09-29
+updated: 2026-10-03
 ---
 
 # 插件、MCP 与技能
 
-AgentHub 里有三类“扩展”，名字容易混。用户说的**插件**是各家的 plugin / extension 包，**不是** MCP server。各家厂商侧的细节见 [Agent 插件表面](../reference/agent-plugin-surfaces.md)。
+AgentHub 当前界面里有三类容易混淆的扩展内容。用户说的**插件**是各家的 plugin / extension 包，**不是** MCP server，也不是提案中的 AgentHub 官方扩展。各家厂商侧的细节见 [Agent 插件表面](../reference/agent-plugin-surfaces.md)；官方扩展候选见[模块化提案](../proposals/modularity.md#8-功能模块与官方扩展)，当前没有对应的插件平台或商店。
 
 ## 三类扩展
 
@@ -52,4 +52,5 @@ AgentHub 里有三类“扩展”，名字容易混。用户说的**插件**是�
 - [MCP inventory](../reference/mcp-inventory.md)
 - [能力参考](../reference/capabilities.md)
 - [插件管理提案](../proposals/plugin-management.md)
+- [模块化提案：功能模块与官方扩展](../proposals/modularity.md#8-功能模块与官方扩展)
 - [UI 页面模式](../ui/page-patterns.md)

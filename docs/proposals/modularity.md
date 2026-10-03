@@ -74,7 +74,7 @@ AgentHub 是模块化单体：GUI 和 CLI 共用 `agenthub-core`。已建立的�
 
 本节讨论扩展 AgentHub 自身的**官方扩展**。`/plugins` 页面管理的是各 Agent 的厂商 plugin / extension 包，二者不是同一对象；厂商插件见[插件管理提案](plugin-management.md)。
 
-当前基线：本机转发仍是 Tauri 进程内 `local_bridge`。路由是第一个随应用交付、固定注册的官方扩展候选，标识 `agenthub.routes`。树中已有隔离目录下的 Go Messages 切片（`go/agenthub-adapterd`、`scripts/route-runtime-probe/messages-isolated.sh`），那不是 live sidecar，也不等于官方扩展已上线。除路由外，下表其余部分当前均为 design-only，本文不授权实现。
+当前基线：本机转发仍是 Tauri 进程内 `local_bridge`。路由是第一个随应用交付、固定注册的官方扩展候选，标识 `agenthub.routes`。树中已有隔离目录下的 Go desired-config + Messages 切片（`go/agenthub-adapterd`、`scripts/route-runtime-probe/messages-isolated.sh`），那不是 live sidecar，也不等于官方扩展已上线。除路由外，下表其余部分当前均为 design-only，本文不授权实现。
 
 候选方向是让业务功能按清楚的接口组织，再按实际需要提供可选启用或独立进程；不是把所有功能一次改成可下载插件。
 

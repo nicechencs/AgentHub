@@ -19,26 +19,52 @@ const (
 	typeAcquireOrRenewOwner = "AcquireOrRenewOwner"
 	typeStatus              = "Status"
 	typeActivateProbeListen = "ActivateProbeListen"
+	typeBootstrapDesired    = "BootstrapDesired"
+	typePrepareDesired      = "PrepareDesired"
+	typeCommitDesired       = "CommitDesired"
+	typeAbortDesired        = "AbortDesired"
+	typeGetOperation        = "GetOperation"
 	typeStop                = "Stop"
 
-	lifecycleEmpty      = "empty"
-	lifecycleServing    = "serving"
-	lifecycleNotServing = "not_serving"
-	lifecycleStopped    = "stopped"
+	lifecycleEmpty        = "empty"
+	lifecyclePreparedOnly = "prepared_only"
+	lifecycleServing      = "serving"
+	lifecycleNotServing   = "not_serving"
+	lifecycleStopped      = "stopped"
 
-	errUnauthenticated   = "route.runtime.unauthenticated"
-	errProtocolMismatch  = "route.runtime.protocol_mismatch"
-	errConfigMismatch    = "route.runtime.config_format_mismatch"
-	errPackageMismatch   = "route.runtime.package_mismatch"
-	errScopeMismatch     = "route.runtime.scope_mismatch"
-	errStaleEpoch        = "route.runtime.stale_epoch"
-	errStaleTerm         = "route.runtime.stale_term"
-	errOwnerConflict     = "route.runtime.owner_conflict"
-	errNotOwner          = "route.runtime.not_owner"
-	errSecretOnControl   = "route.runtime.secret_on_control"
-	errInvalidRequest    = "route.runtime.invalid_request"
-	errPortInUse         = "route.runtime.port_in_use"
-	errProbeOnlyRejected = "route.runtime.probe_only_rejected"
+	opInProgress = "in_progress"
+	opPrepared   = "prepared"
+	opCommitted  = "committed"
+	opAborted    = "aborted"
+	opExpired    = "expired"
+	opUnknown    = "unknown"
+
+	errUnauthenticated     = "route.runtime.unauthenticated"
+	errProtocolMismatch    = "route.runtime.protocol_mismatch"
+	errConfigMismatch      = "route.runtime.config_format_mismatch"
+	errPackageMismatch     = "route.runtime.package_mismatch"
+	errScopeMismatch       = "route.runtime.scope_mismatch"
+	errStaleEpoch          = "route.runtime.stale_epoch"
+	errStaleTerm           = "route.runtime.stale_term"
+	errOwnerConflict       = "route.runtime.owner_conflict"
+	errNotOwner            = "route.runtime.not_owner"
+	errSecretOnControl     = "route.runtime.secret_on_control"
+	errInvalidRequest      = "route.runtime.invalid_request"
+	errPortInUse           = "route.runtime.port_in_use"
+	errProbeOnlyRejected   = "route.runtime.probe_only_rejected"
+	errRevisionLow         = "route.runtime.revision_low"
+	errHashConflict        = "route.runtime.hash_conflict"
+	errBaseMismatch        = "route.runtime.base_mismatch"
+	errActiveNotNull       = "route.runtime.active_not_null"
+	errActiveNull          = "route.runtime.active_null"
+	errPrepareConflict     = "route.runtime.prepare_conflict"
+	errPrepareExpired      = "route.runtime.prepare_expired"
+	errTokenInvalid        = "route.runtime.token_invalid"
+	errOperationInProgress = "route.runtime.operation_in_progress"
+	errOperationUnknown    = "route.runtime.operation_unknown"
+	errAlreadyCommitted    = "route.runtime.already_committed"
+
+	tokenFingerprintLen = 12
 
 	productDefaultPort = 43121
 	maxUnixSocketBytes = 100
@@ -51,6 +77,11 @@ var handshakeCapabilities = []string{
 	"control.status",
 	"control.acquire_owner",
 	"control.activate_probe_listen",
+	"control.bootstrap_desired",
+	"control.prepare_desired",
+	"control.commit_desired",
+	"control.abort_desired",
+	"control.get_operation",
 }
 
 type Envelope struct {
@@ -137,6 +168,74 @@ type ProbeFixture struct {
 	IngressKey      string `json:"ingress_key"`
 	UpstreamBaseURL string `json:"upstream_base_url"`
 	FixtureModel    string `json:"fixture_model"`
+}
+
+type DesiredRequest struct {
+	OperationID    string          `json:"operation_id"`
+	Snapshot       json.RawMessage `json:"snapshot"`
+	ConfigRevision string          `json:"config_revision"`
+	Hash           string          `json:"hash"`
+	ExpectedEpoch  string          `json:"expected_epoch"`
+	BaseRevision   string          `json:"base_revision"`
+	PrepareToken   string          `json:"prepare_token"`
+	RequestID      string          `json:"request_id"`
+}
+
+type RevisionView struct {
+	Revision string `json:"revision"`
+	Hash     string `json:"hash"`
+}
+
+type PreparedSuccess struct {
+	Revision           string  `json:"revision"`
+	Hash               string  `json:"hash"`
+	OperationID        string  `json:"operation_id"`
+	PrepareToken       string  `json:"prepare_token,omitempty"`
+	TokenExpiry        string  `json:"token_expiry"`
+	BaseActiveRevision *string `json:"base_active_revision"`
+}
+
+type PreparedView struct {
+	Revision           string  `json:"revision"`
+	Hash               string  `json:"hash"`
+	OperationID        string  `json:"operation_id"`
+	TokenExpiry        string  `json:"token_expiry"`
+	TokenFingerprint   string  `json:"token_fingerprint,omitempty"`
+	BaseActiveRevision *string `json:"base_active_revision"`
+}
+
+type BootstrapSuccess struct {
+	OperationID string          `json:"operation_id"`
+	Prepared    PreparedSuccess `json:"prepared"`
+	Active      *RevisionView   `json:"active"`
+}
+
+type PrepareSuccess struct {
+	Prepared PreparedSuccess `json:"prepared"`
+	Active   *RevisionView   `json:"active"`
+}
+
+type CommitSuccess struct {
+	Active      RevisionView  `json:"active"`
+	Prepared    *PreparedView `json:"prepared"`
+	Lifecycle   string        `json:"lifecycle"`
+	ListenReady bool          `json:"listen_ready"`
+	Port        *int          `json:"port,omitempty"`
+}
+
+type AbortSuccess struct {
+	Prepared *PreparedView `json:"prepared"`
+	Active   *RevisionView `json:"active"`
+}
+
+type GetOperationSuccess struct {
+	OperationID    string        `json:"operation_id"`
+	OperationState string        `json:"operation_state"`
+	Active         *RevisionView `json:"active"`
+	Prepared       *PreparedView `json:"prepared"`
+	Lifecycle      string        `json:"lifecycle"`
+	Port           *int          `json:"port"`
+	InFlightCount  int           `json:"in_flight_count"`
 }
 
 func payloadHash(raw json.RawMessage) string {

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Isolated Go adapterd Messages probe.
-# Handshake, Status, process up/down, one synthetic-key Messages JSON (+ SSE).
+# Isolated Go adapterd desired-config + Messages probe.
+# Handshake, owner, Bootstrap/Prepare/Commit (or Abort), GetOperation/Status,
+# synthetic-key Messages JSON (+ SSE), Stop.
 # Never touches ~/.agenthub or the live/default gateway.
 #
 # Usage (from repository root):
@@ -243,23 +244,101 @@ ACQ_REPLY="$(post_control "${ACQ_BODY}")"
 echo "${ACQ_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok"), d; print("acquire ok term="+str(d["payload"]["owner_term"]))'
 TERM="$(printf '%s' "${ACQ_REPLY}" | python_get payload.owner_term)"
 
-echo "== ActivateProbeListen (probe-only; not CommitDesired) =="
-ACT_BODY="$(python3 - "${HOME_DIR}" "${EPOCH}" "${TERM}" <<'PY'
+echo "== BootstrapDesired =="
+BOOT_BODY="$(python3 - "${HOME_DIR}" "${EPOCH}" "${TERM}" <<'PY'
 import json, sys
 home, epoch, term = sys.argv[1], sys.argv[2], int(sys.argv[3])
 print(json.dumps({
-    "type": "ActivateProbeListen",
-    "request_id": "probe-act-1",
+    "type": "BootstrapDesired",
+    "request_id": "probe-boot-1",
     "instance_epoch": epoch,
     "owner_id": "probe-owner",
     "owner_term": term,
     "app_data_dir": home,
-    "payload": {},
+    "payload": {
+        "operation_id": "op-boot-1",
+        "config_revision": "1",
+        "expected_epoch": epoch,
+        "snapshot": {"config_format_version": "route-config.v0-isolated", "fixture": "probe"},
+    },
 }))
 PY
 )"
-ACT_REPLY="$(post_control "${ACT_BODY}")"
-echo "${ACT_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok"), d; print("activate probe listen ok (not product CommitDesired)")'
+BOOT_REPLY="$(post_control "${BOOT_BODY}")"
+echo "${BOOT_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok"), d; p=d["payload"]; assert p.get("active") is None; assert p["prepared"]["revision"]=="1"; print("bootstrap ok revision="+p["prepared"]["revision"])'
+BOOT_TOKEN="$(printf '%s' "${BOOT_REPLY}" | python_get payload.prepared.prepare_token)"
+BOOT_HASH="$(printf '%s' "${BOOT_REPLY}" | python_get payload.prepared.hash)"
+if [[ -z "${BOOT_TOKEN}" || -z "${BOOT_HASH}" ]]; then
+  echo "FAIL: bootstrap missing token or hash: ${BOOT_REPLY}" >&2
+  exit 1
+fi
+if printf '%s' "${BOOT_REPLY}" | grep -F -q "${SYNTHETIC_KEY}"; then
+  echo "FAIL: bootstrap leaked synthetic key" >&2
+  exit 1
+fi
+
+echo "== GetOperation after Bootstrap (prepared) =="
+GET_BOOT_BODY="$(python3 - "${HOME_DIR}" "${EPOCH}" "${TERM}" <<'PY'
+import json, sys
+home, epoch, term = sys.argv[1], sys.argv[2], int(sys.argv[3])
+print(json.dumps({
+    "type": "GetOperation",
+    "request_id": "probe-get-boot-1",
+    "instance_epoch": epoch,
+    "owner_id": "probe-owner",
+    "owner_term": term,
+    "app_data_dir": home,
+    "payload": {"operation_id": "op-boot-1"},
+}))
+PY
+)"
+GET_BOOT_REPLY="$(post_control "${GET_BOOT_BODY}")"
+echo "${GET_BOOT_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok"), d; p=d["payload"]; assert p.get("operation_state")=="prepared"; assert p.get("active") is None; assert "prepare_token" not in json.dumps(p.get("prepared") or {}); print("get operation prepared ok")'
+
+echo "== CommitDesired =="
+COMMIT_BODY="$(python3 - "${HOME_DIR}" "${EPOCH}" "${TERM}" "${BOOT_TOKEN}" "${BOOT_HASH}" <<'PY'
+import json, sys
+home, epoch, term, token, digest = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4], sys.argv[5]
+print(json.dumps({
+    "type": "CommitDesired",
+    "request_id": "probe-commit-1",
+    "instance_epoch": epoch,
+    "owner_id": "probe-owner",
+    "owner_term": term,
+    "app_data_dir": home,
+    "payload": {
+        "operation_id": "op-boot-1",
+        "prepare_token": token,
+        "config_revision": "1",
+        "hash": digest,
+    },
+}))
+PY
+)"
+COMMIT_REPLY="$(post_control "${COMMIT_BODY}")"
+echo "${COMMIT_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok"), d; p=d["payload"]; assert p["active"]["revision"]=="1"; assert p.get("prepared") is None; print("commit ok revision="+p["active"]["revision"])'
+if printf '%s' "${COMMIT_REPLY}" | grep -F -q "${SYNTHETIC_KEY}"; then
+  echo "FAIL: commit leaked synthetic key" >&2
+  exit 1
+fi
+
+echo "== GetOperation after Commit (committed) =="
+GET_COMMIT_BODY="$(python3 - "${HOME_DIR}" "${EPOCH}" "${TERM}" <<'PY'
+import json, sys
+home, epoch, term = sys.argv[1], sys.argv[2], int(sys.argv[3])
+print(json.dumps({
+    "type": "GetOperation",
+    "request_id": "probe-get-commit-1",
+    "instance_epoch": epoch,
+    "owner_id": "probe-owner",
+    "owner_term": term,
+    "app_data_dir": home,
+    "payload": {"operation_id": "op-boot-1"},
+}))
+PY
+)"
+GET_COMMIT_REPLY="$(post_control "${GET_COMMIT_BODY}")"
+echo "${GET_COMMIT_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok"), d; p=d["payload"]; assert p.get("operation_state")=="committed"; assert p.get("prepared") is None; print("get operation committed ok")'
 
 ST2_BODY="$(python3 - "${HOME_DIR}" "${EPOCH}" "${TERM}" <<'PY'
 import json, sys
@@ -276,7 +355,7 @@ print(json.dumps({
 PY
 )"
 ST2_REPLY="$(post_control "${ST2_BODY}")"
-echo "${ST2_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok"), d; p=d["payload"]; assert p.get("listen_ready") is True; assert p.get("lifecycle")=="serving"; print("status serving port="+str(p.get("port")))'
+echo "${ST2_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok"), d; p=d["payload"]; assert p.get("listen_ready") is True; assert p.get("lifecycle")=="serving"; assert p.get("active_revision")=="1"; assert p.get("prepared") is None; print("status serving port="+str(p.get("port")))'
 if printf '%s' "${ST2_REPLY}" | grep -F -q "${SYNTHETIC_KEY}"; then
   echo "FAIL: status leaked synthetic key" >&2
   exit 1
@@ -303,8 +382,111 @@ if ! printf '%s' "${MSG_SSE}" | grep -q 'isolated-messages-ok'; then
 fi
 echo "messages sse ok"
 
-echo "== process down =="
-kill "${ADAPTERD_PID}"
+echo "== PrepareDesired (next revision while serving) =="
+PREP_BODY="$(python3 - "${HOME_DIR}" "${EPOCH}" "${TERM}" <<'PY'
+import json, sys
+home, epoch, term = sys.argv[1], sys.argv[2], int(sys.argv[3])
+print(json.dumps({
+    "type": "PrepareDesired",
+    "request_id": "probe-prep-2",
+    "instance_epoch": epoch,
+    "owner_id": "probe-owner",
+    "owner_term": term,
+    "app_data_dir": home,
+    "payload": {
+        "operation_id": "op-prep-2",
+        "config_revision": "2",
+        "base_revision": "1",
+        "expected_epoch": epoch,
+        "snapshot": {"config_format_version": "route-config.v0-isolated", "fixture": "probe-next"},
+    },
+}))
+PY
+)"
+PREP_REPLY="$(post_control "${PREP_BODY}")"
+echo "${PREP_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok"), d; p=d["payload"]; assert p["prepared"]["revision"]=="2"; assert p["active"]["revision"]=="1"; print("prepare ok revision="+p["prepared"]["revision"])'
+PREP_TOKEN="$(printf '%s' "${PREP_REPLY}" | python_get payload.prepared.prepare_token)"
+if [[ -z "${PREP_TOKEN}" ]]; then
+  echo "FAIL: prepare missing token: ${PREP_REPLY}" >&2
+  exit 1
+fi
+
+echo "== AbortDesired =="
+ABORT_BODY="$(python3 - "${HOME_DIR}" "${EPOCH}" "${TERM}" "${PREP_TOKEN}" <<'PY'
+import json, sys
+home, epoch, term, token = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
+print(json.dumps({
+    "type": "AbortDesired",
+    "request_id": "probe-abort-2",
+    "instance_epoch": epoch,
+    "owner_id": "probe-owner",
+    "owner_term": term,
+    "app_data_dir": home,
+    "payload": {"operation_id": "op-prep-2", "prepare_token": token},
+}))
+PY
+)"
+ABORT_REPLY="$(post_control "${ABORT_BODY}")"
+echo "${ABORT_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok"), d; p=d["payload"]; assert p.get("prepared") is None; assert p["active"]["revision"]=="1"; print("abort ok active="+p["active"]["revision"])'
+
+echo "== GetOperation after Abort (aborted) =="
+GET_ABORT_BODY="$(python3 - "${HOME_DIR}" "${EPOCH}" "${TERM}" <<'PY'
+import json, sys
+home, epoch, term = sys.argv[1], sys.argv[2], int(sys.argv[3])
+print(json.dumps({
+    "type": "GetOperation",
+    "request_id": "probe-get-abort-2",
+    "instance_epoch": epoch,
+    "owner_id": "probe-owner",
+    "owner_term": term,
+    "app_data_dir": home,
+    "payload": {"operation_id": "op-prep-2"},
+}))
+PY
+)"
+GET_ABORT_REPLY="$(post_control "${GET_ABORT_BODY}")"
+echo "${GET_ABORT_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok"), d; p=d["payload"]; assert p.get("operation_state")=="aborted"; print("get operation aborted ok")'
+
+echo "== Status still serving after abort =="
+ST3_BODY="$(python3 - "${HOME_DIR}" "${EPOCH}" "${TERM}" <<'PY'
+import json, sys
+home, epoch, term = sys.argv[1], sys.argv[2], int(sys.argv[3])
+print(json.dumps({
+    "type": "Status",
+    "request_id": "probe-st-3",
+    "instance_epoch": epoch,
+    "owner_id": "probe-owner",
+    "owner_term": term,
+    "app_data_dir": home,
+    "payload": {},
+}))
+PY
+)"
+ST3_REPLY="$(post_control "${ST3_BODY}")"
+echo "${ST3_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok"), d; p=d["payload"]; assert p.get("listen_ready") is True; assert p.get("lifecycle")=="serving"; assert p.get("active_revision")=="1"; assert p.get("prepared") is None; print("status still serving after abort")'
+if ss -ltnp 2>/dev/null | grep -F ":${PRODUCT_PORT} " | grep -q "${ADAPTERD_PID}"; then
+  echo "FAIL: adapterd is listening on product port ${PRODUCT_PORT}" >&2
+  exit 1
+fi
+echo "product port ${PRODUCT_PORT} not bound by this runner"
+
+echo "== Stop =="
+STOP_BODY="$(python3 - "${HOME_DIR}" "${EPOCH}" "${TERM}" <<'PY'
+import json, sys
+home, epoch, term = sys.argv[1], sys.argv[2], int(sys.argv[3])
+print(json.dumps({
+    "type": "Stop",
+    "request_id": "probe-stop-1",
+    "instance_epoch": epoch,
+    "owner_id": "probe-owner",
+    "owner_term": term,
+    "app_data_dir": home,
+    "payload": {},
+}))
+PY
+)"
+STOP_REPLY="$(post_control "${STOP_BODY}")"
+echo "${STOP_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok"), d; print("stop ok")'
 for i in $(seq 1 50); do
   if ! kill -0 "${ADAPTERD_PID}" 2>/dev/null; then
     break
@@ -312,15 +494,12 @@ for i in $(seq 1 50); do
   sleep 0.1
 done
 if kill -0 "${ADAPTERD_PID}" 2>/dev/null; then
-  echo "FAIL: adapterd still running" >&2
+  echo "FAIL: adapterd still running after Stop" >&2
   exit 1
 fi
 wait "${ADAPTERD_PID}" 2>/dev/null || true
-if [[ -S "${SOCK}" ]]; then
-  echo "WARN: control socket file still present after process down (expected unlink on clean Stop; SIGTERM may leave a stale inode)"
-fi
 if curl -sS --unix-socket "${SOCK}" http://127.0.0.1/healthz >/dev/null 2>&1; then
-  echo "FAIL: control socket still accepted traffic after process down" >&2
+  echo "FAIL: control socket still accepted traffic after Stop" >&2
   exit 1
 fi
 echo "process down observed"
@@ -348,13 +527,20 @@ evidence = {
     "owner_term": int(term),
     "handshake": "ok",
     "status": "ok",
+    "acquire": "ok",
+    "bootstrap": "ok",
+    "commit": "ok",
+    "prepare": "ok",
+    "abort": "ok",
+    "get_operation": "ok",
     "process_up": True,
     "messages_json": "isolated-messages-ok",
     "messages_sse": "isolated-messages-ok",
+    "stop": "ok",
     "process_down": True,
     "live_gateway_unchanged": True,
     "real_home_untouched": True,
-    "note": "isolated synthetic-key Messages slice; ActivateProbeListen is not product CommitDesired",
+    "note": "isolated desired-config control + synthetic-key Messages; not live/default gateway",
 }
 with open(path, "w", encoding="utf-8") as fh:
     json.dump(evidence, fh, indent=2)
@@ -363,6 +549,6 @@ print("evidence written:", path)
 PY
 
 echo
-echo "PASS: isolated Messages probe"
+echo "PASS: isolated desired-config + Messages probe"
 echo "scratch: ${SCRATCH}"
 echo "evidence: ${EVIDENCE}"

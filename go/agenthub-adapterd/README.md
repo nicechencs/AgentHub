@@ -1,4 +1,4 @@
-# agenthub-adapterd (isolated Messages slice)
+# agenthub-adapterd (isolated official-extension slice)
 
 This directory is an independent Go program. It is **not** the live/default
 local gateway. The in-process Rust forwarder is unchanged. Vendor plugin pages
@@ -7,14 +7,17 @@ are unchanged. There is no plugin store.
 This slice only proves, in an isolated scratch directory:
 
 - control `Handshake`, `Status`, and `AcquireOrRenewOwner` (`acquire` / `renew`)
+- isolated desired-config: `BootstrapDesired`, `PrepareDesired`,
+  `CommitDesired`, `AbortDesired`, `GetOperation`
 - process up / down
 - `POST /v1/messages` with a **synthetic** entry key, JSON and SSE, forwarded
   to a controlled loopback upstream mock
 
-`ActivateProbeListen` is a **probe-only** control message. It is not product
-`CommitDesired`, does not write real agent config, and only starts Messages
-listening from `$AGENTHUB_HOME/config/probe.json` when `AGENTHUB_HOME` is a
-scratch directory.
+`CommitDesired` promotes an isolated `prepared` snapshot to `active` and may
+start Messages listening from `$AGENTHUB_HOME/config/probe.json` when
+`AGENTHUB_HOME` is a scratch directory. `ActivateProbeListen` remains a
+scratch shortcut and is not product commit. Neither path writes real agent
+config or binds the product default port.
 
 ## Build
 
@@ -34,8 +37,8 @@ scripts/route-runtime-probe/messages-isolated.sh
 ```
 
 The script lists every data/config/log path before start, checks they stay
-under scratch, then verifies handshake, status, process up, one Messages JSON
-request (and SSE), and process down.
+under scratch, then verifies handshake, owner, Bootstrap/Commit (or Abort),
+GetOperation/Status, one Messages JSON request (and SSE), and Stop.
 
 ## Run the daemon yourself
 
@@ -50,7 +53,7 @@ Control channel: Unix domain socket at `$AGENTHUB_HOME/run/adapterd.sock`
 ```bash
 export AGENTHUB_HOME=/tmp/agenthub-route-runtime-probe/manual/home
 mkdir -p "$AGENTHUB_HOME"/{config,run,logs}
-# write config/probe.json (synthetic key + loopback upstream) before ActivateProbeListen
+# write config/probe.json (synthetic key + loopback upstream) before CommitDesired
 ./bin/agenthub-adapterd run --home "$AGENTHUB_HOME" --listen-port 18765
 ```
 

@@ -43,6 +43,10 @@ type Runtime struct {
 
 	probe *ProbeFixture
 
+	active     *revisionState
+	prepared   *preparedState
+	operations map[string]*operationRecord
+
 	idempotency map[string]idempotentEntry
 
 	messagesSrv *http.Server
@@ -116,6 +120,7 @@ func NewRuntime(home string, listenPort int, controlSocket string, cancel contex
 		logger:        logger,
 		lifecycle:     lifecycleEmpty,
 		idempotency:   make(map[string]idempotentEntry),
+		operations:    make(map[string]*operationRecord),
 		cancel:        cancel,
 	}
 	return rt, nil
@@ -191,6 +196,16 @@ func (rt *Runtime) HandleControl(raw []byte) Reply {
 		reply = rt.handleStatus(env)
 	case typeActivateProbeListen:
 		reply = rt.handleActivateProbe(env)
+	case typeBootstrapDesired:
+		reply = rt.handleBootstrap(env)
+	case typePrepareDesired:
+		reply = rt.handlePrepare(env)
+	case typeCommitDesired:
+		reply = rt.handleCommit(env)
+	case typeAbortDesired:
+		reply = rt.handleAbort(env)
+	case typeGetOperation:
+		reply = rt.handleGetOperation(env)
 	case typeStop:
 		reply = rt.handleStop(env)
 	default:
@@ -267,6 +282,16 @@ func (rt *Runtime) handleHandshake(env Envelope) Reply {
 		rt.lifecycle = lifecycleEmpty
 		rt.logf("handshake established instance=%s epoch=%s", rt.instanceID, rt.instanceEpoch)
 	}
+	var activeRev *string
+	var preparedRev *string
+	if rt.active != nil {
+		rev := rt.active.Revision
+		activeRev = &rev
+	}
+	if rt.prepared != nil {
+		rev := rt.prepared.Revision
+		preparedRev = &rev
+	}
 	success := HandshakeSuccess{
 		InstanceID:          rt.instanceID,
 		InstanceEpoch:       rt.instanceEpoch,
@@ -275,8 +300,8 @@ func (rt *Runtime) handleHandshake(env Envelope) Reply {
 		PackageVersion:      packageVersion,
 		ExtensionID:         extensionID,
 		Capabilities:        handshakeCapabilities,
-		Active:              nil,
-		Prepared:            nil,
+		Active:              activeRev,
+		Prepared:            preparedRev,
 	}
 	epoch := rt.instanceEpoch
 	rt.mu.Unlock()
@@ -288,6 +313,31 @@ func (rt *Runtime) handleHandshake(env Envelope) Reply {
 		InstanceEpoch: epoch,
 		Payload:       marshalPayload(success),
 	}
+}
+
+func (rt *Runtime) requireOwner(env Envelope) *Reply {
+	if fail := rt.requireHandshake(env); fail != nil {
+		return fail
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.ownerTerm == 0 {
+		fail := rt.failUnlocked(env.Type, env.RequestID, errNotOwner, "owner has not been acquired", false)
+		return &fail
+	}
+	if env.OwnerTerm == nil || *env.OwnerTerm != rt.ownerTerm {
+		fail := rt.failUnlocked(env.Type, env.RequestID, errNotOwner, "owner_term does not match", false)
+		return &fail
+	}
+	if env.OwnerID != rt.ownerID {
+		fail := rt.failUnlocked(env.Type, env.RequestID, errNotOwner, "owner_id does not match", false)
+		return &fail
+	}
+	if time.Now().After(rt.ownerLeaseUntil) {
+		fail := rt.failUnlocked(env.Type, env.RequestID, errNotOwner, "owner lease has expired", false)
+		return &fail
+	}
+	return nil
 }
 
 func (rt *Runtime) requireHandshake(env Envelope) *Reply {
@@ -441,6 +491,7 @@ func (rt *Runtime) statusSnapshot() (StatusSuccess, error) {
 		t := rt.ownerTerm
 		term = &t
 	}
+	rt.expirePreparedLocked()
 	port := rt.actualPort
 	if port == 0 {
 		port = rt.listenPort
@@ -450,13 +501,25 @@ func (rt *Runtime) statusSnapshot() (StatusSuccess, error) {
 		p := port
 		portPtr = &p
 	}
+	var activeRev *string
+	var activeHash *string
+	if rt.active != nil {
+		rev := rt.active.Revision
+		hash := rt.active.Hash
+		activeRev = &rev
+		activeHash = &hash
+	}
+	preparedRaw := json.RawMessage("null")
+	if view := rt.preparedViewLocked(); view != nil {
+		preparedRaw = marshalPayload(view)
+	}
 	return StatusSuccess{
 		InstanceID:      rt.instanceID,
 		InstanceEpoch:   rt.instanceEpoch,
 		OwnerTerm:       term,
-		ActiveRevision:  nil,
-		ActiveHash:      nil,
-		Prepared:        []byte("null"),
+		ActiveRevision:  activeRev,
+		ActiveHash:      activeHash,
+		Prepared:        preparedRaw,
 		Lifecycle:       rt.lifecycle,
 		ListenReady:     rt.listenReady,
 		Port:            portPtr,

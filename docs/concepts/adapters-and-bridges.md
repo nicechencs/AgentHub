@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: core, Tauri, and route/runtime contributors
 source-of-truth: AgentAdapter, adapter planner/apply ports, bridge host code, and the sidecar proposal
-updated: 2026-09-29
+updated: 2026-10-03
 ---
 
 # Adapters 与本机 Bridge
@@ -54,9 +54,11 @@ Adapter profile 是一条“来源登录 → 目标 Agent”的受管记录，�
 - 每个目标 Agent / 接口一个默认连接池，共用一个本机端口；`GET /models` 与实际请求共用同一个模型解析器。
 - 混合供应商复合路由和 Codex↔Grok 双向 Responses 转换是实验开关，默认关闭。
 
-## sidecar 是提案，不是现状
+## 正式 sidecar 是提案，不是现状
 
-未来可以把本机转发移到用户级进程 `agenthub-adapterd`，由它独占监听、排空、恢复和转发相关写入；Account、Provider、Connection、ActiveBinding 仍由 core service 管理，sidecar 不直接写数据库或本机配置。在 IPC 握手、schema lease、单实例、升级/恢复和“host 不可用”语义落地前，不得宣称 sidecar 已存在，也不能让 GUI 和 sidecar 同时拥有转发 saga。见 [Sidecar 提案](../proposals/adapter-sidecar.md)。
+树中已有只在隔离目录和临时端口运行的 `agenthub-adapterd` 探测切片，覆盖握手、状态、隔离 desired-config、进程监督和合成 Key 请求；它不接界面、默认网关、真实登录或本机配置。现行本机转发仍由 Tauri 进程内实现负责。
+
+未来若把本机转发移到用户级进程，sidecar 只拥有监听、协议转换、排空和实际运行状态。Account、Provider、Connection、ActiveBinding、路由计划、数据库和 Agent 配置写入仍由 core service 管理。在产品控制 IPC、单实例、升级/恢复和“host 不可用”语义落地前，不得宣称正式 sidecar 或产品 IPC 已可用，也不能让进程内 host 和 sidecar 同时拥有监听与转发状态。见 [Sidecar 提案](../proposals/adapter-sidecar.md)。
 
 ## 相关页面
 

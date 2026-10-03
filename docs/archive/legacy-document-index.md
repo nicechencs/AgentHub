@@ -82,10 +82,11 @@ The destination paths below are the intended organized names. A destination may 
 | `docs/archive/recent-fix-review.md` | 2026-08-26 fix recap, moved from `docs/architecture/recent-fix-review.md` |
 | `docs/archive/route-endpoint-audit-2026-08.md` | Dated audit snapshot; current endpoint facts belong in `docs/reference/local-route-api.md` |
 | `docs/archive/routing-connection-refactor-plan.md` | Historical implementation plan; future process options belong in `docs/proposals/adapter-sidecar.md` and `docs/proposals/modularity.md` |
-| `docs/archive/route-extension-a-stage-paper-freeze.md` | 2026-10-03 归档：A 阶段纸面冻结「不写 Go / probe 未创建」的过时现在时；现行阅读 `docs/proposals/route-extension-phase-a-contract.md` 与 `docs/proposals/official-extension-go-slice-review.md` |
+| `docs/archive/route-extension-a-stage-paper-freeze.md` | 2026-10-03 归档：A 阶段纸面冻结「不写 Go / probe 未创建」的过时现在时；现行阅读 `docs/proposals/route-extension-phase-a-contract.md` |
+| `docs/archive/official-extension-go-slice-review-2026-10-03.md` | 2026-10-03 归档：官方扩展与 Go 切片 NO-GO 评估原文；隔离 desired-config 随后落地，现行阅读 `docs/proposals/adapter-sidecar.md` 与 `docs/proposals/route-extension-phase-a-contract.md` |
 | `docs/archive/single-kernel-projections.md` | Completed single-kernel proposal, implementation slices, and dated E/F evaluation; current contract belongs in `docs/architecture/adapter-route-kernel.md` |
 | `docs/archive/unified-loopback-pool.md` | Design record for the same-port authorization pool; current contract belongs in `docs/concepts/connections-and-routing.md` and `docs/reference/local-route-api.md` |
 
 ## Coverage check
 
-The flat set is intentionally listed as 31 rows, including the legacy `README.md`. The retained archive set is intentionally listed as 29 rows. When a root file is removed, its row must remain here and the destination document must contain the stable content or an explicit archived explanation. No row authorizes credential encryption work or domestic OAuth/API conversion.
+The flat set is intentionally listed as 31 rows, including the legacy `README.md`. The retained archive set is intentionally listed as 30 rows. When a root file is removed, its row must remain here and the destination document must contain the stable content or an explicit archived explanation. No row authorizes credential encryption work or domestic OAuth/API conversion.

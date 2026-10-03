@@ -22,9 +22,9 @@ updated: 2026-10-03
 | 登录刷新 | `oauth_reload_for_material` 组合 core 登录服务与 `secret resolver` 的进程内回调，不能直接跨进程传递 |
 | 外部 API | [本机路由 API](../reference/local-route-api.md)定义入口 Key、模型目录、Messages、Responses、Chat Completions 和错误行为 |
 | 打包与验证 | 尚无独立路由程序打包；已有 Messages 两轮预检和[七类真机验收](../guides/adapter-dogfood.md)，不能据此宣称全部协议和独立进程已验收 |
-| 隔离 Go Messages 切片 | `go/agenthub-adapterd` 在 scratch `AGENTHUB_HOME` 下提供 `Handshake`、`Status`、`AcquireOrRenewOwner`（acquire/renew）、probe-only `ActivateProbeListen`（不是产品 `CommitDesired` / `PrepareDesired` / `BootstrapDesired`），以及合成 Key 的 `POST /v1/messages` JSON/SSE。探测脚本：`scripts/route-runtime-probe/messages-isolated.sh`。这不是 live sidecar，进程内 Rust 转发仍是默认网关 |
+| 隔离 Go 路由切片 | `go/agenthub-adapterd` 在 scratch `AGENTHUB_HOME` 下提供 `Handshake`、`Status`、`AcquireOrRenewOwner`（acquire/renew）、隔离 desired-config（`BootstrapDesired` / `PrepareDesired` / `CommitDesired` / `AbortDesired` / `GetOperation`）、scratch 快捷 `ActivateProbeListen`，以及合成 Key 的 `POST /v1/messages` JSON/SSE。探测脚本：`scripts/route-runtime-probe/messages-isolated.sh`。这不是 live sidecar，进程内 Rust 转发仍是默认网关 |
 
-现有 `AdapterBridgeStatus` 含供界面复制的 `local_token`，不可直接作为不含登录信息的扩展状态接口。现有能力和成熟度以[路由兼容性](../reference/route-compatibility.md)为准。整份 A 尚未通过；不授权 B–F、默认网关切换、真实配置写入、插件商店或动态 ABI。
+现有 `AdapterBridgeStatus` 含供界面复制的 `local_token`，不可直接作为不含登录信息的扩展状态接口。现有能力和成熟度以[路由兼容性](../reference/route-compatibility.md)为准。整份 A 的过程门槛尚未通过。隔离 scratch 下的 desired-config 控制已经落地；产品 B–F、默认网关切换、真实配置写入、插件商店和动态 ABI 仍不在本页授权。
 
 ## 2. 候选目标与非目标
 
@@ -196,7 +196,7 @@ Go 是候选实现，不是已选定的全量重写语言。默认保留旧 Rust
 
 ## 9. 分阶段实施与门槛
 
-以下任务顺序表示依赖，进入下一阶段必须有实际运行证据。隔离 Messages 切片已落地，不等于 A 通过，也不授权 B–F。B 阶段可以先在当前 Windows 平台做只读试验，结果只进入该平台隔离的 C/D 证据；macOS/Linux 同时补权限、打包和恢复证据，不能把 Windows 通过等同整体通过。E 的完整交付必须覆盖所有目标平台和架构，未覆盖的平台不得宣称可用。
+以下任务顺序表示依赖，进入下一阶段必须有实际运行证据。隔离 desired-config + Messages 切片已落地，不等于 A 过程门槛已通过，也不等于产品 B–F 已授权。B 阶段可以先在当前 Windows 平台做只读试验，结果只进入该平台隔离的 C/D 证据；macOS/Linux 同时补权限、打包和恢复证据，不能把 Windows 通过等同整体通过。E 的完整交付必须覆盖所有目标平台和架构，未覆盖的平台不得宣称可用。
 
 | 阶段 | 范围与负责人 | 完成证据 |
 |---|---|---|
@@ -256,7 +256,7 @@ E 的合成受控上游观察门槛候选为连续 24 小时、至少 1000 请�
 
 每次运行记录实际构建 SHA、dirty 补丁指纹、平台/架构、`run_id`、fixture 版本、配置 `active`/`prepared`、epoch/term、注入点、结果和清理情况。临时产物候选路径为 `.tmp/route-runtime-probe/<run_id>/`；写入 stdout/stderr 前先脱敏。日志、status 和控制记录扫描 Key 与正文，扫描失败即阻断；不得记录真实 prompt 或工具参数。
 
-现有 `scripts/route-messages-preflight.sh` 只覆盖模型列表与 `Messages` 两轮；browser E2E 使用 mock，不能证明真实后端。隔离 Messages probe 已有 `scripts/route-runtime-probe/messages-isolated.sh`（进程上下线、合成 Key 的 JSON/SSE，不接真实用户请求）。尚缺非 Rust 的三协议、进程故障、取消、撤销、日志脱敏及打包黑盒证据，不把这些尚未存在的命令写成可用入口。
+现有 `scripts/route-messages-preflight.sh` 只覆盖模型列表与 `Messages` 两轮；browser E2E 使用 mock，不能证明真实后端。隔离 desired-config probe 已有 `scripts/route-runtime-probe/messages-isolated.sh`（Handshake / owner / Bootstrap / Commit / Prepare / Abort / GetOperation、进程上下线、合成 Key 的 JSON/SSE，不接真实用户请求）。尚缺非 Rust 的三协议、进程故障、日志脱敏及打包黑盒证据，不把这些尚未存在的命令写成可用入口。
 
 遵守根 [AGENTS.md](../../AGENTS.md)：不编写或执行 Rust 测试，旧文档中的相关要求不适用。Go 实现可使用 Go 单元/契约检查；Rust 变更以真实应用或 CLI 运行日志验证；前端变化使用相关非 Rust contract/Vitest 与 typecheck。纯方案修改只运行 pnpm check:docs 和 diff 检查。
 
@@ -264,9 +264,9 @@ E 的合成受控上游观察门槛候选为连续 24 小时、至少 1000 请�
 
 ## 11. 实现前仍需确定
 
-本页拟新增的运行消息、字段、阈值、目录和工具都是 `proposed` 候选，除第 1 节已登记的隔离 Messages 切片外均未实现，也不构成现行产品接口；第 1 节及链接页面描述的既有接口仍按其现行契约使用。首期已给出推荐职责与生命周期，但下列工程选择在对应阶段完成前不能视为已批准实现：
+本页拟新增的运行消息、字段、阈值、目录和工具都是 `proposed` 候选，除第 1 节已登记的隔离切片外均未接到产品，也不构成现行产品接口；第 1 节及链接页面描述的既有接口仍按其现行契约使用。首期已给出推荐职责与生命周期，但下列工程选择在对应阶段完成前不能视为已批准的产品实现：
 
-1. A 阶段：完整快照字段、规范化 `hash`、`revision` 存储及迁移、锁顺序、owner/auth generation 规则、准备/提交/撤销消息、操作留存与 reconcile 决策表。
+1. A 阶段：完整快照字段、规范化 `hash`、`revision` 的存储归属与迁移方案、锁顺序、owner/auth generation 规则、操作留存与 reconcile 决策表。A 只冻结方案，不实施数据库迁移。隔离 scratch 下的准备/提交/撤销消息已经可运行。
 2. B 阶段：Rust/Go IPC 库、Windows/Unix 权限、实例认证、有界重启和心跳/排空参数的实测值；单平台结果不能代表整体通过。
 3. C/D 阶段：第一测试池的合成 fixture、登录引用撤销和在途请求策略、Go 能力矩阵、隔离路径和证据格式，以及真实 Agent 验收范围。
 4. E 阶段：每个平台/架构的构建、签名、包内版本/`hash` 核对、升级 pending 记录与原子升级回退；首期扩展随桌面包更新，不独立下载更新。
@@ -274,18 +274,18 @@ E 的合成受控上游观察门槛候选为连续 24 小时、至少 1000 请�
 
 ### A 阶段退出门槛
 
-A 阶段必须交付窄消息、状态和错误 schema，冻结 owner/auth generation 的作用域、owner_term 接管时的缓存清理与撤销 watermark 规则、锁顺序、操作留存与 reconcile 决策表，提供可复现 fixture 对照和故障计划，并写明隔离路径与证据格式。缺项可以继续设计和补证据，但不能进入 B 的原型实现；不得借此扩大为通用插件 SDK。纸面契约见 [路由官方扩展 A 阶段纸面契约](route-extension-phase-a-contract.md)；该页冻结候选消息与锁顺序，整份 A 尚未通过，现仅授权隔离目录下的 Go Messages 切片（`Handshake`、`Status`、`AcquireOrRenewOwner` acquire/renew、probe-only `ActivateProbeListen` 与合成 Key 的 Messages JSON/SSE），不授权默认网关切换、真实配置写入、插件商店或 E/F。
+A 阶段必须交付窄消息、状态和错误 schema，冻结 `revision` 的存储归属与迁移方案、owner/auth generation 的作用域、owner_term 接管时的缓存清理与撤销 watermark 规则、锁顺序、操作留存与 reconcile 决策表，提供可复现 fixture 对照和故障计划，并写明隔离路径与证据格式。A 不实施数据库迁移，也不以 B 的 Windows IPC 实验作为自身退出条件。缺的过程证据可以继续补；不得借此扩大为通用插件 SDK。纸面契约见 [路由官方扩展 A 阶段纸面契约](route-extension-phase-a-contract.md)。隔离 scratch 下已经实现 Handshake / Status / AcquireOrRenewOwner、desired-config（Bootstrap / Prepare / Commit / Abort / GetOperation）与合成 Key 的 Messages JSON/SSE；`ActivateProbeListen` 仍是 scratch 快捷。默认网关切换、真实配置写入、插件商店和 E/F 仍不在本页授权。
 
 ## 12. 下一阶段任务
 
 | 任务 | 负责人和范围 | 交付与边界 |
 |---|---|---|
 | A：core 契约梳理 | core 负责人基于已定位的 `adapter_control/{contract,status}.rs` 和 `adapter_bridge_controller` 函数 | 只产窄运行接口、状态/错误模型和锁顺序设计，不拆整个 core；交付 A 阶段退出门槛要求的 generation、操作留存、reconcile、fixture/故障与隔离证据契约 |
-| 独立验证设计 | 独立验证负责人补现有 preflight 与隔离 Messages probe 之外的合成进程证据 | `scripts/route-runtime-probe/messages-isolated.sh` 已覆盖隔离进程与合成 Key Messages；尚缺三协议、端口/IPC 故障、撤销和日志脱敏，不接真实用户请求 |
+| 独立验证设计 | 独立验证负责人补现有 preflight 与隔离 desired-config probe 之外的合成进程证据 | `scripts/route-runtime-probe/messages-isolated.sh` 已覆盖隔离 desired-config 与合成 Key Messages；尚缺三协议、端口/IPC 故障和日志脱敏，不接真实用户请求 |
 | B：平台只读 IPC 实验 | 平台负责人按 A 的窄接口先做当前 Windows 本地 IPC 只读实验，其他平台并行补证据 | 当前平台只验证权限、实例身份、EOF、版本和状态读取，不写 Agent 配置，不绑定默认网关；单平台结果不代表整体通过 |
-| 共用字段归属 | 指定一名 core 负责人维护 revision、epoch、owner/auth generation、状态和错误字段 | 其他实现只能消费契约，不在各自模块复制字段或定义第二份领域状态；以上除隔离 Messages 切片外均为 proposed，当前未实现 |
+| 共用字段归属 | 指定一名 core 负责人维护 revision、epoch、owner/auth generation、状态和错误字段 | 其他实现只能消费契约，不在各自模块复制字段或定义第二份领域状态；以上除隔离切片外均为 proposed 产品接口，当前未接到默认网关 |
 
-A 交付并完成独立审查后才能进入 B 的原型实现；在此之前不发布、不打新的发版 tag、不触碰真实用户数据。已授权的本地基线 tag 仅作为固定比较标记，不受此发版限制影响。
+产品 B 仍要等 A 的过程证据和独立审查；在此之前不发布、不打新的发版 tag、不触碰真实用户数据。已授权的本地基线 tag 仅作为固定比较标记，不受此发版限制影响。隔离 scratch 下的 desired-config 控制不占用产品 B 授权。
 
 ## 相关页面
 
