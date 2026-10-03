@@ -223,7 +223,7 @@ export function createMockAccountPort(): AccountPort {
       return {
         account: { ...acc },
         importedCount: 1,
-        restoredFromTrash: [],
+        skippedInTrash: [],
         skippedLocalRoute: 0,
         failed: [],
       };

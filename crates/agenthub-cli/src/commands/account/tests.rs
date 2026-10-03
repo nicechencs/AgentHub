@@ -63,12 +63,13 @@ fn emit_one_and_list_quiet_ok() {
 }
 
 #[test]
-fn import_report_notes_name_restores_skips_and_failures_without_keys() {
-    use agenthub_core::models::{ImportLiveFailedLogin, ImportLiveRestoredLogin};
+fn import_report_notes_name_skips_and_failures_without_keys() {
+    use agenthub_core::models::{ImportLiveFailedLogin, ImportLiveSkippedLogin};
     let report = ImportLiveReport {
-        restored_from_trash: vec![ImportLiveRestoredLogin {
+        skipped_in_trash: vec![ImportLiveSkippedLogin {
             id: "a1".into(),
             label: "pi:deepseek".into(),
+            home: "connections".into(),
         }],
         skipped_local_route: 1,
         failed: vec![ImportLiveFailedLogin {
@@ -84,7 +85,7 @@ fn import_report_notes_name_restores_skips_and_failures_without_keys() {
 ",
     );
     assert!(
-        text.contains("restored from the recycle bin: pi:deepseek"),
+        text.contains("not imported (in the recycle bin): pi:deepseek"),
         "{text}"
     );
     assert!(text.contains("local route"), "{text}");

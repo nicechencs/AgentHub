@@ -249,7 +249,13 @@ impl AccountService {
         let result = (|| {
             let account = self.get(id_or_label, Some(agent))?;
             // Clear active binding in the same transaction when deleting the active row.
-            self.connections.delete_account(&account.id, agent)?;
+            // A Pi login also leaves Pi's auth.json first, then the default
+            // model is reconciled against what is left.
+            if agent == AgentId::Pi {
+                self.delete_pi_account_with_live(&account)?;
+            } else {
+                self.connections.delete_account(&account.id, agent)?;
+            }
             if agent == AgentId::Pi {
                 if let Err(error) = reconcile_pi_default_after_delete(self) {
                     tracing::warn!(

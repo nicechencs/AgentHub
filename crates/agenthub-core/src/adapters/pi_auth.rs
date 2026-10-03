@@ -162,6 +162,32 @@ pub(crate) fn write_verified_auth_json(path: &Path, body: &Value) -> Result<()> 
     Ok(())
 }
 
+/// Read one auth.json file (empty object when missing). Used by callers that
+/// already hold the resolved Pi config dir.
+pub(crate) fn read_auth_json_file(path: &Path) -> Result<Value> {
+    read_auth_json_at(path)
+}
+
+/// Remove `provider` from the auth.json at `path`, but only while its entry
+/// still equals `expected`. Every other key, and unknown fields, keep their
+/// value and order. Returns whether the key was removed.
+pub(crate) fn remove_auth_entry_if_unchanged(
+    path: &Path,
+    provider: &str,
+    expected: &Value,
+) -> Result<bool> {
+    let mut body = read_auth_json_at(path)?;
+    let obj = body
+        .as_object_mut()
+        .ok_or_else(|| AppError::InvalidArg("Pi auth.json must be a JSON object".into()))?;
+    if obj.get(provider) != Some(expected) {
+        return Ok(false);
+    }
+    obj.shift_remove(provider);
+    write_verified_auth_json(path, &body)?;
+    Ok(true)
+}
+
 /// Write `{ provider: { type: api_key, key } }` into `dir/auth.json`.
 /// Does not touch other provider keys. `dir` is the Pi config dir
 /// (`~/.pi/agent` or `PI_CODING_AGENT_DIR`).

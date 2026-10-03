@@ -15,7 +15,7 @@ function report(partial: Partial<ImportLoginReport> = {}): ImportLoginReport {
   return {
     account: { id: 'pi-1', agentId: 'pi', kind: 'oauth', label: 'Anthropic' } as Account,
     importedCount: 1,
-    restoredFromTrash: [],
+    skippedInTrash: [],
     skippedLocalRoute: 0,
     failed: [],
     ...partial,
@@ -32,22 +32,39 @@ describe('manual import notice', () => {
     });
   });
 
-  it('says which logins came back from the recycle bin', () => {
+  it('names the logins left in the recycle bin in one plain sentence', () => {
     const notice = importLoginReportNotice(
       report({
-        importedCount: 2,
-        restoredFromTrash: [
-          { id: 'pi-2', label: 'xAI' },
-          { id: 'pi-3', label: 'OpenAI' },
+        importedCount: 1,
+        skippedInTrash: [
+          { id: 'trash-2', label: 'xAI', home: 'connections' },
+          { id: 'trash-3', label: 'OpenAI', home: 'route_pool' },
         ],
       }),
       'Anthropic 已加入列表',
       zh,
     );
-    expect(notice.description).toBe('Anthropic 已加入列表 xAI、OpenAI 原本在回收站里，已恢复。');
-    expect(notice.variant).toBe('success');
-    expect(en('connections.import.toastRestoredFromTrash', { labels: 'xAI' })).toBe(
-      'xAI was in Trash and has been restored.',
+    expect(notice).toEqual({
+      title: zh('connections.import.toastOk'),
+      description: '已导入 1 个登录。另有 2 个在回收站里，没有导入：xAI、OpenAI。',
+      variant: 'success',
+    });
+    expect(Object.keys(notice)).not.toContain('action');
+  });
+
+  it('says so when every login is in the recycle bin', () => {
+    const notice = importLoginReportNotice(
+      report({
+        account: null,
+        importedCount: 0,
+        skippedInTrash: [{ id: 'trash-1', label: 'xAI', home: 'connections' }],
+      }),
+      '',
+      zh,
+    );
+    expect(notice).toEqual({ title: '这些登录都在回收站里，没有导入', variant: 'warning' });
+    expect(en('connections.import.toastAllInTrash')).toBe(
+      'These logins are all in Trash and were not imported',
     );
   });
 
@@ -76,7 +93,8 @@ describe('manual import notice', () => {
 
   it('avoids internal words in the new copy', () => {
     const keys = [
-      'toastRestoredFromTrash',
+      'toastPartialTrash',
+      'toastAllInTrash',
       'toastSkippedLocalRoute',
       'toastSomeFailed',
     ] as const;
@@ -97,11 +115,12 @@ describe('connections page import wiring', () => {
     expect(manual).toContain('importLoginErrorNotice(e, t)');
   });
 
-  it('auto import keeps using the plain import', () => {
+  it('auto import stays quiet when the logins are in the recycle bin', () => {
     const start = page.indexOf('autoImportTriedRef.current.add(agentId)');
     const auto = page.slice(start, page.indexOf('const handleTrashChanged'));
-    expect(auto).toContain('await importCurrentLogin(agentId)');
-    expect(auto).not.toContain('importCurrentLoginWithReport');
+    expect(auto).toContain('await importCurrentLoginWithReport(agentId)');
+    expect(auto).toContain('if (!report.account) continue;');
     expect(auto).not.toContain('importLoginReportNotice');
+    expect(auto).not.toContain('toastAllInTrash');
   });
 });

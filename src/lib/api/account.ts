@@ -121,7 +121,10 @@ export async function importCurrentLoginWithReport(agentId: AgentKey): Promise<I
   return report;
 }
 
-/** Import and return only the focused login (auto import, refresh flows). */
+/**
+ * Import and return only the focused login (refresh flows, onboarding).
+ * Throws when nothing was imported, e.g. every login is in the recycle bin.
+ */
 export async function importCurrentLogin(agentId: AgentKey): Promise<Account> {
   const report = await importCurrentLoginWithReport(agentId);
   if (!report.account) {

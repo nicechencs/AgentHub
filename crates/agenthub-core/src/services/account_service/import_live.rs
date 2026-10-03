@@ -7,8 +7,7 @@ use crate::adapters::AgentAdapter;
 use crate::error::{AppError, Result};
 use crate::models::{
     attach_persisted_surface, Account, AgentId, Capability, ImportLiveFailedLogin,
-    ImportLiveReport, ImportLiveRestoredLogin, LiveAccount, PersistedTicketSurface, TicketSurface,
-    TRASH_HOME_CONNECTIONS,
+    ImportLiveReport, ImportLiveSkippedLogin, LiveAccount, PersistedTicketSurface, TicketSurface,
 };
 use crate::services::adapter_projection::projection_import_error;
 use crate::services::AdapterRouteService;
@@ -19,39 +18,25 @@ use super::{AccountService, MAX_ACCOUNT_LABEL_LEN};
 
 /// Result of writing one local login into the pool.
 pub(super) enum LiveUpsertOutcome {
-    /// Stored. `restored` is set when the login came back from the login
-    /// recycle bin instead of being created anew.
-    Imported {
-        account: Account,
-        restored: Option<ImportLiveRestoredLogin>,
-    },
-    SkippedInTrash,
-}
-
-/// How a live upsert treats a matching recycle-bin login.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum TrashMatch {
-    /// Legacy rule (Kiro refresh): restore only when the row becomes current,
-    /// otherwise leave it in the recycle bin and store nothing.
-    SkipUnlessCurrent,
-    /// 「导入本机登录」: a login the user imports again always comes back.
-    /// A match in the login recycle bin is restored; a match that only sits
-    /// in the connection pool recycle bin stays there and the import creates
-    /// a new connection.
-    RestoreOnImport,
+    Imported(Account),
+    /// The same login sits in a recycle bin and the row was not made current,
+    /// so nothing was stored.
+    SkippedInTrash(ImportLiveSkippedLogin),
 }
 
 impl AccountService {
-    /// Import the local login and return only the focused row. Kept for CLI
-    /// and older callers; the desktop uses [`Self::import_live_report`].
+    /// Import the local login and return only the focused row. Kept for
+    /// older callers; the desktop and CLI use [`Self::import_live_report`].
+    /// Every login being in the recycle bin is an error here.
     pub fn import_live(&self, agent: AgentId, name: Option<&str>) -> Result<Account> {
         self.import_live_report(agent, name)?
             .account
             .ok_or_else(|| AppError::message("account.import", "live import produced no accounts"))
     }
 
-    /// User-triggered import with what was restored, skipped or failed, so the
-    /// UI can explain the result.
+    /// User-triggered import with what was skipped or failed, so the UI can
+    /// explain the result. When every login is in the recycle bin the report
+    /// is still `Ok` with `account: None`.
     pub fn import_live_report(
         &self,
         agent: AgentId,
@@ -129,27 +114,15 @@ impl AccountService {
             }
         }
         for live in others {
-            let outcome = self.upsert_live_account_outcome(
-                adapter.as_ref(),
-                agent,
-                live,
-                None,
-                false,
-                TrashMatch::RestoreOnImport,
-            )?;
+            let outcome =
+                self.upsert_live_account_outcome(adapter.as_ref(), agent, live, None, false)?;
             record_import_outcome(&mut report, outcome, false);
         }
         let live = chosen_live.ok_or_else(|| {
             AppError::message("account.import", "live import produced no accounts")
         })?;
-        let outcome = self.upsert_live_account_outcome(
-            adapter.as_ref(),
-            agent,
-            live,
-            name,
-            true,
-            TrashMatch::RestoreOnImport,
-        )?;
+        let outcome =
+            self.upsert_live_account_outcome(adapter.as_ref(), agent, live, name, true)?;
         record_import_outcome(&mut report, outcome, true);
         if report.account.is_none() {
             return Err(AppError::message(
@@ -221,14 +194,8 @@ impl AccountService {
                 .filter(|label| !label.is_empty())
                 .map(str::to_string)
                 .unwrap_or_else(|| format!("Pi #{}", i + 1));
-            match self.upsert_live_account_outcome(
-                adapter,
-                AgentId::Pi,
-                live,
-                display_name,
-                false,
-                TrashMatch::RestoreOnImport,
-            ) {
+            match self.upsert_live_account_outcome(adapter, AgentId::Pi, live, display_name, false)
+            {
                 Ok(outcome) => record_import_outcome(&mut report, outcome, true),
                 Err(error) => {
                     tracing::warn!(
@@ -247,6 +214,10 @@ impl AccountService {
             }
         }
         if report.account.is_some() {
+            return Ok(report);
+        }
+        if errors.is_empty() && !report.skipped_in_trash.is_empty() {
+            // Every login is in the recycle bin: nothing to focus, not an error.
             return Ok(report);
         }
         if errors.len() == 1 {
@@ -282,16 +253,9 @@ impl AccountService {
         make_current: bool,
     ) -> Result<Option<Account>> {
         Ok(
-            match self.upsert_live_account_outcome(
-                adapter,
-                agent,
-                live,
-                name,
-                make_current,
-                TrashMatch::SkipUnlessCurrent,
-            )? {
-                LiveUpsertOutcome::Imported { account, .. } => Some(account),
-                LiveUpsertOutcome::SkippedInTrash => None,
+            match self.upsert_live_account_outcome(adapter, agent, live, name, make_current)? {
+                LiveUpsertOutcome::Imported(account) => Some(account),
+                LiveUpsertOutcome::SkippedInTrash(_) => None,
             },
         )
     }
@@ -303,7 +267,6 @@ impl AccountService {
         live: LiveAccount,
         name: Option<&str>,
         make_current: bool,
-        trash_match: TrashMatch,
     ) -> Result<LiveUpsertOutcome> {
         if live.agent != agent {
             return Err(AppError::InvalidArg(format!(
@@ -313,23 +276,16 @@ impl AccountService {
             )));
         }
 
-        let trash_home = match trash_match {
-            TrashMatch::SkipUnlessCurrent => None,
-            TrashMatch::RestoreOnImport => Some(TRASH_HOME_CONNECTIONS),
-        };
-        let mut restored = None;
-        if let Some(entry) = self.matching_live_trash_entry(adapter, agent, &live, trash_home)? {
-            if trash_match == TrashMatch::SkipUnlessCurrent && !make_current {
+        if let Some(entry) = self.matching_live_trash_entry(adapter, agent, &live)? {
+            if !make_current {
                 tracing::debug!(
                     module = crate::logging::targets::ACCOUNT,
                     agent = agent.as_str(),
-                    "live upsert skipped a recycle-bin login"
+                    "live import skipped a recycle-bin login"
                 );
-                return Ok(LiveUpsertOutcome::SkippedInTrash);
+                return Ok(LiveUpsertOutcome::SkippedInTrash(entry));
             }
-            let (trash_id, label) = entry;
-            self.connections.restore_trash(&trash_id)?;
-            restored = Some(label);
+            self.connections.restore_trash(&entry.id)?;
         }
 
         let display = name
@@ -370,30 +326,22 @@ impl AccountService {
             row.extra.clone(),
             make_current,
         )
-        .map(|committed| LiveUpsertOutcome::Imported {
-            restored: restored.map(|label| ImportLiveRestoredLogin {
-                id: committed.stored.id.clone(),
-                label,
-            }),
-            account: committed.stored,
-        })
+        .map(|committed| LiveUpsertOutcome::Imported(committed.stored))
         .map_err(|error| error.into_error())
     }
 
-    /// Recycle-bin login with the same authorization (and, for Pi, the same
-    /// provider): `(recycle-bin id, label)`, so an import can say what it
-    /// restored. `home` limits the search to one recycle bin.
+    /// Recycle-bin login (any recycle bin) with the same authorization and,
+    /// for Pi, the same provider, so an import can say what it skipped.
     fn matching_live_trash_entry(
         &self,
         adapter: &dyn AgentAdapter,
         agent: AgentId,
         live: &LiveAccount,
-        home: Option<&str>,
-    ) -> Result<Option<(String, String)>> {
+    ) -> Result<Option<ImportLiveSkippedLogin>> {
         let now = chrono::Utc::now()
             .format("%Y-%m-%d %H:%M:%S%.6f")
             .to_string();
-        let items = ConnectionTrashRepo::new(self.db.clone()).list(Some(agent), home, &now)?;
+        let items = ConnectionTrashRepo::new(self.db.clone()).list(Some(agent), None, &now)?;
         Ok(items.iter().find_map(|item| {
             let account = item.account.as_ref()?;
             (same_live_slot(agent, &live.credentials, &account.credentials)
@@ -403,7 +351,11 @@ impl AccountService {
                     .filter(|label| !label.is_empty())
                     .unwrap_or(account.label.as_str())
                     .to_string();
-                (item.id.clone(), label)
+                ImportLiveSkippedLogin {
+                    id: item.id.clone(),
+                    label,
+                    home: item.home.clone(),
+                }
             })
         }))
     }
@@ -525,13 +477,13 @@ fn copy_missing_extra_string(from: &Value, into: &mut Value, key: &str) {
 /// Fold one upsert result into the import report. `focus` marks the row the
 /// UI should select afterwards.
 fn record_import_outcome(report: &mut ImportLiveReport, outcome: LiveUpsertOutcome, focus: bool) {
-    if let LiveUpsertOutcome::Imported { account, restored } = outcome {
-        report.imported_count += 1;
-        if let Some(restored) = restored {
-            report.restored_from_trash.push(restored);
+    match outcome {
+        LiveUpsertOutcome::Imported(account) => {
+            report.imported_count += 1;
+            if focus {
+                report.account = Some(account);
+            }
         }
-        if focus {
-            report.account = Some(account);
-        }
+        LiveUpsertOutcome::SkippedInTrash(skipped) => report.skipped_in_trash.push(skipped),
     }
 }

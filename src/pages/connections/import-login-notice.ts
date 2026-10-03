@@ -9,19 +9,30 @@ export interface ImportLoginNotice {
 
 /**
  * Toast for a manual「导入本机登录」. `baseDescription` is the usual
- * "{label} 已加入列表" line; restored, skipped and failed entries follow it.
+ * "{label} 已加入列表" line. Logins left in the recycle bin replace it with one
+ * plain sentence (no button); failed and local-route entries follow.
  */
 export function importLoginReportNotice(
   report: ImportLoginReport,
   baseDescription: string,
   t: TranslateFn,
 ): ImportLoginNotice {
-  const parts = [baseDescription];
-  if (report.restoredFromTrash.length > 0) {
-    parts.push(t('connections.import.toastRestoredFromTrash', {
-      labels: report.restoredFromTrash.map((item) => item.label).join('、'),
-    }));
+  const skipped = report.skippedInTrash;
+  if (!report.account && skipped.length > 0 && report.failed.length === 0) {
+    return {
+      title: t('connections.import.toastAllInTrash'),
+      variant: 'warning',
+    };
   }
+  const parts = [
+    skipped.length > 0
+      ? t('connections.import.toastPartialTrash', {
+        n: report.importedCount,
+        m: skipped.length,
+        labels: skipped.map((item) => item.label).join('、'),
+      })
+      : baseDescription,
+  ];
   if (report.failed.length > 0) {
     parts.push(t('connections.import.toastSomeFailed', {
       n: report.failed.length,

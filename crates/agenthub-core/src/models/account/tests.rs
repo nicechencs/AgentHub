@@ -178,9 +178,10 @@ fn import_live_report_wire_shape_is_camel_case_and_redacted() {
             updated_at: "t".into(),
         }),
         imported_count: 1,
-        restored_from_trash: vec![ImportLiveRestoredLogin {
+        skipped_in_trash: vec![ImportLiveSkippedLogin {
             id: "trash-1".into(),
             label: "old".into(),
+            home: "connections".into(),
         }],
         skipped_local_route: 2,
         failed: vec![ImportLiveFailedLogin {
@@ -191,8 +192,9 @@ fn import_live_report_wire_shape_is_camel_case_and_redacted() {
     };
     let wire = serde_json::to_value(report.redacted()).unwrap();
     assert_eq!(wire["importedCount"], 1);
-    assert_eq!(wire["restoredFromTrash"][0]["id"], "trash-1");
-    assert_eq!(wire["restoredFromTrash"][0]["label"], "old");
+    assert_eq!(wire["skippedInTrash"][0]["id"], "trash-1");
+    assert_eq!(wire["skippedInTrash"][0]["label"], "old");
+    assert_eq!(wire["skippedInTrash"][0]["home"], "connections");
     assert_eq!(wire["skippedLocalRoute"], 2);
     assert_eq!(wire["failed"][0]["code"], "invalid_arg");
     assert_eq!(wire["account"]["id"], "a1");
@@ -202,9 +204,10 @@ fn import_live_report_wire_shape_is_camel_case_and_redacted() {
 #[test]
 fn import_live_report_redacts_secrets_in_failed_messages_and_labels() {
     let report = ImportLiveReport {
-        restored_from_trash: vec![ImportLiveRestoredLogin {
+        skipped_in_trash: vec![ImportLiveSkippedLogin {
             id: "trash-1".into(),
             label: "key sk-trashsecretvalue123456".into(),
+            home: "connections".into(),
         }],
         failed: vec![ImportLiveFailedLogin {
             label: "pi:deepseek sk-labelsecretvalue123456".into(),

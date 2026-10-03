@@ -28,12 +28,14 @@ export interface CoreAccountSwitchResult {
 }
 
 /**
- * Mirrors Rust `ImportLiveRestoredLogin` (camelCase): a login this import
- * brought back from the recycle bin. `id` is the restored connection.
+ * Mirrors Rust `ImportLiveSkippedLogin` (camelCase): a login this import left
+ * alone because it is in a recycle bin. `id` is the recycle-bin row; `home` is
+ * which recycle bin holds it (`connections` or `route_pool`).
  */
-export interface ImportLoginRestored {
+export interface ImportLoginSkipped {
   id: string;
   label: string;
+  home: string;
 }
 
 /** Mirrors Rust `ImportLiveFailedLogin` (camelCase). */
@@ -47,7 +49,7 @@ export interface ImportLoginFailed {
 export interface CoreImportLiveReport {
   account?: CoreAccount | null;
   importedCount?: number;
-  restoredFromTrash?: ImportLoginRestored[];
+  skippedInTrash?: Array<Omit<ImportLoginSkipped, 'home'> & { home?: string | null }>;
   skippedLocalRoute?: number;
   failed?: ImportLoginFailed[];
 }
@@ -56,7 +58,7 @@ export interface CoreImportLiveReport {
 export interface ImportLoginReport {
   account: Account | null;
   importedCount: number;
-  restoredFromTrash: ImportLoginRestored[];
+  skippedInTrash: ImportLoginSkipped[];
   skippedLocalRoute: number;
   failed: ImportLoginFailed[];
 }
@@ -66,7 +68,11 @@ export function mapCoreImportLiveReport(raw: CoreImportLiveReport): ImportLoginR
   return {
     account,
     importedCount: raw.importedCount ?? (account ? 1 : 0),
-    restoredFromTrash: raw.restoredFromTrash ?? [],
+    skippedInTrash: (raw.skippedInTrash ?? []).map((item) => ({
+      id: item.id,
+      label: item.label,
+      home: item.home || 'connections',
+    })),
     skippedLocalRoute: raw.skippedLocalRoute ?? 0,
     failed: raw.failed ?? [],
   };

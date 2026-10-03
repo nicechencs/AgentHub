@@ -93,13 +93,15 @@ pub struct AccountSwitchResult {
     pub backfilled_account_id: Option<String>,
 }
 
-/// A local login the import brought back from the login recycle bin instead
-/// of creating it anew. `id` is the restored connection row.
+/// A local login the import left alone because the same login sits in a
+/// recycle bin. `id` is the recycle-bin row; `home` is which recycle bin
+/// holds it (`connections` or `route_pool`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ImportLiveRestoredLogin {
+pub struct ImportLiveSkippedLogin {
     pub id: String,
     pub label: String,
+    pub home: String,
 }
 
 /// A local login entry that failed to import while others in the same file
@@ -120,8 +122,8 @@ pub struct ImportLiveReport {
     pub account: Option<Account>,
     /// Number of rows created or updated by this import.
     pub imported_count: usize,
-    /// Logins that were in the login recycle bin and came back with this import.
-    pub restored_from_trash: Vec<ImportLiveRestoredLogin>,
+    /// Logins not imported because the same login is in a recycle bin.
+    pub skipped_in_trash: Vec<ImportLiveSkippedLogin>,
     /// Entries skipped because they were written by a local route.
     pub skipped_local_route: usize,
     pub failed: Vec<ImportLiveFailedLogin>,
@@ -304,12 +306,13 @@ impl ImportLiveReport {
         Self {
             account: self.account.as_ref().map(Account::redacted),
             imported_count: self.imported_count,
-            restored_from_trash: self
-                .restored_from_trash
+            skipped_in_trash: self
+                .skipped_in_trash
                 .iter()
-                .map(|restored| ImportLiveRestoredLogin {
-                    id: restored.id.clone(),
-                    label: redact_text(&restored.label),
+                .map(|skipped| ImportLiveSkippedLogin {
+                    id: skipped.id.clone(),
+                    label: redact_text(&skipped.label),
+                    home: skipped.home.clone(),
                 })
                 .collect(),
             skipped_local_route: self.skipped_local_route,

@@ -405,12 +405,17 @@ export default function ConnectionsPage() {
           continue;
         }
         try {
-          const imported =
-            liveImportAction(liveImportDialogMode(probe), agentId) === 'provider'
-              ? await importProviderLive(agentId)
-              : await importCurrentLogin(agentId);
+          let label: string;
+          if (liveImportAction(liveImportDialogMode(probe), agentId) === 'provider') {
+            label = (await importProviderLive(agentId)).name;
+          } else {
+            // Logins left in the recycle bin stay quiet here.
+            const report = await importCurrentLoginWithReport(agentId);
+            if (autoImportGen.current !== generation) return;
+            if (!report.account) continue;
+            label = report.account.label;
+          }
           if (autoImportGen.current !== generation) return;
-          const label = 'label' in imported ? imported.label : imported.name;
           importedLabels.push(label);
         } catch (e) {
           lastError = e instanceof Error ? e.message : String(e);
@@ -778,7 +783,7 @@ export default function ConnectionsPage() {
       await poolReload().catch(() => {});
       setDiscoveryDismissed(true);
       await loadWallet();
-      handleGuideSucceeded();
+      if (!report || report.account) handleGuideSucceeded();
     } catch (e) {
       const notice = importLoginErrorNotice(e, t);
       toast({

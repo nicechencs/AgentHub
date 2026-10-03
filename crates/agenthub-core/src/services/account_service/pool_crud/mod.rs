@@ -7,6 +7,7 @@ mod api_key;
 mod compensate;
 mod create;
 mod merge;
+mod pi_live_delete;
 mod query;
 mod refresh;
 mod types;

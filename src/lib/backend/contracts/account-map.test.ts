@@ -597,20 +597,23 @@ describe('mapCoreImportLiveReport', () => {
     const mapped = mapCoreImportLiveReport({
       account: core({ id: 'pi-1', agentId: 'pi', label: 'Anthropic' }),
       importedCount: 2,
-      restoredFromTrash: [{ id: 'pi-2', label: 'xAI' }],
+      skippedInTrash: [{ id: 'trash-2', label: 'xAI', home: 'connections' }, { id: 'trash-3', label: 'Kimi' }],
       skippedLocalRoute: 1,
       failed: [{ label: 'bad', code: 'invalid_arg', message: 'nope' }],
     });
     expect(mapped.account?.id).toBe('pi-1');
     expect(mapped.importedCount).toBe(2);
-    expect(mapped.restoredFromTrash).toEqual([{ id: 'pi-2', label: 'xAI' }]);
+    expect(mapped.skippedInTrash).toEqual([
+      { id: 'trash-2', label: 'xAI', home: 'connections' },
+      { id: 'trash-3', label: 'Kimi', home: 'connections' },
+    ]);
     expect(mapped.skippedLocalRoute).toBe(1);
     expect(mapped.failed).toHaveLength(1);
 
     expect(mapCoreImportLiveReport({ account: null })).toEqual({
       account: null,
       importedCount: 0,
-      restoredFromTrash: [],
+      skippedInTrash: [],
       skippedLocalRoute: 0,
       failed: [],
     });

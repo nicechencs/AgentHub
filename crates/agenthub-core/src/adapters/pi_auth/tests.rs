@@ -103,3 +103,27 @@ fn live_account_from_openai_codex_keeps_chatgpt_account_id() {
         "id_token must stay on the pool row, not Pi auth.json body"
     );
 }
+
+#[test]
+fn remove_auth_entry_only_when_unchanged_and_keeps_other_keys() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    let body = json!({
+        "anthropic": { "type": "oauth", "access": "a", "refresh": "r", "future": [1, 2] },
+        "xai": { "type": "oauth", "access": "x", "refresh": "xr" },
+        "openai": { "type": "api_key", "key": "sk-fake-openai-0000" }
+    });
+    write_verified_auth_json(&path, &body).unwrap();
+
+    let other = json!({ "type": "oauth", "access": "x2", "refresh": "xr2" });
+    assert!(!remove_auth_entry_if_unchanged(&path, "xai", &other).unwrap());
+    assert!(!remove_auth_entry_if_unchanged(&path, "missing", &other).unwrap());
+    assert_eq!(read_auth_json_file(&path).unwrap(), body);
+
+    assert!(remove_auth_entry_if_unchanged(&path, "xai", &body["xai"]).unwrap());
+    let after = read_auth_json_file(&path).unwrap();
+    let keys: Vec<&String> = after.as_object().unwrap().keys().collect();
+    assert_eq!(keys, ["anthropic", "openai"], "order kept");
+    assert_eq!(after["anthropic"], body["anthropic"]);
+    assert_eq!(after["openai"], body["openai"]);
+}

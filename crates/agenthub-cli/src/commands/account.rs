@@ -45,6 +45,10 @@ pub fn import(
     }
     match report.account {
         Some(item) => emit_one(&item, format),
+        None if !report.skipped_in_trash.is_empty() => Err(AppError::message(
+            "account.import",
+            "every login is in the recycle bin; nothing was imported",
+        )),
         None => Err(AppError::message(
             "account.import",
             "live import produced no accounts",
@@ -52,12 +56,15 @@ pub fn import(
     }
 }
 
-/// Plain-language notes for logins restored, skipped or failed. Labels and
+/// Plain-language notes for logins skipped or failed. Labels and
 /// messages come from an already redacted report, so no key text is printed.
 pub(crate) fn import_report_notes(report: &ImportLiveReport) -> Vec<String> {
     let mut lines = Vec::new();
-    for restored in &report.restored_from_trash {
-        lines.push(format!("restored from the recycle bin: {}", restored.label));
+    for skipped in &report.skipped_in_trash {
+        lines.push(format!(
+            "not imported (in the recycle bin): {}",
+            skipped.label
+        ));
     }
     if report.skipped_local_route > 0 {
         lines.push(format!(
