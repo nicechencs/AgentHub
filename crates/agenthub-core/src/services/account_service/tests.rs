@@ -1,8 +1,8 @@
 use super::*;
 use crate::adapters::AgentAdapter;
 use crate::models::{
-    AuthState, Capability, CapabilityState, DetectResult, DetectStatus, InstallChannel, Provider,
-    RunOptions, RunSpec,
+    AuthState, Capability, CapabilityState, DetectResult, DetectStatus, ImportLiveReport,
+    InstallChannel, Provider, RunOptions, RunSpec,
 };
 use crate::storage::ProviderRepo;
 use crate::utils::atomic::atomic_write;
