@@ -27,6 +27,7 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 | [Chat 统一体验与跨环境开发](chat-unified-experience.md) | 部分落地 | 如何共用聊天交互、逐家接入 Agent，并在换电脑或换开发 Agent 后复现和验收？用户标准见 [Chat 体验标杆](../ui/chat-experience-bar.md)。 |
 | [可选本机命令护栏](chat-tool-guard.md) | 未落地 | 占位，暂不实现。 |
 | [路由官方扩展与独立运行](adapter-sidecar.md) | 未落地 | 如何固定注册官方扩展、分离运行与登录职责，并以 Go 小范围试点验证进程隔离、写入补偿及回退？首期仍依赖 core 存活，完整后台另设门槛。 |
+| [路由官方扩展 A 阶段纸面契约](route-extension-phase-a-contract.md) | 未落地 | A 阶段窄运行接口、active/prepared、锁顺序、generation 与撤销水位；尚未实现，不能当现行接口，未授权进入 B。 |
 | [tray-background-modes.md](tray-background-modes.md) | 部分落地 | 关窗后能否释放 WebView 内存，而不改变路由归属和退出语义？关窗策略已抽到 `src-tauri/src/window_policy.rs`。 |
 | [模块化与边界收紧](modularity.md) | 部分落地 | 如何先收紧模块接口，再选择有明确收益的官方扩展，而不把所有功能一次变成插件平台？ |
 | [接入 Kiro（kiro-cli）](agent-kiro.md) | 大部分落地 | 剩 Skills / MCP。现行以 [STATUS](../STATUS.md) 为准。 |
