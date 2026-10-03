@@ -10,7 +10,7 @@ updated: 2026-10-03
 
 > **Archived / 已归档**：一次性纸面冻结里「不写 Go / probe 未创建」的过时句子。不是现行契约，也不再派工。
 >
-> 现行阅读：[A 阶段纸面契约](../proposals/route-extension-phase-a-contract.md)、[路由官方扩展](../proposals/adapter-sidecar.md)、[2026-10-03 深度评估](../proposals/official-extension-go-slice-review.md)。隔离切片见 `go/agenthub-adapterd` 与 `scripts/route-runtime-probe/messages-isolated.sh`。
+> 现行阅读：[Go 路由替换方案](../proposals/adapter-sidecar.md)。旧 [A 阶段纸面契约](route-extension-phase-a-contract.md)与 [2026-10-03 深度评估](official-extension-go-slice-review.md)也已归档。隔离切片见 `go/agenthub-adapterd` 与 `scripts/route-runtime-probe/messages-isolated.sh`。
 
 2026-10-03 之前，A 阶段纸面冻结曾用现在时写：
 

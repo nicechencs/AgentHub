@@ -1,14 +1,16 @@
 ---
-title: 官方扩展与 Go 路由切片深度评估
-type: proposal
-status: proposed
+title: 官方扩展与 Go 路由切片评估（已取代）
+type: archive
+status: archived
 owner: maintainers
 updated: 2026-10-03
 ---
 
-# 官方扩展与 Go 路由切片深度评估
+# 官方扩展与 Go 路由切片评估（已取代）
 
-本页是 2026-10-03 对[模块化 §8](modularity.md#8-功能模块与官方扩展)、[路由官方扩展](adapter-sidecar.md)和 [A 阶段纸面契约](route-extension-phase-a-contract.md) 的深度评估与 go / no-go。不是现行产品契约，也不授权默认网关切换。
+> **Archived documentation.** 本页的 no-go 结论基于已放弃的 A–F 复杂门槛，已由[Go 路由替换方案](../proposals/adapter-sidecar.md)取代，不再阻止按纵向切片实施。
+
+本页是 2026-10-03 对[模块化 §8](../proposals/modularity.md#8-功能模块与-go-路由程序)、[路由官方扩展](../proposals/adapter-sidecar.md)和 [A 阶段纸面契约](route-extension-phase-a-contract.md) 的深度评估与 go / no-go。不是现行产品契约，也不授权默认网关切换。
 
 对照树：`HEAD` 含隔离 Go Messages 切片 `go/agenthub-adapterd` 与 `scripts/route-runtime-probe/messages-isolated.sh`。调查基线 tag `baseline/routes-before-extension-20261003`（`7c2b6fe2`）不得移动。
 
@@ -16,7 +18,7 @@ updated: 2026-10-03
 
 | 对象 | 用户看到的位置 | 现在怎样 |
 |---|---|---|
-| 厂商插件 | `/plugins` 页面 | 各 Agent 自己的 plugin / extension 包。Claude / Grok 列表和启停已落地；更新、Codex / Pi 写入仍是提案。见[插件管理](plugin-management.md)。 |
+| 厂商插件 | `/plugins` 页面 | 各 Agent 自己的 plugin / extension 包。Claude / Grok 列表和启停已落地；更新、Codex / Pi 写入仍是提案。见[插件管理](../proposals/plugin-management.md)。 |
 | 官方扩展 | 随应用交付、固定注册 | 扩展 AgentHub 自身。第一个候选是路由，标识 `agenthub.routes`。不是插件商店，不加载第三方 ABI。 |
 
 二者不是同一套接口。厂商插件不接到官方扩展机制上；官方扩展也不改各家 `/plugins` 的归属。
@@ -81,8 +83,8 @@ updated: 2026-10-03
 
 ## 相关页面
 
-- [模块化与边界收紧 §8](modularity.md#8-功能模块与官方扩展)
-- [路由官方扩展与独立运行](adapter-sidecar.md)
+- [模块化与边界收紧 §8](../proposals/modularity.md#8-功能模块与-go-路由程序)
+- [路由官方扩展与独立运行](../proposals/adapter-sidecar.md)
 - [A 阶段纸面契约](route-extension-phase-a-contract.md)
-- [插件管理](plugin-management.md)
+- [插件管理](../proposals/plugin-management.md)
 - [产品边界](../decisions/product-boundaries.md)

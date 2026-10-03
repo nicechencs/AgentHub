@@ -1,18 +1,20 @@
 ---
-title: 路由官方扩展 A 阶段纸面契约
-type: proposal
-status: proposed
+title: 路由官方扩展 A 阶段纸面契约（已取代）
+type: archive
+status: archived
 owner: maintainers
 updated: 2026-10-03
 ---
 
-# 路由官方扩展 A 阶段纸面契约
+# 路由官方扩展 A 阶段纸面契约（已取代）
 
-本文冻结[路由官方扩展与独立运行方案](adapter-sidecar.md) A 阶段的纸面契约：窄运行接口、`active`/`prepared` 分离、锁顺序、版本与撤销水位、操作留存、fixture/故障计划以及隔离路径与证据格式。这些都是 `proposed` 候选，**不能当现行产品接口；整份 A 尚未通过，现仅授权隔离目录下的 Go Messages 切片（`Handshake`、`Status`、`AcquireOrRenewOwner` acquire/renew、probe-only `ActivateProbeListen` 与合成 Key 的 Messages JSON/SSE），不授权默认网关切换、真实配置写入、插件商店或 E/F**。`ActivateProbeListen` 不是产品 `CommitDesired` / `PrepareDesired` / `BootstrapDesired`。本页不做插件平台或把隔离切片扩成 live sidecar。
+> **Archived documentation.** 本页记录曾考虑的复杂控制协议，已由[Go 路由替换方案](../proposals/adapter-sidecar.md)取代，不是实施门槛或现行接口。
+
+本文冻结[路由官方扩展与独立运行方案](../proposals/adapter-sidecar.md) A 阶段的纸面契约：窄运行接口、`active`/`prepared` 分离、锁顺序、版本与撤销水位、操作留存、fixture/故障计划以及隔离路径与证据格式。这些都是 `proposed` 候选，**不能当现行产品接口；整份 A 尚未通过，现仅授权隔离目录下的 Go Messages 切片（`Handshake`、`Status`、`AcquireOrRenewOwner` acquire/renew、probe-only `ActivateProbeListen` 与合成 Key 的 Messages JSON/SSE），不授权默认网关切换、真实配置写入、插件商店或 E/F**。`ActivateProbeListen` 不是产品 `CommitDesired` / `PrepareDesired` / `BootstrapDesired`。本页不做插件平台或把隔离切片扩成 live sidecar。
 
 现行写入入口仍是 `AdapterControl` 的 `plan` / `bind` / `unbind` 与进程内 `adapter_bridge_controller`；现行状态 DTO 仍是带 `local_token` 的 `AdapterBridgeStatus`。下面的 `RouteRuntimeControl` 消息不得替代这些现行接口。
 
-对齐[模块化提案「功能模块与官方扩展」](modularity.md#8-功能模块与官方扩展)：路由是首个随应用交付、固定注册的官方扩展候选；登录与连接仍由 core 唯一负责；不把所有功能改成可下载插件，不引入动态 ABI 或第二份领域库。产品边界仍以[产品边界](../decisions/product-boundaries.md)为准，本页不改。
+对齐[模块化提案「功能模块与官方扩展」](../proposals/modularity.md#8-功能模块与-go-路由程序)：路由是首个随应用交付、固定注册的官方扩展候选；登录与连接仍由 core 唯一负责；不把所有功能改成可下载插件，不引入动态 ABI 或第二份领域库。产品边界仍以[产品边界](../decisions/product-boundaries.md)为准，本页不改。
 
 ## 1. 范围与非目标
 
@@ -611,7 +613,7 @@ C/D 若将来运行，必须满足：
 
 ## 相关页面
 
-- [路由官方扩展与独立运行方案](adapter-sidecar.md)：本契约所对齐的提案；整份 A 尚未通过，现仅授权隔离目录下的 Go Messages 切片（`Handshake`、`Status`、`AcquireOrRenewOwner`、probe-only `ActivateProbeListen` 与合成 Key 的 Messages），不授权默认网关切换、真实配置写入、插件商店或 E/F。
-- [模块化与边界收紧](modularity.md#8-功能模块与官方扩展)：功能模块与官方扩展的产品对齐。
+- [路由官方扩展与独立运行方案](../proposals/adapter-sidecar.md)：本契约所对齐的提案；整份 A 尚未通过，现仅授权隔离目录下的 Go Messages 切片（`Handshake`、`Status`、`AcquireOrRenewOwner`、probe-only `ActivateProbeListen` 与合成 Key 的 Messages），不授权默认网关切换、真实配置写入、插件商店或 E/F。
+- [模块化与边界收紧](../proposals/modularity.md#8-功能模块与-go-路由程序)：功能模块与官方扩展的产品对齐。
 - [本机路由 API](../reference/local-route-api.md)与[路由兼容性](../reference/route-compatibility.md)：现行 HTTP 契约，对照时的裁决真源。
 - [产品边界](../decisions/product-boundaries.md)：本页不改变的产品规则。

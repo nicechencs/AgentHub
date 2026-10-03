@@ -39,7 +39,9 @@
 | [chat-host-depth.md](chat-host-depth.md) | Chat host-depth proposal, moved from `docs/proposals/` on 2026-09-29; slices A–E and G–I merged, F cancelled | Current facts: `docs/STATUS.md`; remaining Chat work: `docs/proposals/chat-unified-experience.md` |
 | [ui-audit-2026-09-07/README.md](ui-audit-2026-09-07/README.md) | 2026-09-07 UI audit and implementation notes, moved from `docs/reviews/` on 2026-09-29 | Re-check table inside; current UI rules: `docs/ui/design-system.md` and `docs/ui/page-patterns.md` |
 | [recent-fix-review.md](recent-fix-review.md) | 2026-08-26 fix recap | Current facts: `docs/STATUS.md` |
-| [route-extension-a-stage-paper-freeze.md](route-extension-a-stage-paper-freeze.md) | A 阶段纸面冻结里「不写 Go / probe 未创建」的过时现在时 | Live: [A 阶段纸面契约](../proposals/route-extension-phase-a-contract.md)、[官方扩展评估](../proposals/official-extension-go-slice-review.md) |
+| [route-extension-a-stage-paper-freeze.md](route-extension-a-stage-paper-freeze.md) | A 阶段纸面冻结里「不写 Go / probe 未创建」的过时现在时 | Current proposal: [Go 路由替换方案](../proposals/adapter-sidecar.md) |
+| [route-extension-phase-a-contract.md](route-extension-phase-a-contract.md) | 已放弃的复杂 A 阶段控制契约 | Current proposal: [Go 路由替换方案](../proposals/adapter-sidecar.md) |
+| [official-extension-go-slice-review.md](official-extension-go-slice-review.md) | 基于旧 A–F 门槛得出的 no-go 评估 | Current proposal: [Go 路由替换方案](../proposals/adapter-sidecar.md) |
 
 ## Removed historical bodies
 

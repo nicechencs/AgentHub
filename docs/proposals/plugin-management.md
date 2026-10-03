@@ -10,7 +10,7 @@ updated: 2026-10-03
 
 > 状态：proposed。列表、启停、安装/卸载已落地；更新和 Codex / Pi 写入仍是提案。现行行为见 [STATUS](../STATUS.md) 与 [页面模式](../ui/page-patterns.md)。
 
-产品对象是各家的 plugin / extension 包，不是 MCP server，也不是 AgentHub 自身的官方扩展。`/plugins` 与[模块化提案「功能模块与官方扩展」](modularity.md#8-功能模块与官方扩展)不是同一对象。`/mcp` 保持只读 MCP 清单，不改名。
+产品对象是各家的 plugin / extension 包，不是 MCP server，也不是随应用交付的 Go 路由程序。`/plugins` 与[Go 路由替换](modularity.md#8-功能模块与-go-路由程序)不是同一对象。`/mcp` 保持只读 MCP 清单，不改名。
 
 ## 1. 当前基线
 
@@ -82,7 +82,7 @@ updated: 2026-10-03
 
 ## 7. 相关页面
 
-- [模块化提案「功能模块与官方扩展」](modularity.md#8-功能模块与官方扩展)：AgentHub 官方扩展，与本页厂商插件不是同一对象。
+- [模块化提案「功能模块与 Go 路由程序」](modularity.md#8-功能模块与-go-路由程序)：随应用交付的路由程序，与本页厂商插件不是同一对象。
 - [插件、MCP 与技能](../concepts/plugins-and-mcp.md)
 - [Agent 插件表面](../reference/agent-plugin-surfaces.md)
 - [MCP inventory](../reference/mcp-inventory.md)
