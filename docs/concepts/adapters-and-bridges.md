@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: core, Tauri, and route/runtime contributors
 source-of-truth: AgentAdapter, adapter planner/apply ports, bridge host code, and the sidecar proposal
-updated: 2026-09-29
+updated: 2026-10-03
 ---
 
 # Adapters 与本机 Bridge
@@ -54,9 +54,11 @@ Adapter profile 是一条“来源登录 → 目标 Agent”的受管记录，�
 - 每个目标 Agent / 接口一个默认连接池，共用一个本机端口；`GET /models` 与实际请求共用同一个模型解析器。
 - 混合供应商复合路由和 Codex↔Grok 双向 Responses 转换是实验开关，默认关闭。
 
-## sidecar 是提案，不是现状
+## Go 路由程序的当前边界
 
-未来可以把本机转发移到用户级进程 `agenthub-adapterd`，由它独占监听、排空、恢复和转发相关写入；Account、Provider、Connection、ActiveBinding 仍由 core service 管理，sidecar 不直接写数据库或本机配置。在 IPC 握手、schema lease、单实例、升级/恢复和“host 不可用”语义落地前，不得宣称 sidecar 已存在，也不能让 GUI 和 sidecar 同时拥有转发 saga。见 [Sidecar 提案](../proposals/adapter-sidecar.md)。
+树中已有隔离目录下的 `agenthub-adapterd` Messages 探测切片，但它还不是默认本机路由。当前生产监听、排空和恢复仍在 Tauri 桌面进程内。
+
+后续替换只把监听、协议转换和池内调度移到 Go。Account、Provider、Connection、ActiveBinding、数据库和 Agent 配置仍由 core service 管理；Go 不维护第二套产品状态，也不直接写数据库或本机配置。最小接入和分步切换见 [Go 路由替换方案](../proposals/adapter-sidecar.md)。
 
 ## 相关页面
 

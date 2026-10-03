@@ -10,7 +10,7 @@ updated: 2026-10-03
 
 > These documents describe future candidates, not current implementation contracts.
 
-Every proposal in this directory has `Status: proposed`. A proposal may be researched, prototyped, rejected, or superseded without changing the current product. It must not be copied into a current implementation checklist until its owner, scope, compatibility plan, and acceptance tests are approved. Rows marked 半面已落地 / 切片已落地 still use YAML `proposed` because remaining bounds are not current contracts; do not treat those pages as unstarted.
+Every proposal in this directory has `Status: proposed`. A proposal may be researched, prototyped, rejected, or superseded without changing the current product. Do not treat it as an approved implementation checklist; before implementation, add only the scope, compatibility notes, and checks needed for that change's actual risk. Rows marked 半面已落地 / 切片已落地 still use YAML `proposed` because remaining bounds are not current contracts; do not treat those pages as unstarted.
 
 ## Current baseline
 
@@ -26,9 +26,9 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 |---|---|---|
 | [Chat 统一体验与跨环境开发](chat-unified-experience.md) | 部分落地 | 如何共用聊天交互、逐家接入 Agent，并在换电脑或换开发 Agent 后复现和验收？用户标准见 [Chat 体验标杆](../ui/chat-experience-bar.md)。 |
 | [可选本机命令护栏](chat-tool-guard.md) | 未落地 | 占位，暂不实现。 |
-| [Go 路由替换](adapter-sidecar.md) | 隔离切片已落地 | 如何停止扩建旧 Rust 路由运行模块，按 Messages、连接池、其他协议、产品接入和默认网关切换逐条交付 Go 替代实现？不派生插件平台、复杂租约或两阶段提交。 |
+| [Go 路由替换](adapter-sidecar.md) | 隔离切片已落地 | 如何按 Messages、连接池、其他协议、产品接入和默认网关切换逐条交付 Go 替代实现，同时避免维护两套同类能力？不派生插件平台、复杂租约或两阶段提交。 |
 | [tray-background-modes.md](tray-background-modes.md) | 部分落地 | 关窗后能否释放 WebView 内存，而不改变路由归属和退出语义？关窗策略已抽到 `src-tauri/src/window_policy.rs`。 |
-| [模块化与边界收紧](modularity.md) | 部分落地 | 如何先收紧模块接口，再选择有明确收益的官方扩展，而不把所有功能一次变成插件平台？ |
+| [模块化与边界收紧](modularity.md) | 部分落地 | 如何按实际问题收紧模块接口，而不把所有功能一次变成插件平台？ |
 | [接入 Kiro（kiro-cli）](agent-kiro.md) | 大部分落地 | 剩 Skills / MCP。现行以 [STATUS](../STATUS.md) 为准。 |
 | [Kiro HTTP / 本机转发](agent-kiro-http.md) | 大部分落地 | 剩企业 IdC / `profileArn` 验收、打印路径流式、主机迁移。 |
 | [国内自动更新镜像（R2）](update-mirror-r2.md) | 代码已落地 | 剩云端运维配置和国内真机验收。 |
@@ -46,4 +46,4 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 
 ## Promotion to current contract
 
-A proposal can be promoted only after the implementation has a named owner, an explicit compatibility/migration plan, focused tests, failure behavior, and an update to the current docs under `docs/concepts/`, `docs/decisions/`, `docs/architecture/`, `docs/reference/`, `docs/guides/`, or `docs/ui/`. Until then, links from current pages should describe the baseline, not the candidate.
+After an implementation is verified in proportion to its risk, record the resulting facts in the relevant current docs under `docs/concepts/`, `docs/decisions/`, `docs/architecture/`, `docs/reference/`, `docs/guides/`, or `docs/ui/`. Do not require unrelated design artifacts merely to change a proposal's status. Until then, links from current pages should describe the baseline, not the candidate.

@@ -63,12 +63,12 @@ updated: 2026-10-03
 - 非 Tauri 生产页写入显示 unavailable。
 - 新增 `Capability` 键要等实现 PR。
 
-## 5. 门槛（转为现行前）
+## 5. 最低检查
 
 - 每个开放写入的 Agent 有 CLI 或本机文件 fixture，且点测过。
 - 卸载、停用、更新行为与厂商一致。
 - `/mcp` 文案与导航仍表示 MCP。
-- 相关 cargo / vitest / `pnpm check:docs` 通过。
+- 按改动运行相关的非 Rust 检查与 `pnpm check:docs`；Rust 行为以真实 CLI 或应用日志验证。
 
 ## 6. 非目标
 
