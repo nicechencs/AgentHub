@@ -220,8 +220,10 @@ impl AccountService {
             // either a stale key the user replaced in AgentHub or a manual
             // edit; neither may resurrect as a new connection. Manual import
             // stays the way to add it.
+            // Rows kept only in the route pool are not Pi's own configuration.
             if rows.iter().any(|row| {
                 row.kind == AccountKind::ApiKey
+                    && !crate::models::authorization_is_route_pool_home(&row.extra)
                     && same_live_slot(agent, &live.credentials, &row.credentials)
             }) {
                 tracing::debug!(

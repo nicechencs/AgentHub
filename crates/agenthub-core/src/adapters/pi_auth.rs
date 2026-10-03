@@ -188,6 +188,25 @@ pub(crate) fn remove_auth_entry_if_unchanged(
     Ok(true)
 }
 
+/// Put `entry` back under `provider` only while that key is missing. Other
+/// keys are not touched. Returns whether the key was written.
+pub(crate) fn restore_auth_entry_if_missing(
+    path: &Path,
+    provider: &str,
+    entry: &Value,
+) -> Result<bool> {
+    let mut body = read_auth_json_at(path)?;
+    let obj = body
+        .as_object_mut()
+        .ok_or_else(|| AppError::InvalidArg("Pi auth.json must be a JSON object".into()))?;
+    if obj.contains_key(provider) {
+        return Ok(false);
+    }
+    obj.insert(provider.to_string(), entry.clone());
+    write_verified_auth_json(path, &body)?;
+    Ok(true)
+}
+
 /// Write `{ provider: { type: api_key, key } }` into `dir/auth.json`.
 /// Does not touch other provider keys. `dir` is the Pi config dir
 /// (`~/.pi/agent` or `PI_CODING_AGENT_DIR`).

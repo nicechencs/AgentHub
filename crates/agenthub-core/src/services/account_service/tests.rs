@@ -5403,16 +5403,19 @@ fn pi_trash_match_is_per_provider_for_shared_key() {
 
 // ── Deleting a Pi login also removes its own auth.json entry ──────────────
 
-/// Point Pi's config dir at a temp dir for the whole test. The real `~/.pi`
-/// is never read or written: the delete cleanup only follows
-/// `PI_CODING_AGENT_DIR` under `cfg(test)`.
-fn with_temp_pi_dir<T>(f: impl FnOnce(&Path) -> T) -> T {
+/// Run with a Pi service whose auth.json is the fake adapter's file in a temp
+/// dir. `PI_CODING_AGENT_DIR` also points at a temp dir so the Pi default
+/// model update after a delete never reaches the real `~/.pi`.
+fn with_pi_delete_svc<T>(f: impl FnOnce(&Path, &AccountService, &FakeAdapter) -> T) -> T {
     let _guard = crate::adapters::pi::PI_CONFIG_ENV_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let dir = tempdir().unwrap();
-    let _env = crate::utils::test_env::EnvVarGuard::set("PI_CODING_AGENT_DIR", dir.path());
-    f(dir.path())
+    let env_dir = tempdir().unwrap();
+    let _env = crate::utils::test_env::EnvVarGuard::set("PI_CODING_AGENT_DIR", env_dir.path());
+    let (_root, svc, adapter) = live_svc(AgentId::Pi);
+    let dir = adapter.path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(&dir).unwrap();
+    f(&dir, &svc, &adapter)
 }
 
 fn pi_delete_auth_body() -> serde_json::Value {
@@ -5441,6 +5444,10 @@ fn read_pi_auth_bytes(dir: &Path) -> Vec<u8> {
     std::fs::read(dir.join("auth.json")).unwrap()
 }
 
+fn read_pi_auth(dir: &Path) -> serde_json::Value {
+    serde_json::from_slice(&read_pi_auth_bytes(dir)).unwrap()
+}
+
 /// Import the given providers from `body` as pool rows.
 fn import_pi_rows(
     svc: &AccountService,
@@ -5465,15 +5472,33 @@ fn without_key(body: &serde_json::Value, key: &str) -> Vec<u8> {
     bytes
 }
 
+/// Background sync and manual import of everything now in auth.json.
+fn sync_and_import_pi(svc: &AccountService, adapter: &FakeAdapter, dir: &Path) -> ImportLiveReport {
+    let lives = crate::adapters::pi_auth::expand_auth_to_live_accounts(&read_pi_auth(dir)).unwrap();
+    for live in lives.clone() {
+        svc.reconcile_live_account_with_activate(adapter, AgentId::Pi, live, false)
+            .unwrap();
+    }
+    svc.import_pi_live_entries(adapter, lives, None).unwrap()
+}
+
+fn pi_rows_for(svc: &AccountService, provider: &str) -> usize {
+    svc.repo()
+        .list(Some(AgentId::Pi))
+        .unwrap()
+        .iter()
+        .filter(|row| row.credentials["provider"] == provider)
+        .count()
+}
+
 #[test]
 fn pi_delete_removes_only_its_oauth_entry_from_auth_json() {
-    with_temp_pi_dir(|dir| {
+    with_pi_delete_svc(|dir, svc, adapter| {
         let body = pi_delete_auth_body();
         write_pi_auth(dir, &body);
-        let (_root, svc, adapter) = live_svc(AgentId::Pi);
-        import_pi_rows(&svc, &adapter, &body, &["anthropic", "xai"]);
+        import_pi_rows(svc, adapter, &body, &["anthropic", "xai"]);
 
-        let xai = pi_row_for(&svc, "xai");
+        let xai = pi_row_for(svc, "xai");
         svc.delete(&xai.id, AgentId::Pi).unwrap();
 
         assert_eq!(
@@ -5491,13 +5516,12 @@ fn pi_delete_removes_only_its_oauth_entry_from_auth_json() {
 
 #[test]
 fn pi_delete_removes_only_its_api_key_entry_from_auth_json() {
-    with_temp_pi_dir(|dir| {
+    with_pi_delete_svc(|dir, svc, adapter| {
         let body = pi_delete_auth_body();
         write_pi_auth(dir, &body);
-        let (_root, svc, adapter) = live_svc(AgentId::Pi);
-        import_pi_rows(&svc, &adapter, &body, &["deepseek", "openai"]);
+        import_pi_rows(svc, adapter, &body, &["deepseek", "openai"]);
 
-        let deepseek = pi_row_for(&svc, "deepseek");
+        let deepseek = pi_row_for(svc, "deepseek");
         svc.delete(&deepseek.id, AgentId::Pi).unwrap();
 
         assert_eq!(read_pi_auth_bytes(dir), without_key(&body, "deepseek"));
@@ -5507,10 +5531,9 @@ fn pi_delete_removes_only_its_api_key_entry_from_auth_json() {
 
 #[test]
 fn pi_delete_leaves_auth_json_alone_when_the_entry_is_another_login() {
-    with_temp_pi_dir(|dir| {
+    with_pi_delete_svc(|dir, svc, adapter| {
         let body = pi_delete_auth_body();
-        let (_root, svc, adapter) = live_svc(AgentId::Pi);
-        import_pi_rows(&svc, &adapter, &body, &["xai", "deepseek"]);
+        import_pi_rows(svc, adapter, &body, &["xai", "deepseek"]);
         // Pi now holds a different xai login and a different deepseek key.
         let mut changed = body.clone();
         changed["xai"] = json!({"type": "oauth", "access": "xai-new", "refresh": "xai-new-r"});
@@ -5518,7 +5541,7 @@ fn pi_delete_leaves_auth_json_alone_when_the_entry_is_another_login() {
         let before = write_pi_auth(dir, &changed);
 
         for provider in ["xai", "deepseek"] {
-            let row = pi_row_for(&svc, provider);
+            let row = pi_row_for(svc, provider);
             svc.delete(&row.id, AgentId::Pi).unwrap();
         }
 
@@ -5529,12 +5552,11 @@ fn pi_delete_leaves_auth_json_alone_when_the_entry_is_another_login() {
 
 #[test]
 fn pi_delete_keeps_auth_json_when_another_connection_shares_the_login() {
-    with_temp_pi_dir(|dir| {
+    with_pi_delete_svc(|dir, svc, adapter| {
         let body = pi_delete_auth_body();
         let before = write_pi_auth(dir, &body);
-        let (_root, svc, adapter) = live_svc(AgentId::Pi);
-        import_pi_rows(&svc, &adapter, &body, &["xai"]);
-        let xai = pi_row_for(&svc, "xai");
+        import_pi_rows(svc, adapter, &body, &["xai"]);
+        let xai = pi_row_for(svc, "xai");
         let mut twin = xai.clone();
         twin.id = "pi-twin".into();
         svc.repo().create(&twin).unwrap();
@@ -5546,13 +5568,12 @@ fn pi_delete_keeps_auth_json_when_another_connection_shares_the_login() {
 }
 
 #[test]
-fn pi_delete_db_failure_restores_auth_json_and_keeps_the_row() {
-    with_temp_pi_dir(|dir| {
+fn pi_delete_db_failure_puts_back_only_the_removed_key() {
+    with_pi_delete_svc(|dir, svc, adapter| {
         let body = pi_delete_auth_body();
-        let before = write_pi_auth(dir, &body);
-        let (_root, svc, adapter) = live_svc(AgentId::Pi);
-        import_pi_rows(&svc, &adapter, &body, &["xai"]);
-        let xai = pi_row_for(&svc, "xai");
+        write_pi_auth(dir, &body);
+        import_pi_rows(svc, adapter, &body, &["xai"]);
+        let xai = pi_row_for(svc, "xai");
         svc.db
             .with_conn(|conn| {
                 conn.execute_batch(&format!(
@@ -5573,7 +5594,11 @@ fn pi_delete_db_failure_restores_auth_json_and_keeps_the_row() {
         assert!(error
             .to_string()
             .contains("injected Pi account delete failure"));
-        assert_eq!(read_pi_auth_bytes(dir), before, "auth.json is put back");
+        assert_eq!(
+            read_pi_auth(dir),
+            body,
+            "the xai key is back, nothing else changed"
+        );
         assert!(svc.repo().get_by_id(&xai.id).unwrap().is_some());
         assert!(svc
             .connections
@@ -5584,13 +5609,121 @@ fn pi_delete_db_failure_restores_auth_json_and_keeps_the_row() {
 }
 
 #[test]
+fn pi_delete_write_failure_keeps_the_row_and_the_file() {
+    with_pi_delete_svc(|dir, svc, adapter| {
+        let body = pi_delete_auth_body();
+        let before = write_pi_auth(dir, &body);
+        import_pi_rows(svc, adapter, &body, &["xai"]);
+        let xai = pi_row_for(svc, "xai");
+        super::pool_crud::FAIL_PI_AUTH_REMOVE.with(|flag| flag.set(true));
+
+        let error = svc.delete(&xai.id, AgentId::Pi).unwrap_err();
+
+        assert_eq!(error.code(), "account.delete.live");
+        assert!(error.to_string().contains("所以没有删除它"), "{error}");
+        assert_eq!(read_pi_auth_bytes(dir), before);
+        assert!(svc.repo().get_by_id(&xai.id).unwrap().is_some());
+        assert!(svc
+            .connections
+            .list_trash(Some(AgentId::Pi))
+            .unwrap()
+            .is_empty());
+    });
+}
+
+#[test]
+fn pi_delete_waits_for_the_lock_only_when_auth_json_must_change() {
+    with_pi_delete_svc(|dir, svc, adapter| {
+        let body = pi_delete_auth_body();
+        import_pi_rows(svc, adapter, &body, &["xai", "deepseek"]);
+        let mut changed = body.clone();
+        changed["deepseek"] = json!({"type": "api_key", "key": "sk-fake-deepseek-9999"});
+        let before = write_pi_auth(dir, &changed);
+        let lock_dir = svc.lock_dir.clone().expect("live service has a lock dir");
+        let held = crate::utils::agent_lock::AgentWriteLock::acquire(&lock_dir, AgentId::Pi)
+            .expect("test holds the Pi lock");
+
+        // Nothing to clear for deepseek: deleted without the lock.
+        let deepseek = pi_row_for(svc, "deepseek");
+        svc.delete(&deepseek.id, AgentId::Pi).unwrap();
+
+        // xai must leave auth.json: the held lock wins and the row stays.
+        let xai = pi_row_for(svc, "xai");
+        let error = svc.delete(&xai.id, AgentId::Pi).unwrap_err();
+        let text = error.to_string();
+        assert!(text.contains("Pi 正在同步登录，请稍后再删除"), "{text}");
+        assert!(!text.contains("another live write"), "{text}");
+        assert_eq!(read_pi_auth_bytes(dir), before);
+        assert!(svc.repo().get_by_id(&xai.id).unwrap().is_some());
+
+        drop(held);
+        svc.delete(&xai.id, AgentId::Pi).unwrap();
+        assert!(read_pi_auth(dir).get("xai").is_none());
+    });
+}
+
+#[test]
+fn pi_delete_clears_a_login_pi_refreshed_since_import() {
+    with_pi_delete_svc(|dir, svc, adapter| {
+        let imported = json!({
+            "anthropic": {"type": "oauth", "access": "anthropic-access", "refresh": "anthropic-refresh"},
+            "openai-codex": {
+                "type": "oauth",
+                "access": "codex-access-1",
+                "refresh": "codex-refresh-1",
+                "accountId": "acct-codex-1"
+            }
+        });
+        import_pi_rows(svc, adapter, &imported, &["anthropic", "openai-codex"]);
+        // Pi rotated the tokens for the same person.
+        let mut refreshed = imported.clone();
+        refreshed["openai-codex"]["access"] = json!("codex-access-2");
+        refreshed["openai-codex"]["refresh"] = json!("codex-refresh-2");
+        write_pi_auth(dir, &refreshed);
+
+        let codex = pi_row_for(svc, "openai-codex");
+        svc.delete(&codex.id, AgentId::Pi).unwrap();
+
+        assert_eq!(
+            read_pi_auth_bytes(dir),
+            without_key(&refreshed, "openai-codex")
+        );
+        sync_and_import_pi(svc, adapter, dir);
+        assert_eq!(
+            pi_rows_for(svc, "openai-codex"),
+            0,
+            "background sync does not bring it back"
+        );
+        assert_eq!(pi_rows_for(svc, "anthropic"), 1);
+    });
+}
+
+#[test]
+fn pi_delete_keeps_another_persons_refreshed_login() {
+    with_pi_delete_svc(|dir, svc, adapter| {
+        let imported = json!({
+            "openai-codex": {"type": "oauth", "access": "a1", "refresh": "r1", "accountId": "acct-1"}
+        });
+        import_pi_rows(svc, adapter, &imported, &["openai-codex"]);
+        let other = json!({
+            "openai-codex": {"type": "oauth", "access": "a2", "refresh": "r2", "accountId": "acct-2"}
+        });
+        let before = write_pi_auth(dir, &other);
+
+        let codex = pi_row_for(svc, "openai-codex");
+        svc.delete(&codex.id, AgentId::Pi).unwrap();
+
+        assert_eq!(read_pi_auth_bytes(dir), before);
+    });
+}
+
+#[test]
 fn pi_restore_from_recycle_bin_does_not_write_auth_json_or_activate() {
-    with_temp_pi_dir(|dir| {
+    with_pi_delete_svc(|dir, svc, adapter| {
         let body = pi_delete_auth_body();
         write_pi_auth(dir, &body);
-        let (_root, svc, adapter) = live_svc(AgentId::Pi);
-        import_pi_rows(&svc, &adapter, &body, &["anthropic", "xai"]);
-        let xai = pi_row_for(&svc, "xai");
+        import_pi_rows(svc, adapter, &body, &["anthropic", "xai"]);
+        let xai = pi_row_for(svc, "xai");
         svc.delete(&xai.id, AgentId::Pi).unwrap();
         let after_delete = read_pi_auth_bytes(dir);
         let trash_id = svc.connections.list_trash(Some(AgentId::Pi)).unwrap()[0]
@@ -5600,8 +5733,10 @@ fn pi_restore_from_recycle_bin_does_not_write_auth_json_or_activate() {
         svc.connections.restore_trash(&trash_id).unwrap();
 
         assert_eq!(read_pi_auth_bytes(dir), after_delete);
-        let auth: serde_json::Value = serde_json::from_slice(&read_pi_auth_bytes(dir)).unwrap();
-        assert!(auth.get("xai").is_none(), "restore does not write xai back");
+        assert!(
+            read_pi_auth(dir).get("xai").is_none(),
+            "restore does not write xai back"
+        );
         let restored = svc.repo().get_by_id(&xai.id).unwrap().expect("restored");
         assert!(!restored.is_current);
     });
@@ -5609,32 +5744,26 @@ fn pi_restore_from_recycle_bin_does_not_write_auth_json_or_activate() {
 
 #[test]
 fn pi_deleted_login_is_not_recreated_by_background_sync_or_import() {
-    with_temp_pi_dir(|dir| {
+    with_pi_delete_svc(|dir, svc, adapter| {
         let body = pi_delete_auth_body();
         write_pi_auth(dir, &body);
-        let (_root, svc, adapter) = live_svc(AgentId::Pi);
-        import_pi_rows(&svc, &adapter, &body, &["anthropic", "xai"]);
-        let xai = pi_row_for(&svc, "xai");
+        import_pi_rows(svc, adapter, &body, &["anthropic", "xai"]);
+        let xai = pi_row_for(svc, "xai");
         svc.delete(&xai.id, AgentId::Pi).unwrap();
 
-        let auth: serde_json::Value = serde_json::from_slice(&read_pi_auth_bytes(dir)).unwrap();
-        let lives = crate::adapters::pi_auth::expand_auth_to_live_accounts(&auth).unwrap();
-        assert!(lives
-            .iter()
-            .all(|live| live.credentials["provider"] != "xai"));
-        for live in lives.clone() {
-            svc.reconcile_live_account_with_activate(adapter.as_ref(), AgentId::Pi, live, false)
-                .unwrap();
-        }
-        svc.import_pi_live_entries(adapter.as_ref(), lives, None)
-            .unwrap();
+        // 1) The entry left auth.json, so there is nothing to bring back.
+        assert!(read_pi_auth(dir).get("xai").is_none());
+        let report = sync_and_import_pi(svc, adapter, dir);
+        assert!(report.skipped_in_trash.is_empty());
+        assert_eq!(pi_rows_for(svc, "xai"), 0);
 
-        assert!(svc
-            .repo()
-            .list(Some(AgentId::Pi))
-            .unwrap()
-            .iter()
-            .all(|row| row.credentials["provider"] != "xai"));
+        // 2) Leftover entry (e.g. Pi wrote the same login back): the recycle
+        // bin still stops both background sync and import.
+        write_pi_auth(dir, &body);
+        let report = sync_and_import_pi(svc, adapter, dir);
+        assert_eq!(report.skipped_in_trash.len(), 1);
+        assert_eq!(report.skipped_in_trash[0].label, xai.label);
+        assert_eq!(pi_rows_for(svc, "xai"), 0);
         assert_eq!(
             svc.connections.list_trash(Some(AgentId::Pi)).unwrap().len(),
             1
@@ -5644,7 +5773,7 @@ fn pi_deleted_login_is_not_recreated_by_background_sync_or_import() {
 
 #[test]
 fn deleting_another_agents_login_leaves_pi_auth_json_alone() {
-    with_temp_pi_dir(|dir| {
+    with_pi_delete_svc(|dir, _, _| {
         let body = pi_delete_auth_body();
         let before = write_pi_auth(dir, &body);
         let (_root, svc, _) = live_svc(AgentId::Grok);
@@ -5663,12 +5792,11 @@ fn deleting_another_agents_login_leaves_pi_auth_json_alone() {
 
 #[test]
 fn deleting_a_connection_pool_pi_login_leaves_auth_json_alone() {
-    with_temp_pi_dir(|dir| {
+    with_pi_delete_svc(|dir, svc, adapter| {
         let body = pi_delete_auth_body();
         let before = write_pi_auth(dir, &body);
-        let (_root, svc, adapter) = live_svc(AgentId::Pi);
-        import_pi_rows(&svc, &adapter, &body, &["xai"]);
-        let mut xai = pi_row_for(&svc, "xai");
+        import_pi_rows(svc, adapter, &body, &["xai"]);
+        let mut xai = pi_row_for(svc, "xai");
         crate::models::set_authorization_route_pool_home(&mut xai.extra);
         svc.repo().update(&xai).unwrap();
 
@@ -5677,4 +5805,30 @@ fn deleting_a_connection_pool_pi_login_leaves_auth_json_alone() {
         assert_eq!(read_pi_auth_bytes(dir), before);
         assert!(svc.repo().get_by_id(&xai.id).unwrap().is_none());
     });
+}
+
+#[test]
+fn pi_background_sync_ignores_route_pool_rows_for_the_api_key_rule() {
+    let (_root, svc, adapter) = live_svc(AgentId::Pi);
+    svc.import_pi_live_entries(
+        adapter.as_ref(),
+        vec![pi_api_key_live("deepseek", "sk-fake-pool-deepseek-1111")],
+        None,
+    )
+    .unwrap();
+    let mut pool_row = pi_api_key_rows(&svc, "deepseek").remove(0);
+    crate::models::set_authorization_route_pool_home(&mut pool_row.extra);
+    svc.repo().update(&pool_row).unwrap();
+
+    let created = svc
+        .reconcile_live_account_with_activate(
+            adapter.as_ref(),
+            AgentId::Pi,
+            pi_api_key_live("deepseek", "sk-fake-own-deepseek-2222"),
+            false,
+        )
+        .unwrap();
+
+    assert!(created.is_some(), "the user's own deepseek key is added");
+    assert_eq!(pi_api_key_rows(&svc, "deepseek").len(), 2);
 }

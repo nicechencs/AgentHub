@@ -12,5 +12,7 @@ mod query;
 mod refresh;
 mod types;
 
+#[cfg(test)]
+pub(super) use pi_live_delete::FAIL_PI_AUTH_REMOVE;
 #[allow(unused_imports)] // account_service glob (`use super::*`) keeps these names.
 pub(super) use types::{AccountCommittedMutation, AccountMutationError};

@@ -127,3 +127,29 @@ fn remove_auth_entry_only_when_unchanged_and_keeps_other_keys() {
     assert_eq!(after["anthropic"], body["anthropic"]);
     assert_eq!(after["openai"], body["openai"]);
 }
+
+#[test]
+fn restore_auth_entry_only_fills_a_missing_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    let body = json!({
+        "anthropic": { "type": "oauth", "access": "a", "refresh": "r" },
+        "xai": { "type": "oauth", "access": "x-new", "refresh": "xr-new" }
+    });
+    write_verified_auth_json(&path, &body).unwrap();
+    let old_xai = json!({ "type": "oauth", "access": "x", "refresh": "xr" });
+
+    assert!(!restore_auth_entry_if_missing(&path, "xai", &old_xai).unwrap());
+    assert_eq!(
+        read_auth_json_file(&path).unwrap(),
+        body,
+        "newer entry kept"
+    );
+
+    let deepseek = json!({ "type": "api_key", "key": "sk-fake-deepseek-0000" });
+    assert!(restore_auth_entry_if_missing(&path, "deepseek", &deepseek).unwrap());
+    let after = read_auth_json_file(&path).unwrap();
+    assert_eq!(after["deepseek"], deepseek);
+    assert_eq!(after["anthropic"], body["anthropic"]);
+    assert_eq!(after["xai"], body["xai"]);
+}
