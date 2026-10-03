@@ -273,7 +273,7 @@ E 的合成受控上游观察门槛候选为连续 24 小时、至少 1000 请�
 
 ### A 阶段退出门槛
 
-A 阶段必须交付窄消息、状态和错误 schema，冻结 owner/auth generation 的作用域、owner_term 接管时的缓存清理与撤销 watermark 规则、锁顺序、操作留存与 reconcile 决策表，提供可复现 fixture 对照和故障计划，并写明隔离路径与证据格式。缺项可以继续设计和补证据，但不能进入 B 的原型实现；不得借此扩大为通用插件 SDK。纸面契约见 [路由官方扩展 A 阶段纸面契约](route-extension-phase-a-contract.md)；该页冻结候选消息与锁顺序，不表示 A 已通过，也不授权进入 B。
+A 阶段必须交付窄消息、状态和错误 schema，冻结 owner/auth generation 的作用域、owner_term 接管时的缓存清理与撤销 watermark 规则、锁顺序、操作留存与 reconcile 决策表，提供可复现 fixture 对照和故障计划，并写明隔离路径与证据格式。缺项可以继续设计和补证据，但不能进入 B 的原型实现；不得借此扩大为通用插件 SDK。纸面契约见 [路由官方扩展 A 阶段纸面契约](route-extension-phase-a-contract.md)；该页冻结候选消息与锁顺序，整份 A 尚未通过，现仅授权隔离目录下的 Go Messages 切片（Handshake、Status、进程监督与合成 Key 的 Messages），不授权默认网关切换、真实配置写入、插件商店或 E/F。
 
 ## 12. 下一阶段任务
 
