@@ -2220,6 +2220,7 @@ export const en = {
       toastCurrent: "Moved to trash. This computer keeps using this login until you switch to another one.",
       dialogPiCurrent: "Moves to trash and removes this connection from Pi's local config immediately. Pi will stop using it.",
       toastPiCurrent: "Moved to trash and removed from Pi's local config.",
+      liveFail: "Couldn't remove this login from local config, so it was not deleted.",
       toastOther: "Moved to trash. Local config was not changed.",
       dialogMissing: "This login is no longer in the list and will be removed from the connection pool.",
       confirmMissing: "Remove from connection pool",

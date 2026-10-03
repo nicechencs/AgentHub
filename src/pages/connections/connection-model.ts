@@ -211,7 +211,7 @@ export function liveAuthImportGate(
   }
   return {
     enabled: false,
-    reason: probe.summary || (t ? t('connections.list.noOauthToImport') : '没有找到可以导入的官方登录'),
+    reason: t ? t('connections.list.noOauthToImport') : '没有找到可以导入的官方登录',
   };
 }
 
@@ -256,7 +256,7 @@ export function liveApiKeyImportGate(
   }
   return {
     enabled: false,
-    reason: probe.summary || (t ? t('connections.list.noApiKeyToImport') : '没有找到可以导入的 API Key'),
+    reason: t ? t('connections.list.noApiKeyToImport') : '没有找到可以导入的 API Key',
   };
 }
 

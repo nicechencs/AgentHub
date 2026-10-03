@@ -150,11 +150,12 @@ describe('connections layout wiring', () => {
     expect(page).toContain('handleRemoveFromCatalog(detailTicket)');
   });
 
-  it('uses Pi-specific deletion copy because deleting the current provider changes live config immediately', () => {
+  it('uses Pi-specific deletion copy because deleting the current login changes live config immediately', () => {
     const page = source('index.tsx');
-    expect(page).toContain('const deleteIsCurrentPiProvider = Boolean(');
+    expect(page).toContain('const deleteClearsPiLive = Boolean(');
     expect(page).toContain("t('connections.delete.dialogPiCurrent')");
-    expect(page).toContain('!deleteIsCurrentPiProvider');
+    expect(page).toContain('!deleteClearsPiLive');
+    expect(page).not.toContain('deleteIsCurrentPiProvider');
   });
 
   it('keeps live config chrome to the path and folder button; hint is hover-only', () => {

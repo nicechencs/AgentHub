@@ -981,13 +981,12 @@ export default function ConnectionsPage() {
   const deleteIsCurrent = deleteTicket
     ? extrasForTicket(deleteTicket)?.isCurrent === true
     : false;
-  const deleteIsCurrentPiProvider = Boolean(
+  const deleteClearsPiLive = Boolean(
     deleteTicket
     && deleteTicket.agentId === 'pi'
-    && deleteTicket.sourceKind === 'provider'
     && deleteIsCurrent,
   );
-  const deleteSwitchTargets = deleteTicket && deleteIsCurrent && !deleteIsCurrentPiProvider && wallet
+  const deleteSwitchTargets = deleteTicket && deleteIsCurrent && !deleteClearsPiLive && wallet
     ? deleteCurrentSwitchTargets(
       deleteTicket,
       wallet.tickets,
@@ -1247,7 +1246,7 @@ export default function ConnectionsPage() {
             <DialogTitle>{t('connections.delete.title')}</DialogTitle>
             <DialogDescription>
               {deleteTicket
-                ? `${deleteTicket.label} · ${deleteIsCurrentPiProvider
+                ? `${deleteTicket.label} · ${deleteClearsPiLive
                   ? t('connections.delete.dialogPiCurrent')
                   : deleteConnectionDialogDescription({
                       isCurrent: deleteIsCurrent,

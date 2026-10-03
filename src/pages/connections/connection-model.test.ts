@@ -248,6 +248,52 @@ describe('connection-model', () => {
     );
   });
 
+  it('never surfaces English adapter probe summaries on the import confirm gate', () => {
+    expect(
+      liveAuthImportGate(
+        { agentId: 'pi', kind: 'oauth', hasCredentials: true },
+        false,
+        'pi',
+      ),
+    ).toEqual({ enabled: true, reason: '' });
+    expect(
+      liveAuthImportGate(
+        { agentId: 'pi', summary: 'no auth.json', hasCredentials: false },
+        false,
+        'pi',
+      ).reason,
+    ).toBe('没有找到可以导入的官方登录');
+    expect(
+      liveAuthImportGate(
+        {
+          agentId: 'pi',
+          summary: 'auth.json present but credentials could not be classified',
+          hasCredentials: false,
+        },
+        false,
+        'pi',
+      ).reason,
+    ).toBe('没有找到可以导入的官方登录');
+    expect(
+      liveApiKeyImportGate(
+        { agentId: 'pi', summary: 'no auth.json', hasCredentials: false },
+        false,
+        'pi',
+      ).reason,
+    ).toBe('没有找到可以导入的 API Key');
+    expect(
+      liveApiKeyImportGate(
+        {
+          agentId: 'pi',
+          summary: 'auth.json present but credentials could not be classified',
+          hasCredentials: false,
+        },
+        false,
+        'pi',
+      ).reason,
+    ).toBe('没有找到可以导入的 API Key');
+  });
+
   it('only enables current-login import for credentialed OAuth/file-auth probes', () => {
     expect(liveAuthImportGate(undefined, true, 'claude')).toEqual({
       enabled: false,

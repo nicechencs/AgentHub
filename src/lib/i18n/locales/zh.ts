@@ -2199,6 +2199,7 @@ export const zh = {
       toastCurrent: "已移入回收站。本机仍在用这份登录，直到你切换到别的登录。",
       dialogPiCurrent: "会移入回收站，并立即从 Pi 的本机配置移除。Pi 不会继续使用这份连接。",
       toastPiCurrent: "已移入回收站，并已从 Pi 的本机配置移除。",
+      liveFail: "没能从本机配置里移除这份登录，所以没有删除它。",
       toastOther: "已移入回收站；本机配置未修改。",
       dialogMissing: "这份登录已不在列表中，会从连接池移除。",
       confirmMissing: "从连接池移除",
