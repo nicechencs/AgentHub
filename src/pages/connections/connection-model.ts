@@ -173,8 +173,9 @@ export type LiveAuthImportGate = {
 
 /**
  * Import-current-login is intentionally stricter than generic auth probing:
- * only OAuth/file-auth material can be imported as an Account. API keys and
- * opaque desktop login state must not be mislabeled as OAuth.
+ * only OAuth/file-auth material can be imported as an Account. Pi `mixed`
+ * (oauth + API key in the same file) is importable because oauth is present.
+ * API keys and opaque desktop login state must not be mislabeled as OAuth.
  */
 export function liveAuthImportGate(
   probe: LiveAuthProbeLike | null | undefined,
@@ -200,7 +201,7 @@ export function liveAuthImportGate(
 
   const kind = probe.kind?.trim().toLowerCase() ?? '';
   const isFileAuth = kind === 'file-auth' || kind === 'file-auth.json';
-  if ((kind === 'oauth' || isFileAuth) && probe.hasCredentials === true) {
+  if ((kind === 'oauth' || isFileAuth || kind === 'mixed') && probe.hasCredentials === true) {
     return { enabled: true, reason: '' };
   }
   if (kind === 'api_key' || kind === 'api-key' || kind === 'apikey') {
@@ -211,7 +212,7 @@ export function liveAuthImportGate(
   }
   return {
     enabled: false,
-    reason: probe.summary || (t ? t('connections.list.noOauthToImport') : '没有找到可以导入的官方登录'),
+    reason: t ? t('connections.list.noOauthToImport') : '没有找到可以导入的官方登录',
   };
 }
 
@@ -256,7 +257,7 @@ export function liveApiKeyImportGate(
   }
   return {
     enabled: false,
-    reason: probe.summary || (t ? t('connections.list.noApiKeyToImport') : '没有找到可以导入的 API Key'),
+    reason: t ? t('connections.list.noApiKeyToImport') : '没有找到可以导入的 API Key',
   };
 }
 
@@ -349,7 +350,7 @@ export function liveAuthCoexistenceNotice(
   }
 
   if (agentId === 'pi' || kind === 'mixed') {
-    return t ? t('connections.list.coexistPi') : 'Pi 里同时有 API Key 和官方登录。导入会按服务商分行，不会猜一个当前账号。';
+    return t ? t('connections.list.coexistPi') : 'Pi 里同时有 API Key 和官方登录。导入会按服务商分行，不会猜一份当前登录。';
   }
   if (agentId === 'claude' && isApiKeyLiveAuthKind(kind) && alsoHasOAuth) {
     return t
@@ -372,6 +373,50 @@ export function liveAuthCoexistenceNotice(
       : '这台电脑上同时有 API Key 和 ChatGPT 登录。导入会收下现在正在用的那一份。';
   }
   return t ? t('connections.list.coexistGeneric') : GENERIC_LIVE_AUTH_COEXISTENCE_NOTICE;
+}
+
+/** Visible copy for the import dialog: confirm, blocked reason, and coexistence must agree. */
+export type LiveImportDialogLines = {
+  confirmEnabled: boolean;
+  blockedReason: string;
+  coexistenceLine: string | null;
+};
+
+export function liveImportDialogLines(
+  probe: LiveAuthProbeLike | null | undefined,
+  loading: boolean,
+  agentId: AgentKey,
+  t?: TranslateFn,
+): LiveImportDialogLines {
+  const mode = liveImportDialogMode(probe);
+  const gate = mode === 'api-key'
+    ? liveApiKeyImportGate(probe, loading, agentId, t)
+    : liveAuthImportGate(probe, loading, agentId, t);
+  if (!gate.enabled) {
+    return {
+      confirmEnabled: false,
+      blockedReason: gate.reason,
+      coexistenceLine: null,
+    };
+  }
+  return {
+    confirmEnabled: true,
+    blockedReason: '',
+    coexistenceLine: liveAuthCoexistenceNotice(probe, agentId, t),
+  };
+}
+
+/**
+ * Success copy that says the other on-disk login was left behind.
+ * Pi `mixed` imports every provider, so that sentence would be false.
+ */
+export function importCoexistenceLeavesSibling(
+  probe: LiveAuthProbeLike | null | undefined,
+  agentId: AgentKey,
+): boolean {
+  if (!liveAuthCoexistenceNotice(probe, agentId)) return false;
+  if (agentId === 'pi' || liveAuthProbeKind(probe) === 'mixed') return false;
+  return true;
 }
 
 /**

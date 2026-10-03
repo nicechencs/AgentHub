@@ -7,6 +7,7 @@ import type { TicketView } from '@/lib/backend/contracts/ticket';
 import {
   deleteConnectionTicket,
   describeProviderSwitchError,
+  describePiLiveDeleteError,
   describePiProviderActionError,
   removeCatalogTicket,
   SWITCH_WROTE_LIVE,
@@ -185,6 +186,23 @@ describe('switch toast copy', () => {
     expect(api.undoSwitchAccount).not.toHaveBeenCalled();
   });
 
+  it('deletes a current Pi official login through the account path, not cancel-connect', async () => {
+    vi.resetAllMocks();
+    api.deleteAccount.mockResolvedValue(undefined);
+    const current = ticket({
+      id: 'account:pi-oauth',
+      sourceKind: 'account',
+      sourceId: 'pi-oauth',
+      credentialClass: 'oauth',
+    });
+
+    await deleteConnectionTicket(current, { isCurrent: true }, actionApi());
+
+    expect(api.deleteAccount).toHaveBeenCalledWith('pi', 'pi-oauth');
+    expect(api.disconnectPiProvider).not.toHaveBeenCalled();
+    expect(api.deleteProvider).not.toHaveBeenCalled();
+  });
+
   it('deletes a current Pi provider from live config and an old Pi row from the pool only', async () => {
     vi.resetAllMocks();
     api.disconnectPiProvider.mockResolvedValue(undefined);
@@ -271,6 +289,23 @@ describe('switch toast copy', () => {
     expect(api.disconnectPiProvider).toHaveBeenCalledTimes(2);
     expect(poolReload).toHaveBeenCalledTimes(1);
     expect(loadWallet).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Pi live-delete errors', () => {
+  it('keeps a Chinese backend explanation and hides English internal summaries', () => {
+    expect(describePiLiveDeleteError(
+      new Error('没能把这个登录从 Pi 本机正在用的配置里移除，所以没有删除它：config.write'),
+      tZh,
+    )).toContain('所以没有删除它');
+    expect(describePiLiveDeleteError(
+      new Error('no auth.json [account.delete.live]'),
+      tZh,
+    )).toBe('没能从本机配置里移除这份登录，所以没有删除它。');
+    expect(describePiLiveDeleteError(
+      new Error('auth.json present but credentials could not be classified'),
+      tEn,
+    )).toBe("Couldn't remove this login from local config, so it was not deleted.");
   });
 });
 

@@ -74,11 +74,11 @@ import { usePiDefaultModel } from './use-pi-default-model';
 import {
   deleteConnectionDialogDescription,
   deleteCurrentSwitchTargets,
-  liveAuthCoexistenceNotice,
   liveAuthImportGate,
-  liveApiKeyImportGate,
   liveAuthDiscoveryKind,
   liveImportAction,
+  importCoexistenceLeavesSibling,
+  liveImportDialogLines,
   liveImportDialogMode,
 } from './connection-model';
 import {
@@ -557,10 +557,9 @@ export default function ConnectionsPage() {
           await refreshQuota(account.agentId, acc.id).catch(() => undefined);
         }
         if (refreshGen.current !== generation) return;
-        const coexistenceNotice = liveAuthCoexistenceNotice(probe, account.agentId, t);
         toast({
           title: t('connections.import.toastOk'),
-          description: coexistenceNotice
+          description: importCoexistenceLeavesSibling(probe, account.agentId)
             ? t('connections.import.toastOkCoexist', { label: acc.label })
             : t('connections.import.toastOkDesc', { label: acc.label }),
           variant: 'success',
@@ -718,22 +717,13 @@ export default function ConnectionsPage() {
     [inspect.open],
   );
 
-  const importCoexistenceNotice = liveAuthCoexistenceNotice(importLiveProbe, addAgentId, t);
-  const oauthImportGate = liveAuthImportGate(
-    importLiveProbe,
-    importProbeLoading,
-    addAgentId,
-    t,
-  );
-  const apiKeyImportGate = liveApiKeyImportGate(
-    importLiveProbe,
-    importProbeLoading,
-    addAgentId,
-    t,
-  );
   const importDialogMode = liveImportDialogMode(importLiveProbe);
-  const activeImportGate = importDialogMode === 'api-key' ? apiKeyImportGate : oauthImportGate;
-
+  const importDialogLines = liveImportDialogLines(
+    importLiveProbe,
+    importProbeLoading,
+    addAgentId,
+    t,
+  );
   const discoveryKind = liveAuthDiscoveryKind({
     poolState: pool.state,
     probe: discoveryProbe?.agentId === discoveryAgentId ? discoveryProbe : null,
@@ -750,8 +740,7 @@ export default function ConnectionsPage() {
     && discoveryKind !== null;
 
   const confirmImportLogin = async () => {
-    if (!activeImportGate.enabled) return;
-    const coexistenceNotice = importCoexistenceNotice;
+    if (!importDialogLines.confirmEnabled) return;
     setImportingAccount(true);
     try {
       let label: string;
@@ -763,7 +752,7 @@ export default function ConnectionsPage() {
         label = report.account?.label ?? '';
       }
       setLoginImportOpen(false);
-      const baseDescription = coexistenceNotice
+      const baseDescription = importCoexistenceLeavesSibling(importLiveProbe, addAgentId)
         ? t('connections.import.toastOkCoexist', { label })
         : t('connections.import.toastOkDesc', { label });
       if (report) {
@@ -981,13 +970,12 @@ export default function ConnectionsPage() {
   const deleteIsCurrent = deleteTicket
     ? extrasForTicket(deleteTicket)?.isCurrent === true
     : false;
-  const deleteIsCurrentPiProvider = Boolean(
+  const deleteClearsPiLive = Boolean(
     deleteTicket
     && deleteTicket.agentId === 'pi'
-    && deleteTicket.sourceKind === 'provider'
     && deleteIsCurrent,
   );
-  const deleteSwitchTargets = deleteTicket && deleteIsCurrent && !deleteIsCurrentPiProvider && wallet
+  const deleteSwitchTargets = deleteTicket && deleteIsCurrent && !deleteClearsPiLive && wallet
     ? deleteCurrentSwitchTargets(
       deleteTicket,
       wallet.tickets,
@@ -1156,19 +1144,11 @@ export default function ConnectionsPage() {
           {importProbeLoading ? (
             <p className="text-xs text-muted">{t('connections.import.probing')}</p>
           ) : null}
-          {!importProbeLoading && !activeImportGate.enabled && activeImportGate.reason ? (
-            <Notice tone="warning">{activeImportGate.reason}</Notice>
+          {!importProbeLoading && importDialogLines.blockedReason ? (
+            <Notice tone="warning">{importDialogLines.blockedReason}</Notice>
           ) : null}
-          {importCoexistenceNotice ? (
-            <Notice tone="warning">
-              <details>
-                <summary className="cursor-pointer">
-                  {t('connections.list.coexistSummary')}{' '}
-                  <span className="text-muted">{t('connections.list.coexistDetails')}</span>
-                </summary>
-                <p className="mt-1">{importCoexistenceNotice}</p>
-              </details>
-            </Notice>
+          {importDialogLines.coexistenceLine ? (
+            <Notice tone="warning">{importDialogLines.coexistenceLine}</Notice>
           ) : null}
           <DialogFooter>
             <Button
@@ -1178,9 +1158,9 @@ export default function ConnectionsPage() {
             >
               {t('common.cancel')}
             </Button>
-            <Hint label={!activeImportGate.enabled ? activeImportGate.reason : undefined}>
+            <Hint label={!importDialogLines.confirmEnabled ? importDialogLines.blockedReason : undefined}>
             <Button
-              disabled={importingAccount || !activeImportGate.enabled}
+              disabled={importingAccount || !importDialogLines.confirmEnabled}
               onClick={() => void confirmImportLogin()}
             >
               {importingAccount
@@ -1247,7 +1227,7 @@ export default function ConnectionsPage() {
             <DialogTitle>{t('connections.delete.title')}</DialogTitle>
             <DialogDescription>
               {deleteTicket
-                ? `${deleteTicket.label} · ${deleteIsCurrentPiProvider
+                ? `${deleteTicket.label} · ${deleteClearsPiLive
                   ? t('connections.delete.dialogPiCurrent')
                   : deleteConnectionDialogDescription({
                       isCurrent: deleteIsCurrent,

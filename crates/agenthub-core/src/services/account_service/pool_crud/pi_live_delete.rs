@@ -1,7 +1,9 @@
 //! Deleting a Pi login also takes its own entry out of Pi's auth.json, so the
-//! next import or background sync does not bring it back. Only the one
-//! provider key that still holds the same login is removed; anything else in
-//! the file is left as it is.
+//! next import or background sync does not bring it back. The auth.json key
+//! and the Pi default are snapshotted first, then mutated, then the row is
+//! removed — the same compensating saga as cancelling a Pi provider. Only the
+//! one provider key that still holds the same login is removed; anything else
+//! in the file is left as it is.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -13,6 +15,7 @@ use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{authorization_is_route_pool_home, Account, AccountKind, AgentId};
 use crate::utils::agent_lock::AgentWriteLock;
+use crate::utils::atomic::with_restored_files;
 
 use super::super::surface::{
     accounts_same_authorization, accounts_same_oauth_identity, same_live_slot,
@@ -32,27 +35,34 @@ thread_local! {
 
 impl AccountService {
     /// Move a Pi login to the recycle bin. When auth.json still holds the same
-    /// login under the row's provider key, that key is removed first. Only
-    /// then is the Pi live lock taken (with a short wait); rows that have
-    /// nothing to clear never touch the lock or the file.
+    /// login under the row's provider key, that key and the Pi default are
+    /// updated inside a file snapshot, then the row is removed. Same pattern
+    /// as cancelling a Pi provider: a later failure restores the snapshotted
+    /// files, so a half-finished delete cannot leave auth.json or the default
+    /// already changed.
     ///
-    /// If the database step fails after the key was removed, only that key is
-    /// put back, and only while it is still missing, so anything Pi wrote in
-    /// the meantime is kept. A failed file write keeps the row.
+    /// Rows that have nothing to clear never touch the live lock or the file.
+    /// A failed file write keeps the row.
     pub(super) fn delete_pi_account_with_live(&self, account: &Account) -> Result<()> {
+        let remaining = remaining_pi_slots_except(self, &account.id)?;
         let delete_row = || self.connections.delete_account(&account.id, AgentId::Pi);
+        let finish_without_live = || -> Result<()> {
+            delete_row()?;
+            warn_pi_default_after_delete(&remaining);
+            Ok(())
+        };
         let Some(provider) = pi_auth_slot_for_delete(account) else {
-            return delete_row();
+            return finish_without_live();
         };
         let Some((adapter, auth_path)) = self.pi_live_auth() else {
-            return delete_row();
+            return finish_without_live();
         };
         // Cheap check without the lock: most deletes have nothing to clear.
         if self
             .owned_pi_auth_entry(adapter.as_ref(), account, &provider, &auth_path)?
             .is_none()
         {
-            return delete_row();
+            return finish_without_live();
         }
 
         let _lock = self.wait_for_pi_live_lock()?;
@@ -60,42 +70,31 @@ impl AccountService {
         let Some(expected) =
             self.owned_pi_auth_entry(adapter.as_ref(), account, &provider, &auth_path)?
         else {
-            return delete_row();
+            return finish_without_live();
         };
-        let removed = remove_owned_entry(&auth_path, &provider, &expected)?;
-        if removed {
-            tracing::info!(
-                module = targets::ACCOUNT,
-                op = "pi_delete_live",
-                agent = "pi",
-                provider = provider.as_str(),
-                account_id = account.id.as_str(),
-                "removed the deleted login from Pi auth.json"
-            );
-        }
-        let Err(error) = delete_row() else {
-            return Ok(());
-        };
-        if !removed {
-            return Err(error);
-        }
-        match pi_auth::restore_auth_entry_if_missing(&auth_path, &provider, &expected) {
-            Ok(put_back) => {
-                tracing::warn!(
+        let paths = pi_delete_restore_paths(adapter.as_ref(), &auth_path);
+        let path_refs: Vec<_> = paths.iter().map(PathBuf::as_path).collect();
+        match with_restored_files(&path_refs, || {
+            let removed = remove_owned_entry(&auth_path, &provider, &expected)?;
+            if removed {
+                tracing::info!(
                     module = targets::ACCOUNT,
                     op = "pi_delete_live",
                     agent = "pi",
                     provider = provider.as_str(),
-                    put_back,
-                    error_code = error.code(),
-                    "login delete failed after clearing Pi auth.json; entry put back if still missing"
+                    account_id = account.id.as_str(),
+                    "removed the deleted login from Pi auth.json"
                 );
-                Err(error)
             }
-            Err(restore) => Err(AppError::message(
-                "config.write",
-                format!("{error}; restore failed: {restore}"),
-            )),
+            crate::adapters::pi::reconcile_pi_default_for_remaining_slots(&remaining)
+                .map_err(live_clear_error)?;
+            delete_row()?;
+            Ok(())
+        }) {
+            Ok(()) => Ok(()),
+            Err(error) if error.code() == "account.delete.live" => Err(error),
+            Err(error) if error.code() == "config.write" => Err(live_clear_error(error)),
+            Err(error) => Err(error),
         }
     }
 
@@ -220,4 +219,57 @@ fn live_clear_error(error: AppError) -> AppError {
         "account.delete.live",
         format!("没能把这个登录从 Pi 本机正在用的配置里移除，所以没有删除它：{error}"),
     )
+}
+
+/// Provider slots that will still have a connection-page row after `except_id`
+/// is removed. Used to pin the Pi default before the database step, so a
+/// failed row delete can restore both auth.json and the default.
+fn remaining_pi_slots_except(svc: &AccountService, except_id: &str) -> Result<Vec<String>> {
+    let mut slots = Vec::new();
+    for row in svc.repo.list(Some(AgentId::Pi))? {
+        if row.id == except_id {
+            continue;
+        }
+        let Some(slot) = crate::adapters::pi::pi_slot_from_account(&row.to_live()) else {
+            continue;
+        };
+        if !slots.iter().any(|existing| existing == &slot) {
+            slots.push(slot);
+        }
+    }
+    Ok(slots)
+}
+
+fn warn_pi_default_after_delete(slots: &[String]) {
+    if let Err(error) = crate::adapters::pi::reconcile_pi_default_for_remaining_slots(slots) {
+        tracing::warn!(
+            module = targets::ACCOUNT,
+            op = "pi_default_after_delete",
+            error = %error,
+            "failed to update Pi default model after removing a login"
+        );
+    }
+}
+
+/// Snapshot auth.json plus the settings/models files the default reconcile
+/// writes. Adapter live paths cover production; `pi_config_dir` covers the
+/// env-overridden directory used when the registered adapter is a test fake.
+fn pi_delete_restore_paths(adapter: &dyn AgentAdapter, auth_path: &Path) -> Vec<PathBuf> {
+    let mut paths = adapter.live_backup_paths();
+    let mut push = |path: PathBuf| {
+        if !paths.iter().any(|existing| existing == &path) {
+            paths.push(path);
+        }
+    };
+    if let Some(dir) = auth_path.parent() {
+        push(dir.join("settings.json"));
+        push(dir.join("models.json"));
+        push(dir.join("auth.json"));
+    }
+    if let Ok(dir) = pi_auth::pi_config_dir() {
+        push(dir.join("settings.json"));
+        push(dir.join("models.json"));
+        push(dir.join("auth.json"));
+    }
+    paths
 }

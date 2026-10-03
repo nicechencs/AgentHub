@@ -145,6 +145,21 @@ export function describePiProviderActionError(error: unknown, t?: TranslateFn): 
     : '无法取消接入，请重试';
 }
 
+const PI_LIVE_DELETE_FAIL_FALLBACK = '没能从本机配置里移除这份登录，所以没有删除它。';
+
+/** Delete of an in-use Pi login: keep the explanation in plain language. */
+export function describePiLiveDeleteError(error: unknown, t?: TranslateFn): string {
+  const code = guiErrorCode(error)?.toLowerCase();
+  if (code === 'provider.pi.live_conflict' || code === 'provider.conflict') {
+    return t
+      ? t('connections.list.disconnectPiProviderConflict')
+      : 'Pi 的本机配置已改变，请刷新连接页面后重试。';
+  }
+  const text = switchErrorText(error).replace(/\s+\[[^\]]+\]\s*$/, '').trim();
+  if (/[\u4e00-\u9fff]/.test(text)) return text;
+  return t ? t('connections.delete.liveFail') : PI_LIVE_DELETE_FAIL_FALLBACK;
+}
+
 /**
  * Connections 页切换当前登录与删除确认。
  * 世代丢弃、same-agent switch / other-agent bind、回收站删除语义未改。
@@ -272,7 +287,7 @@ export function useConnectionPageActions(input: {
     if (deletePendingRef.current) return;
     deletePendingRef.current = true;
     const extras = extrasForTicket(deleteTicket);
-    const isCurrentPiProvider = isPiProviderTicket(deleteTicket) && extras?.isCurrent === true;
+    const clearsPiLive = deleteTicket.agentId === 'pi' && extras?.isCurrent === true;
     setDeleteBusy(true);
     try {
       await deleteConnectionTicket(deleteTicket, extras);
@@ -281,7 +296,7 @@ export function useConnectionPageActions(input: {
       setDeleteTicket(null);
       toast({
         title: t('connections.delete.toastOk'),
-        description: isCurrentPiProvider
+        description: clearsPiLive
           ? t('connections.delete.toastPiCurrent')
           : deleteConnectionToastDescription({ isCurrent: extras?.isCurrent === true }, t),
         variant: 'success',
@@ -295,8 +310,8 @@ export function useConnectionPageActions(input: {
       });
       toast({
         title: t('connections.delete.toastFail'),
-        description: isCurrentPiProvider
-          ? describePiProviderActionError(e, t)
+        description: clearsPiLive
+          ? describePiLiveDeleteError(e, t)
           : e instanceof Error ? e.message : String(e),
         variant: 'danger',
       });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { connectSourceKey, type ConnectionUsage, type ConnectionUsageMap } from '@/lib/connect-flow/types';
+import { createTranslator } from '@/lib/i18n';
 import type { Account, AgentKey, Provider } from '@/lib/types';
 import {
   accountToEntry,
@@ -18,10 +19,14 @@ import {
   liveAuthDiscoveryKind,
   liveAuthImportGate,
   liveImportAction,
+  importCoexistenceLeavesSibling,
+  liveImportDialogLines,
   liveImportDialogMode,
   mergeConnectionEntries,
   providerToEntry,
 } from './connection-model';
+
+const zh = createTranslator('zh');
 
 function acc(partial: Partial<Account> & Pick<Account, 'id' | 'kind' | 'label'>): Account {
   return {
@@ -248,6 +253,52 @@ describe('connection-model', () => {
     );
   });
 
+  it('never surfaces English adapter probe summaries on the import confirm gate', () => {
+    expect(
+      liveAuthImportGate(
+        { agentId: 'pi', kind: 'oauth', hasCredentials: true },
+        false,
+        'pi',
+      ),
+    ).toEqual({ enabled: true, reason: '' });
+    expect(
+      liveAuthImportGate(
+        { agentId: 'pi', summary: 'no auth.json', hasCredentials: false },
+        false,
+        'pi',
+      ).reason,
+    ).toBe('没有找到可以导入的官方登录');
+    expect(
+      liveAuthImportGate(
+        {
+          agentId: 'pi',
+          summary: 'auth.json present but credentials could not be classified',
+          hasCredentials: false,
+        },
+        false,
+        'pi',
+      ).reason,
+    ).toBe('没有找到可以导入的官方登录');
+    expect(
+      liveApiKeyImportGate(
+        { agentId: 'pi', summary: 'no auth.json', hasCredentials: false },
+        false,
+        'pi',
+      ).reason,
+    ).toBe('没有找到可以导入的 API Key');
+    expect(
+      liveApiKeyImportGate(
+        {
+          agentId: 'pi',
+          summary: 'auth.json present but credentials could not be classified',
+          hasCredentials: false,
+        },
+        false,
+        'pi',
+      ).reason,
+    ).toBe('没有找到可以导入的 API Key');
+  });
+
   it('only enables current-login import for credentialed OAuth/file-auth probes', () => {
     expect(liveAuthImportGate(undefined, true, 'claude')).toEqual({
       enabled: false,
@@ -315,6 +366,25 @@ describe('connection-model', () => {
         'kiro',
       ),
     ).toEqual({ enabled: true, reason: '' });
+    expect(
+      liveAuthImportGate(
+        {
+          agentId: 'pi',
+          kind: 'mixed',
+          hasCredentials: true,
+          alsoPresent: ['oauth', 'api_key'],
+        },
+        false,
+        'pi',
+      ),
+    ).toEqual({ enabled: true, reason: '' });
+    expect(
+      liveAuthImportGate(
+        { agentId: 'pi', kind: 'mixed', hasCredentials: false },
+        false,
+        'pi',
+      ).enabled,
+    ).toBe(false);
   });
 
   it('does not authorize an import while the selected agent has changed', () => {
@@ -459,7 +529,93 @@ describe('connection-model', () => {
     it('still returns the pi notice for kind mixed without alsoPresent', () => {
       const piMixed = { agentId: 'pi' as const, kind: 'mixed', hasCredentials: true };
       expect(liveAuthCoexistenceNotice(piMixed, 'pi')).toMatch(/服务商|官方登录/);
-      expect(liveAuthImportGate(piMixed, false, 'pi').enabled).toBe(false);
+      expect(liveAuthImportGate(piMixed, false, 'pi').enabled).toBe(true);
+    });
+  });
+
+  describe('liveImportDialogLines', () => {
+    it('enables Pi mixed with credentials and shows only the Pi coexistence sentence', () => {
+      const lines = liveImportDialogLines(
+        {
+          agentId: 'pi',
+          kind: 'mixed',
+          hasCredentials: true,
+          alsoPresent: ['oauth', 'api_key'],
+        },
+        false,
+        'pi',
+        zh,
+      );
+      expect(lines.confirmEnabled).toBe(true);
+      expect(lines.blockedReason).toBe('');
+      expect(lines.coexistenceLine).toMatch(/服务商/);
+      expect(lines.coexistenceLine).not.toContain('没有找到可以导入的官方登录');
+      expect(lines.coexistenceLine).not.toContain('只导入正在用的那一份');
+      expect(lines.blockedReason).not.toContain('没有找到可以导入的官方登录');
+    });
+
+    it('hides import-will-happen coexistence when confirm is disabled', () => {
+      const desktop = liveImportDialogLines(
+        {
+          agentId: 'claude',
+          kind: 'desktop-login',
+          hasCredentials: true,
+          alsoPresent: ['oauth'],
+        },
+        false,
+        'claude',
+        zh,
+      );
+      expect(desktop.confirmEnabled).toBe(false);
+      expect(
+        desktop.coexistenceLine == null
+        || !desktop.coexistenceLine.includes('只导入正在用的那一份'),
+      ).toBe(true);
+      expect(desktop.blockedReason).not.toContain('只导入正在用的那一份');
+
+      const mixedEmpty = liveImportDialogLines(
+        { agentId: 'pi', kind: 'mixed', hasCredentials: false },
+        false,
+        'pi',
+        zh,
+      );
+      expect(mixedEmpty.confirmEnabled).toBe(false);
+      expect(
+        mixedEmpty.coexistenceLine == null
+        || !mixedEmpty.coexistenceLine.includes('只导入正在用的那一份'),
+      ).toBe(true);
+      expect(mixedEmpty.blockedReason).not.toContain('只导入正在用的那一份');
+    });
+
+    it('keeps the agent-specific coexistence notice when confirm is enabled', () => {
+      const lines = liveImportDialogLines(
+        {
+          agentId: 'codex',
+          kind: 'oauth',
+          hasCredentials: true,
+          alsoPresent: ['api_key'],
+        },
+        false,
+        'codex',
+        zh,
+      );
+      expect(lines.confirmEnabled).toBe(true);
+      expect(lines.coexistenceLine).toBe(zh('connections.list.coexistCodex'));
+      expect(lines.coexistenceLine).not.toBe(zh('connections.list.coexistSummary'));
+      expect(importCoexistenceLeavesSibling(
+        { agentId: 'codex', kind: 'oauth', hasCredentials: true, alsoPresent: ['api_key'] },
+        'codex',
+      )).toBe(true);
+    });
+
+    it('does not say Pi left the other login behind when mixed import writes every provider', () => {
+      const probe = {
+        agentId: 'pi' as const,
+        kind: 'mixed',
+        hasCredentials: true,
+        alsoPresent: ['oauth', 'api_key'],
+      };
+      expect(importCoexistenceLeavesSibling(probe, 'pi')).toBe(false);
     });
   });
 

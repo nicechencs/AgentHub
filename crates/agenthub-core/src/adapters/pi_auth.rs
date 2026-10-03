@@ -190,6 +190,7 @@ pub(crate) fn remove_auth_entry_if_unchanged(
 
 /// Put `entry` back under `provider` only while that key is missing. Other
 /// keys are not touched. Returns whether the key was written.
+#[cfg(test)]
 pub(crate) fn restore_auth_entry_if_missing(
     path: &Path,
     provider: &str,
