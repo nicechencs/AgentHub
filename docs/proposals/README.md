@@ -28,6 +28,7 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 | [可选本机命令护栏](chat-tool-guard.md) | 未落地 | 占位，暂不实现。 |
 | [路由官方扩展与独立运行](adapter-sidecar.md) | 切片已落地 | 如何固定注册官方扩展、分离运行与登录职责，并以 Go 小范围试点验证进程隔离、写入补偿及回退？隔离 Messages 切片已有，不是 live sidecar；整份 A 未通过，B–F 与默认网关切换未授权。首期仍依赖 core 存活，完整后台另设门槛。 |
 | [路由官方扩展 A 阶段纸面契约](route-extension-phase-a-contract.md) | 切片已落地 | A 阶段窄运行接口、active/prepared、锁顺序、generation 与撤销水位仍是纸面契约，不能当现行接口。已授权的只是隔离目录下 Handshake / Status / AcquireOrRenewOwner 与合成 Key 的 Messages；A 未通过，未授权进入 B。 |
+| [官方扩展与 Go 路由切片深度评估](official-extension-go-slice-review.md) | 评估已落地 | 2026-10-03 go / no-go：对照开源 sidecar / 进程插件模式后，**no-go** B–F、默认网关切换与插件平台；A 门槛仍缺。过时「不写 Go」表述见 [归档](../archive/route-extension-a-stage-paper-freeze.md)。 |
 | [tray-background-modes.md](tray-background-modes.md) | 部分落地 | 关窗后能否释放 WebView 内存，而不改变路由归属和退出语义？关窗策略已抽到 `src-tauri/src/window_policy.rs`。 |
 | [模块化与边界收紧](modularity.md) | 部分落地 | 如何先收紧模块接口，再选择有明确收益的官方扩展，而不把所有功能一次变成插件平台？ |
 | [接入 Kiro（kiro-cli）](agent-kiro.md) | 大部分落地 | 剩 Skills / MCP。现行以 [STATUS](../STATUS.md) 为准。 |
