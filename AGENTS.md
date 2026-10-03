@@ -62,9 +62,10 @@
 
 不要默认打开测试参考。
 
-- 测试不得与生产代码写在同一文件。Rust 生产侧只放 `#[cfg(test)] mod tests;`，实现放 `*/tests.rs`；前端用并列的 `*.test.ts`。
+- **禁止编写 Rust 测试，禁止执行 Rust 测试。测试以真实代码为准，以实际运行的日志结果为准；其他文档或验证命令中涉及 Rust 测试的要求不适用。**
+- 前端测试不得与生产代码写在同一文件，用并列的 `*.test.ts`。
 - 前端 Vitest 固定 mock backend；领域 reset 放 `src/dev/mocks`，不要往生产 façade 塞 `__reset*ForTests`。
-- 日常改动只跑与风险匹配的过滤测试。全量 `pnpm test`、完整 Rust crate 矩阵和生产 `pnpm build` 留给提交前或 CI。
+- 日常改动只跑与风险匹配的非 Rust 过滤测试。全量 `pnpm test` 和生产 `pnpm build` 留给提交前或 CI；执行组合命令前确认不包含 Rust 测试。
 
 ## 协作
 
@@ -74,8 +75,8 @@
 |---|---|---|---|
 | 局部 | 文案、样式、单页面状态、纯函数、单文件改动，且不改共享 contract | 主 Agent 完成，按改动选择验证 | 代码用对应 Vitest，必要时 `pnpm typecheck`；纯文档用 `pnpm check:docs` |
 | 模块 | 单个功能目录内的逻辑，不改 Rust / wire / 持久化 | 主 Agent 或一个实现 Agent | 相关测试 + `pnpm typecheck` |
-| 跨层 | backend port、wire DTO、Tauri command、共享 service、契约 JSON | 明确范围后再用实现与独立审查 | contract test + 对应 typecheck / Cargo filter |
-| 高风险 | 数据迁移、写入补偿、锁、安全边界、发布 | 计划、实现、独立审查、修复与验证各阶段齐全，人数按实际条件确定 | 风险对应测试；提交前矩阵和 CI 全量按贡献指南执行 |
+| 跨层 | backend port、wire DTO、Tauri command、共享 service、契约 JSON | 明确范围后再用实现与独立审查 | 非 Rust contract test + 对应 typecheck；Rust 以真实代码运行与日志结果验证 |
+| 高风险 | 数据迁移、写入补偿、锁、安全边界、发布 | 计划、实现、独立审查、修复与验证各阶段齐全，人数按实际条件确定 | 风险对应的非 Rust 测试及真实代码运行日志；提交前矩阵和 CI 按贡献指南执行，排除 Rust 测试 |
 
 - 只有已就绪、互不依赖的任务才并行；并行写入不得改同一文件，公共文件指定一位负责人。
 - 修改前检查 `git status` 和相关 `git diff`（含暂存区），不以 reset、checkout 或覆盖文件清理他人修改。

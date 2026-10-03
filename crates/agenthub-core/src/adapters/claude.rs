@@ -10,16 +10,26 @@ use crate::services::adapter_route_constants::{
     ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV,
 };
 use crate::utils::atomic::atomic_write;
+use crate::utils::atomic::with_restored_files;
 use crate::utils::expiry::{is_expired, parse_expiry_epoch_secs};
 use crate::utils::paths::{agent_home, home_dir};
 use crate::utils::redact::mask_secret_preview;
 
+use super::adapter_trait::AgentConfigSnapshot;
 use super::{
-    api_key_live_account, auth_file_revision, detect_binary, inspect_auth_credentials,
-    oauth_auth_health, require_api_key, write_json_config, AgentAdapter,
+    api_key_live_account, auth_file_revision, auth_files_revision, detect_binary,
+    inspect_auth_credentials, oauth_auth_health, require_api_key, write_json_config, AgentAdapter,
 };
 
 pub struct ClaudeAdapter;
+
+/// Exact file state needed to compensate a Claude provider switch. This stays
+/// behind `AgentConfigSnapshot`'s opaque in-memory slot and is never persisted.
+#[derive(Clone)]
+struct ClaudeConfigSnapshot {
+    settings: Option<Vec<u8>>,
+    credentials: Option<Vec<u8>>,
+}
 
 /// Standalone install probe used by platform detectors (no full adapter required).
 pub(crate) fn detect_installation() -> DetectResult {
@@ -62,9 +72,129 @@ impl AgentAdapter for ClaudeAdapter {
         })
     }
 
+    fn capture_config_snapshot(&self) -> Result<AgentConfigSnapshot> {
+        let home = agent_home(AgentId::Claude)?;
+        let settings = read_regular_file_snapshot(&home.join("settings.json"), "settings")?;
+        let credentials =
+            read_regular_file_snapshot(&home.join(".credentials.json"), "credentials")?;
+        let config = AgentConfig {
+            agent: AgentId::Claude,
+            raw: match settings.as_deref() {
+                Some(bytes) => serde_json::from_slice(bytes)?,
+                None => serde_json::json!({}),
+            },
+        };
+        Ok(AgentConfigSnapshot::with_opaque(
+            config,
+            ClaudeConfigSnapshot {
+                settings,
+                credentials,
+            },
+        ))
+    }
+
+    fn validate_config_snapshot(&self, snapshot: &AgentConfigSnapshot) -> Result<()> {
+        let Some(expected) = snapshot.downcast_ref::<ClaudeConfigSnapshot>() else {
+            return Ok(());
+        };
+        let home = agent_home(AgentId::Claude)?;
+        let settings = read_regular_file_snapshot(&home.join("settings.json"), "settings")?;
+        let credentials =
+            read_regular_file_snapshot(&home.join(".credentials.json"), "credentials")?;
+        if settings != expected.settings || credentials != expected.credentials {
+            return Err(AppError::message(
+                "provider.live_conflict",
+                "live account changed while switching; retry the switch",
+            ));
+        }
+        Ok(())
+    }
+
     fn write_config(&self, config: &AgentConfig) -> Result<()> {
-        let path = agent_home(AgentId::Claude)?.join("settings.json");
-        write_json_config(&path, config)
+        let home = agent_home(AgentId::Claude)?;
+        let path = home.join("settings.json");
+        let credentials_path = home.join(".credentials.json");
+        if claude_settings_token(&config.raw).is_none() {
+            // OAuth remains authoritative when the incoming settings contain
+            // no API token. In particular, do not remove .credentials.json.
+            return write_json_config(&path, config);
+        }
+
+        // A macOS Keychain OAuth entry cannot be safely backed up or removed
+        // by this file-based writer. Fail before touching settings.json.
+        ensure_claude_oauth_file_apply_supported()?;
+        ensure_regular_or_missing(&path, "settings")?;
+        ensure_regular_or_missing(&credentials_path, "credentials")?;
+        with_restored_files(&[&path, &credentials_path], || {
+            write_json_config(&path, config)?;
+            if credentials_path.exists() {
+                ensure_regular_or_missing(&credentials_path, "credentials")?;
+                std::fs::remove_file(&credentials_path)?;
+                if credentials_path.exists() {
+                    return Err(AppError::message(
+                        "account.verify",
+                        "Claude .credentials.json was not removed after API config write",
+                    ));
+                }
+            }
+            Ok(())
+        })
+    }
+
+    fn requires_config_reapply(&self, config: &AgentConfig) -> Result<bool> {
+        if claude_settings_token(&config.raw).is_none() {
+            return Ok(false);
+        }
+        let path = agent_home(AgentId::Claude)?.join(".credentials.json");
+        match std::fs::symlink_metadata(path) {
+            Ok(metadata) if metadata.file_type().is_file() => Ok(true),
+            Ok(_) => Err(AppError::Unsupported(
+                "Claude credentials path is not a regular file; refusing to modify it".into(),
+            )),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn restore_config_snapshot(&self, snapshot: &AgentConfigSnapshot) -> Result<()> {
+        let Some(claude) = snapshot.downcast_ref::<ClaudeConfigSnapshot>() else {
+            // Never interpret ordinary settings as an opaque Claude snapshot.
+            return self.restore_config(&snapshot.config);
+        };
+        let home = agent_home(AgentId::Claude)?;
+        let settings_path = home.join("settings.json");
+        let credentials_path = home.join(".credentials.json");
+        ensure_regular_or_missing(&settings_path, "settings")?;
+        ensure_regular_or_missing(&credentials_path, "credentials")?;
+        let current_credentials = read_regular_file_snapshot(&credentials_path, "credentials")?;
+        if !credentials_rollback_is_safe(
+            claude.credentials.as_deref(),
+            current_credentials.as_deref(),
+        ) {
+            return Err(AppError::message(
+                "provider.live_conflict",
+                "Claude live login changed while rolling back; retry the switch",
+            ));
+        }
+        with_restored_files(&[&settings_path, &credentials_path], || {
+            let current_credentials = read_regular_file_snapshot(&credentials_path, "credentials")?;
+            if !credentials_rollback_is_safe(
+                claude.credentials.as_deref(),
+                current_credentials.as_deref(),
+            ) {
+                return Err(AppError::message(
+                    "provider.live_conflict",
+                    "Claude live login changed while rolling back; retry the switch",
+                ));
+            }
+            restore_file_snapshot(&settings_path, claude.settings.as_deref(), "settings")?;
+            restore_file_snapshot(
+                &credentials_path,
+                claude.credentials.as_deref(),
+                "credentials",
+            )?;
+            Ok(())
+        })
     }
 
     fn read_auth(&self) -> Result<AuthState> {
@@ -283,6 +413,7 @@ impl AgentAdapter for ClaudeAdapter {
 /// `home/.credentials.json` and does not re-enter `agent_home()`.
 pub(crate) fn claude_auth_state(home: &Path) -> Result<AuthState> {
     let settings_path = home.join("settings.json");
+    let credentials_path = home.join(".credentials.json");
     // Match read_account: an explicit settings token is the effective
     // auth mode even when stale OAuth credentials remain on disk.
     match read_claude_settings_token(&settings_path) {
@@ -294,7 +425,7 @@ pub(crate) fn claude_auth_state(home: &Path) -> Result<AuthState> {
                 has_credentials: true,
                 health: crate::models::AuthHealth::Configured,
                 source: Some("claude:settings.json".into()),
-                revision: auth_file_revision(&settings_path),
+                revision: auth_files_revision(&[&settings_path, &credentials_path]),
                 also_present: Vec::new(),
                 secret_hash: None,
             };
@@ -321,7 +452,6 @@ pub(crate) fn claude_auth_state(home: &Path) -> Result<AuthState> {
     }
     // Official OAuth: macOS Keychain first, then credentials file under
     // the given home (not a second `agent_home()` lookup).
-    let credentials_path = home.join(".credentials.json");
     if let Some(bundle) = read_claude_oauth_for_home(home)? {
         let mut metadata = inspect_auth_credentials(&bundle.body);
         metadata.access_expired = metadata.access_expired.or(Some(bundle.expired));
@@ -337,7 +467,7 @@ pub(crate) fn claude_auth_state(home: &Path) -> Result<AuthState> {
             has_credentials: true,
             health,
             source: Some(format!("claude:{}", bundle.source.as_str())),
-            revision: claude_oauth_revision(&bundle, &credentials_path),
+            revision: claude_oauth_revision(&bundle, &settings_path, &credentials_path),
             also_present: Vec::new(),
             secret_hash: None,
         });
@@ -350,7 +480,7 @@ pub(crate) fn claude_auth_state(home: &Path) -> Result<AuthState> {
             has_credentials: false,
             health: crate::models::AuthHealth::Unknown,
             source: Some("claude:.credentials.json".into()),
-            revision: auth_file_revision(&credentials_path),
+            revision: auth_files_revision(&[&settings_path, &credentials_path]),
             also_present: Vec::new(),
             secret_hash: None,
         });
@@ -362,7 +492,7 @@ pub(crate) fn claude_auth_state(home: &Path) -> Result<AuthState> {
         has_credentials: false,
         health: crate::models::AuthHealth::Missing,
         source: Some("claude:settings.json".into()),
-        revision: auth_file_revision(&settings_path),
+        revision: auth_files_revision(&[&settings_path, &credentials_path]),
         also_present: Vec::new(),
         secret_hash: None,
     })
@@ -640,6 +770,54 @@ fn clear_claude_settings_api_auth(path: &Path) -> Result<()> {
     Ok(())
 }
 
+fn ensure_regular_or_missing(path: &Path, label: &str) -> Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_file() => Ok(()),
+        Ok(_) => Err(AppError::Unsupported(format!(
+            "Claude {label} path is not a regular file; refusing to modify it"
+        ))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn read_regular_file_snapshot(path: &Path, label: &str) -> Result<Option<Vec<u8>>> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_file() => Ok(Some(std::fs::read(path)?)),
+        Ok(_) => Err(AppError::Unsupported(format!(
+            "Claude {label} path is not a regular file; refusing to snapshot it"
+        ))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn restore_file_snapshot(path: &Path, bytes: Option<&[u8]>, label: &str) -> Result<()> {
+    ensure_regular_or_missing(path, label)?;
+    match bytes {
+        Some(bytes) => atomic_write(path, bytes),
+        None => match std::fs::symlink_metadata(path) {
+            Ok(metadata) if metadata.file_type().is_file() => {
+                std::fs::remove_file(path)?;
+                Ok(())
+            }
+            Ok(_) => Err(AppError::Unsupported(format!(
+                "Claude {label} path is not a regular file; refusing to remove it"
+            ))),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        },
+    }
+}
+
+fn credentials_rollback_is_safe(expected: Option<&[u8]>, current: Option<&[u8]>) -> bool {
+    match (expected, current) {
+        (Some(expected), Some(current)) => expected == current,
+        (Some(_), None) | (None, None) => true,
+        (None, Some(_)) => false,
+    }
+}
+
 // ── Claude OAuth credential discovery ───────────────────────────────────────
 
 struct ClaudeOauthBundle {
@@ -667,9 +845,15 @@ impl ClaudeOauthSource {
     }
 }
 
-fn claude_oauth_revision(bundle: &ClaudeOauthBundle, credentials_path: &Path) -> Option<String> {
+fn claude_oauth_revision(
+    bundle: &ClaudeOauthBundle,
+    settings_path: &Path,
+    credentials_path: &Path,
+) -> Option<String> {
     match bundle.source {
-        ClaudeOauthSource::CredentialsFile => auth_file_revision(credentials_path),
+        ClaudeOauthSource::CredentialsFile => {
+            auth_files_revision(&[settings_path, credentials_path])
+        }
         // Keychain is the effective source on macOS. It has no safe portable
         // revision probe here, so never pretend the lower-priority file is a
         // revision for it; OAuth apply below fails closed for the same reason.
@@ -678,9 +862,38 @@ fn claude_oauth_revision(bundle: &ClaudeOauthBundle, credentials_path: &Path) ->
 }
 
 fn ensure_claude_oauth_file_apply_supported() -> Result<()> {
+    ensure_claude_keychain_inactive()?;
     if let Some(bundle) = read_claude_oauth_bundle()? {
         ensure_claude_oauth_file_apply_source(bundle.source)?;
     }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn ensure_claude_keychain_inactive() -> Result<()> {
+    let output = std::process::Command::new("security")
+        .args(["find-generic-password", "-s", "Claude Code-credentials"])
+        .output()
+        .map_err(|error| {
+            AppError::Unsupported(format!(
+                "cannot determine whether Claude Code Keychain credentials are active: {error}"
+            ))
+        })?;
+    if output.status.success() {
+        return Err(AppError::Unsupported(
+            "Claude OAuth account switching is unavailable while macOS Keychain credentials are present; re-login through Claude Code or remove the Keychain entry before switching".into(),
+        ));
+    }
+    if output.status.code() == Some(44) {
+        return Ok(());
+    }
+    Err(AppError::Unsupported(
+        "cannot determine whether Claude Code Keychain credentials are active".into(),
+    ))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn ensure_claude_keychain_inactive() -> Result<()> {
     Ok(())
 }
 

@@ -62,12 +62,23 @@ impl ProviderService {
         };
         let adapter = self.adapter(agent)?;
         require_live_config_write(adapter.as_ref(), agent)?;
-        let live_before = adapter.read_config()?;
+        let auth_revision_before = probe_auth_revision(adapter.as_ref());
+        // The parsed config and exact rollback bytes come from one capture so
+        // a concurrent CLI rewrite cannot pair settings from two revisions.
+        let rollback_snapshot = adapter.capture_config_snapshot()?;
+        let live_before = rollback_snapshot.config.clone();
         ensure_config_agent(&live_before, agent)?;
         // Opaque auth revision observed with the live config snapshot. A CLI
         // login between this read and write_config must abort rather than
         // overwrite the newer credentials (account switch already does this).
         let auth_revision = probe_auth_revision(adapter.as_ref());
+        if let (Some(before), Some(after)) =
+            (auth_revision_before.as_deref(), auth_revision.as_deref())
+        {
+            if before != after {
+                return Err(live_revision_conflict());
+            }
+        }
         let current = self.repo.get_current(agent)?;
         let previous_current_id = current.as_ref().map(|provider| provider.id.clone());
 
@@ -156,10 +167,13 @@ impl ProviderService {
                 ));
             }
         }
-
         let before = hash_live_paths(adapter.as_ref());
+        if let Err(error) = adapter.validate_config_snapshot(&rollback_snapshot) {
+            let db_rollback = rollback_backfill();
+            return Err(compensated_switch_error(error, None, db_rollback));
+        }
         if let Err(error) = adapter.write_config(&target_config) {
-            let live_rollback = adapter.write_config(&live_before).err();
+            let live_rollback = adapter.restore_config_snapshot(&rollback_snapshot).err();
             let db_rollback = rollback_backfill();
             return Err(compensated_switch_error(error, live_rollback, db_rollback));
         }
@@ -181,7 +195,7 @@ impl ProviderService {
         ) {
             Ok((provider, _binding)) => provider,
             Err(error) => {
-                let live_rollback = adapter.write_config(&live_before).err();
+                let live_rollback = adapter.restore_config_snapshot(&rollback_snapshot).err();
                 let db_rollback = rollback_backfill();
                 return Err(compensated_switch_error(error, live_rollback, db_rollback));
             }

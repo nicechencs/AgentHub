@@ -244,8 +244,8 @@ impl ProviderService {
         // Pre-commit errors (validation, missing row, revision conflict) never
         // compensate: a concurrent writer may already own the scoped rows.
         let committed = self.commit_provider_mutation(input, false)?;
-        if let Some((adapter, live_before)) = live_saga {
-            self.apply_current_provider_live_committed(&committed, adapter, live_before)?;
+        if let Some((adapter, live_before, rollback)) = live_saga {
+            self.apply_current_provider_live_committed(&committed, adapter, live_before, rollback)?;
         } else {
             self.sync_current_provider_live(
                 live_guard,
@@ -295,8 +295,8 @@ impl ProviderService {
             &format!("before applying current provider {}", input.id),
         )?;
         let committed = self.commit_provider_mutation(input, true)?;
-        if let Some((adapter, live_before)) = live_saga {
-            self.apply_current_provider_live_committed(&committed, adapter, live_before)?;
+        if let Some((adapter, live_before, rollback)) = live_saga {
+            self.apply_current_provider_live_committed(&committed, adapter, live_before, rollback)?;
         } else {
             self.sync_current_provider_live(
                 live_guard,

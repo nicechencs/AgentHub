@@ -74,3 +74,4 @@ temp-pic/
 nul
 crates/agenthub-core/scan-cache.db
 rust_out
+.tmp/

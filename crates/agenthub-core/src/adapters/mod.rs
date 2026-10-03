@@ -49,7 +49,9 @@ pub(crate) use grok::{
 };
 pub(crate) use kimi::{expand_kimi_live_accounts, kimi_live_has_leftover_api_key_when_oauth};
 
-pub use adapter_trait::{default_authorization_key, default_identity_label, AgentAdapter};
+pub use adapter_trait::{
+    default_authorization_key, default_identity_label, AgentAdapter, AgentConfigSnapshot,
+};
 pub(crate) use auth_revision::{
     auth_file_revision, auth_files_revision, inspect_auth_credentials, oauth_auth_health,
 };

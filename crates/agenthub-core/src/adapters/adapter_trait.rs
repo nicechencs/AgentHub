@@ -1,6 +1,8 @@
 //! AgentAdapter trait and shared authorization / identity defaults.
 
+use std::any::Any;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::error::{AppError, Result};
 use crate::models::{
@@ -16,6 +18,21 @@ pub trait AgentAdapter: Send + Sync {
         crate::catalog::install::adapter_install_channels(self.id())
     }
     fn read_config(&self) -> Result<AgentConfig>;
+
+    /// Capture the complete live configuration needed for saga compensation.
+    ///
+    /// Most adapters only need their parsed config. Adapters whose live state
+    /// spans multiple files may attach an opaque, in-memory snapshot here;
+    /// it is never serialized or returned to a UI.
+    fn capture_config_snapshot(&self) -> Result<AgentConfigSnapshot> {
+        Ok(AgentConfigSnapshot::new(self.read_config()?))
+    }
+
+    /// Confirm that an opaque rollback snapshot still describes the live
+    /// files. Adapters with multi-file state override this before a write.
+    fn validate_config_snapshot(&self, _snapshot: &AgentConfigSnapshot) -> Result<()> {
+        Ok(())
+    }
     /// Atomically replace the agent's live provider configuration.
     ///
     /// Adapters that do not implement a safe writer must fail closed.
@@ -24,6 +41,12 @@ pub trait AgentAdapter: Send + Sync {
             "live config writes are not supported for {}",
             self.id().as_str()
         )))
+    }
+
+    /// Whether an otherwise equal parsed config still needs its live files
+    /// re-applied (for example, to clear a stale sibling credentials file).
+    fn requires_config_reapply(&self, _config: &AgentConfig) -> Result<bool> {
+        Ok(false)
     }
     fn read_auth(&self) -> Result<AuthState>;
 
@@ -57,6 +80,15 @@ pub trait AgentAdapter: Send + Sync {
     /// map from that snapshot without going through the UI projected writer.
     fn restore_config(&self, config: &AgentConfig) -> Result<()> {
         self.write_config(config)
+    }
+
+    /// Restore a snapshot captured by [`Self::capture_config_snapshot`].
+    ///
+    /// The default keeps existing adapters on their ordinary parsed-config
+    /// rollback path. Multi-file adapters can override this method to restore
+    /// exact file bytes and existence.
+    fn restore_config_snapshot(&self, snapshot: &AgentConfigSnapshot) -> Result<()> {
+        self.restore_config(&snapshot.config)
     }
 
     /// Build an API-key live snapshot for `account add-apikey` (no live write).
@@ -98,6 +130,59 @@ pub trait AgentAdapter: Send + Sync {
 
     /// Declared capability for this agent. Exhaustive match required — no `_ =>`.
     fn capability(&self, cap: Capability) -> CapabilityState;
+}
+
+/// Ephemeral live-config snapshot used only while a saga is in flight.
+///
+/// `opaque` intentionally has no serialization implementation, so file bytes
+/// and other credential-bearing rollback state cannot enter provider rows or
+/// frontend DTOs.
+pub struct AgentConfigSnapshot {
+    pub(crate) config: AgentConfig,
+    pub(crate) opaque: Option<Arc<dyn Any + Send + Sync>>,
+}
+
+impl AgentConfigSnapshot {
+    pub(crate) fn new(config: AgentConfig) -> Self {
+        Self {
+            config,
+            opaque: None,
+        }
+    }
+
+    pub(crate) fn with_opaque<T>(config: AgentConfig, opaque: T) -> Self
+    where
+        T: Any + Send + Sync,
+    {
+        Self {
+            config,
+            opaque: Some(Arc::new(opaque)),
+        }
+    }
+
+    pub(crate) fn downcast_ref<T: Any>(&self) -> Option<&T> {
+        self.opaque.as_deref()?.downcast_ref::<T>()
+    }
+}
+
+impl Clone for AgentConfigSnapshot {
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            opaque: self.opaque.clone(),
+        }
+    }
+}
+
+impl std::fmt::Debug for AgentConfigSnapshot {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AgentConfigSnapshot")
+            .field("agent", &self.config.agent)
+            .field("config", &"REDACTED")
+            .field("opaque", &self.opaque.as_ref().map(|_| "REDACTED"))
+            .finish()
+    }
 }
 
 /// Shared default for [`AgentAdapter::authorization_key`].

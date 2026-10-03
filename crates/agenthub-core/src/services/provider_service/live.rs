@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use uuid::Uuid;
 
+use crate::adapters::AgentConfigSnapshot;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
@@ -93,7 +94,7 @@ fn display_home_path(path: &Path) -> String {
 #[derive(Clone)]
 pub struct ProviderLiveConfigSnapshot {
     agent: AgentId,
-    config: AgentConfig,
+    config: AgentConfigSnapshot,
 }
 
 impl std::fmt::Debug for ProviderLiveConfigSnapshot {
@@ -124,8 +125,8 @@ impl ProviderService {
         agent: AgentId,
     ) -> Result<ProviderLiveConfigSnapshot> {
         self.validate_live_saga_guard(guard, agent)?;
-        let config = self.adapter(agent)?.read_config()?;
-        ensure_config_agent(&config, agent)?;
+        let config = self.adapter(agent)?.capture_config_snapshot()?;
+        ensure_config_agent(&config.config, agent)?;
         Ok(ProviderLiveConfigSnapshot { agent, config })
     }
 
@@ -250,7 +251,7 @@ impl ProviderService {
     ) -> Result<()> {
         self.validate_live_saga_guard(guard, snapshot.agent)?;
         let adapter = self.adapter(snapshot.agent)?;
-        adapter.restore_config(&snapshot.config)
+        adapter.restore_config_snapshot(&snapshot.config)
     }
 
     /// Capture the agent's complete live provider config as a new current row.
@@ -471,6 +472,7 @@ impl ProviderService {
         Option<(
             std::sync::Arc<dyn crate::adapters::AgentAdapter>,
             AgentConfig,
+            AgentConfigSnapshot,
         )>,
     > {
         if !will_be_current {
@@ -486,7 +488,8 @@ impl ProviderService {
         if !adapter.capability(Capability::ConfigWrite).is_usable() {
             return Ok(None);
         }
-        let live_before = adapter.read_config()?;
+        let rollback = adapter.capture_config_snapshot()?;
+        let live_before = rollback.config.clone();
         ensure_config_agent(&live_before, agent)?;
         if let Err(error) =
             backup.snapshot_with_guard(live_guard, agent, BackupKind::AutoSwitch, Some(note))
@@ -495,7 +498,7 @@ impl ProviderService {
                 return Err(error);
             }
         }
-        Ok(Some((adapter, live_before)))
+        Ok(Some((adapter, live_before, rollback)))
     }
 
     /// Apply a current provider while the caller's [`ProviderLiveSagaGuard`]
@@ -506,6 +509,7 @@ impl ProviderService {
         committed: &ProviderCommittedMutation,
         adapter: std::sync::Arc<dyn crate::adapters::AgentAdapter>,
         live_before: AgentConfig,
+        rollback: AgentConfigSnapshot,
     ) -> Result<()> {
         let stored = &committed.stored;
         let materialized = match self.secret_resolver.materialize_for_live(stored) {
@@ -525,12 +529,35 @@ impl ProviderService {
             agent: stored.agent_id,
             raw: materialized.settings_config,
         };
-        if live_before.raw == target_config.raw {
+        let needs_reapply = match adapter.requires_config_reapply(&target_config) {
+            Ok(value) => value,
+            Err(error) => {
+                let db_rollback = self
+                    .restore_committed_provider_mutation(stored.agent_id, committed)
+                    .err();
+                return Err(compensated_current_apply_error_with_db(
+                    error,
+                    None,
+                    db_rollback,
+                ));
+            }
+        };
+        if live_before.raw == target_config.raw && !needs_reapply {
             return Ok(());
         }
         let before = hash_live_paths(adapter.as_ref());
+        if let Err(error) = adapter.validate_config_snapshot(&rollback) {
+            let db_rollback = self
+                .restore_committed_provider_mutation(stored.agent_id, committed)
+                .err();
+            return Err(compensated_current_apply_error_with_db(
+                error,
+                None,
+                db_rollback,
+            ));
+        }
         if let Err(error) = adapter.write_config(&target_config) {
-            let live_rollback = adapter.write_config(&live_before).err();
+            let live_rollback = adapter.restore_config_snapshot(&rollback).err();
             let db_rollback = self
                 .restore_committed_provider_mutation(stored.agent_id, committed)
                 .err();
@@ -572,14 +599,19 @@ impl ProviderService {
             return Ok(());
         }
 
-        let live_before = adapter.read_config()?;
+        let rollback = adapter.capture_config_snapshot()?;
+        let live_before = rollback.config.clone();
         ensure_config_agent(&live_before, stored.agent_id)?;
         let materialized = self.secret_resolver.materialize_for_live(stored)?;
         let target_config = AgentConfig {
             agent: stored.agent_id,
             raw: materialized.settings_config,
         };
-        if live_before.raw == target_config.raw {
+        if let Err(error) = adapter.validate_config_snapshot(&rollback) {
+            return Err(compensated_current_apply_error(error, None));
+        }
+        let needs_reapply = adapter.requires_config_reapply(&target_config)?;
+        if live_before.raw == target_config.raw && !needs_reapply {
             self.snapshot_after_pool_change_locked(live_guard, stored.agent_id, note);
             return Ok(());
         }
@@ -595,8 +627,11 @@ impl ProviderService {
             }
         }
         let before = hash_live_paths(adapter.as_ref());
+        if let Err(error) = adapter.validate_config_snapshot(&rollback) {
+            return Err(compensated_current_apply_error(error, None));
+        }
         if let Err(error) = adapter.write_config(&target_config) {
-            let live_rollback = adapter.write_config(&live_before).err();
+            let live_rollback = adapter.restore_config_snapshot(&rollback).err();
             return Err(compensated_current_apply_error(error, live_rollback));
         }
         log_live_switch_paths(
