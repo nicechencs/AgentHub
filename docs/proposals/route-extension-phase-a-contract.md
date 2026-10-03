@@ -8,7 +8,7 @@ updated: 2026-10-03
 
 # 路由官方扩展 A 阶段纸面契约
 
-本文冻结[路由官方扩展与独立运行方案](adapter-sidecar.md) A 阶段的纸面契约：窄运行接口、`active`/`prepared` 分离、锁顺序、版本与撤销水位、操作留存、fixture/故障计划以及隔离路径与证据格式。这些都是 `proposed` 候选，**尚未实现，不能当现行接口，也未授权进入 B**。本页不写 Go、不拆进程、不做插件平台或 IPC 原型。
+本文冻结[路由官方扩展与独立运行方案](adapter-sidecar.md) A 阶段的纸面契约：窄运行接口、`active`/`prepared` 分离、锁顺序、版本与撤销水位、操作留存、fixture/故障计划以及隔离路径与证据格式。这些都是 `proposed` 候选，**不能当现行产品接口；整份 A 尚未通过，现仅授权隔离目录下的 Go Messages 切片（Handshake、Status、进程监督与合成 Key 的 Messages），不授权默认网关切换、真实配置写入、插件商店或 E/F**。本页不写 Go、不拆进程、不做插件平台或 IPC 原型。
 
 现行写入入口仍是 `AdapterControl` 的 `plan` / `bind` / `unbind` 与进程内 `adapter_bridge_controller`；现行状态 DTO 仍是带 `local_token` 的 `AdapterBridgeStatus`。下面的 `RouteRuntimeControl` 消息不得替代这些现行接口。
 
@@ -611,7 +611,7 @@ C/D 若将来运行，必须满足：
 
 ## 相关页面
 
-- [路由官方扩展与独立运行方案](adapter-sidecar.md)：本契约所对齐的提案；A 未通过，B 未授权。
+- [路由官方扩展与独立运行方案](adapter-sidecar.md)：本契约所对齐的提案；整份 A 尚未通过，现仅授权隔离目录下的 Go Messages 切片（Handshake、Status、进程监督与合成 Key 的 Messages），不授权默认网关切换、真实配置写入、插件商店或 E/F。
 - [模块化与边界收紧](modularity.md#8-功能模块与官方扩展)：功能模块与官方扩展的产品对齐。
 - [本机路由 API](../reference/local-route-api.md)与[路由兼容性](../reference/route-compatibility.md)：现行 HTTP 契约，对照时的裁决真源。
 - [产品边界](../decisions/product-boundaries.md)：本页不改变的产品规则。

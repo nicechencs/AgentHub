@@ -31,6 +31,10 @@ Thumbs.db
 **/*.sqlite-wal
 **/*.sqlite-shm
 
+# Isolated Go adapterd local binaries
+/go/agenthub-adapterd/bin/
+/go/agenthub-adapterd/agenthub-adapterd
+
 # Local dumps / scratch / personal machine capture (never commit)
 skill-list.json
 audit/
