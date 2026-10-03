@@ -133,6 +133,51 @@ impl ConnectionService {
         })
     }
 
+    /// Move a provider to the recovery bin only when its revision still
+    /// matches the caller's live snapshot.  A live-file saga uses this CAS
+    /// boundary so a concurrent edit cannot delete a newer provider row.
+    pub fn delete_provider_if_revision(
+        &self,
+        id: &str,
+        agent: AgentId,
+        expected_updated_at: &str,
+    ) -> Result<()> {
+        let now = Self::now();
+        self.db.with_conn(|conn| {
+            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+            let mut provider = provider_get_by_id_conn(&tx, id)?
+                .ok_or_else(|| AppError::NotFound(format!("provider not found: {id}")))?;
+            if provider.agent_id != agent {
+                return Err(AppError::NotFound(format!(
+                    "provider not found: {id} (agent filter: {})",
+                    agent.as_str()
+                )));
+            }
+            if provider.updated_at != expected_updated_at {
+                return Err(AppError::message(
+                    "provider.pi.delete.conflict",
+                    "Pi 连接已变化，请刷新连接页面后重试",
+                ));
+            }
+            enrich_provider_trash_identity(&mut provider);
+            ConnectionTrashRepo::insert_conn(
+                &tx,
+                &provider.id,
+                agent,
+                ConnectionTrashKind::Provider,
+                &provider.name,
+                provider.is_current,
+                &provider,
+                &now,
+            )?;
+            provider_delete_for_agent_conn(&tx, id, agent)?;
+            self.clear_connection_refs_if_match_conn(&tx, agent, None, Some(id), &now)?;
+            tx.commit()?;
+            log_recycle(agent, &provider.id, &provider.name);
+            Ok(())
+        })
+    }
+
     /// List recoverable connection rows.  Secret material is retained in the
     /// database for restore and redacted by the Tauri boundary before return.
     ///

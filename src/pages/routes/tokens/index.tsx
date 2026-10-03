@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { KeyRound, Plus, Sparkles } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -76,7 +76,10 @@ import {
   matchesConnectionEntryKeys,
   type ConnectionEntryKeyMatch,
 } from './token-connection-matches';
-import type { TokenImportAgentRef } from './token-import-model';
+import {
+  findReusablePiTokenProvider,
+  type TokenImportAgentRef,
+} from './token-import-model';
 
 export default function RoutesTokensPage() {
   const { t, lang } = useI18n();
@@ -117,6 +120,12 @@ export default function RoutesTokensPage() {
     agentId: AgentKey;
     draft: ConnectApiKeyDraft;
   } | null>(null);
+  const importRequestRef = useRef(0);
+  const importPendingRef = useRef(false);
+  useEffect(() => () => {
+    importRequestRef.current += 1;
+    importPendingRef.current = false;
+  }, []);
   const {
     chatCompletionsShared,
     defaultPools,
@@ -404,9 +413,61 @@ export default function RoutesTokensPage() {
   const pageLoading = loading || poolsLoading;
 
   const startImport = (row: LocalTokenRow, agentId: AgentKey, draft: ConnectApiKeyDraft) => {
+    if (importPendingRef.current) return;
+    const requestId = importRequestRef.current + 1;
+    importRequestRef.current = requestId;
+    if (agentId !== 'pi' || !draft.apiKey?.trim() || !draft.baseUrl?.trim()
+      || !draft.piApi?.trim() || !draft.model?.trim()) {
+      inspect.open(row.id);
+      setImportAfterSaveRow(null);
+      setImportSession({ agentId, draft });
+      return;
+    }
+    importPendingRef.current = true;
     inspect.open(row.id);
     setImportAfterSaveRow(null);
-    setImportSession({ agentId, draft });
+    setImportSession(null);
+    void (async () => {
+      try {
+        const providers = await listProviders('pi');
+        if (importRequestRef.current !== requestId) return;
+        const existing = await findReusablePiTokenProvider({ draft, providers });
+        if (importRequestRef.current !== requestId) return;
+        if (!existing) {
+          setImportSession({ agentId, draft });
+          return;
+        }
+        try {
+          await applyImportedLogin({
+            agentId: 'pi',
+            sourceKind: 'provider',
+            sourceId: existing.id,
+            isCurrent: existing.isCurrent,
+          });
+          if (importRequestRef.current !== requestId) return;
+          setTokenTick((tick) => tick + 1);
+          void reload();
+          toast({
+            title: t('routes.tokens.importSuccess', { name: agentDisplayName('pi') }),
+            variant: 'success',
+          });
+        } catch {
+          if (importRequestRef.current !== requestId) return;
+          toast({
+            title: t('routes.tokens.importFailed'),
+            variant: 'danger',
+          });
+        }
+      } catch {
+        if (importRequestRef.current !== requestId) return;
+        toast({
+          title: t('routes.tokens.importFailed'),
+          variant: 'danger',
+        });
+      } finally {
+        if (importRequestRef.current === requestId) importPendingRef.current = false;
+      }
+    })();
   };
 
   const finishImportedLogin = async (

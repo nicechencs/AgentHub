@@ -106,6 +106,7 @@ import {
   ticketWalletVisibleSpecs,
   ticketWalletTokenUsageText,
   ticketDetailEditLabel,
+  catalogUnapplyLabel,
   oauthActionHoverTip,
   ticketRefreshDisabledReason,
   ticketSwitchDisabledReason,
@@ -166,6 +167,9 @@ export function TicketDetailPanel({
   refreshLocked,
   onRefresh,
   onDelete,
+  onRemoveFromCatalog,
+  removeFromCatalogBusy = false,
+  removeFromCatalogLabel,
   onEdit,
   piDefaultModel,
   onSwitchPiDefaultModel,
@@ -183,6 +187,9 @@ export function TicketDetailPanel({
   refreshLocked?: boolean;
   onRefresh?: () => void;
   onDelete: () => void;
+  onRemoveFromCatalog?: () => void;
+  removeFromCatalogBusy?: boolean;
+  removeFromCatalogLabel?: string;
   onEdit?: () => void;
   piDefaultModel?: PiDefaultModelView | null;
   onSwitchPiDefaultModel?: (model: string) => void;
@@ -231,6 +238,7 @@ export function TicketDetailPanel({
   const title = ticket
     ? ticketCardTitle(ticket, extras)
     : t('connections.detailTitle');
+  const defaultUnapplyLabel = t('connections.list.removeFromCatalog');
 
   const requestDelete = () => {
     if (asPanel) onOpenChange?.(false);
@@ -264,9 +272,27 @@ export function TicketDetailPanel({
       </Button>
     </Hint>
   );
+  const removeFromCatalogButton = onRemoveFromCatalog ? (
+    <Button
+      size="sm"
+      variant="secondary"
+      disabled={removeFromCatalogBusy}
+      onClick={onRemoveFromCatalog}
+    >
+      <Undo2 className="h-3.5 w-3.5" />
+      {removeFromCatalogBusy
+        ? t('connections.list.switching')
+        : (removeFromCatalogLabel ?? (
+          ticket?.agentId === 'pi' && ticket.sourceKind === 'provider'
+            ? t('connections.list.disconnectPiProvider')
+            : defaultUnapplyLabel
+        ))}
+    </Button>
+  ) : null;
   const actions = (
     <div className="flex flex-wrap items-center gap-2">
       {refreshButton}
+      {removeFromCatalogButton}
       {deleteButton}
     </div>
   );
@@ -302,6 +328,7 @@ export function TicketDetailPanel({
         headerActions={(
           <>
             {refreshButton}
+            {removeFromCatalogButton}
             {deleteButton}
             {onEdit && editLabel ? (
               <Button type="button" size="sm" variant="outline" onClick={onEdit}>
@@ -873,7 +900,7 @@ function TicketRow({
                 {onRemoveFromCatalog ? (
                   <DropdownMenuItem onSelect={() => onRemoveFromCatalog(ticket)}>
                     <Undo2 className="h-3.5 w-3.5" />
-                    {t('connections.list.removeFromCatalog')}
+                    {catalogUnapplyLabel(ticket, t)}
                   </DropdownMenuItem>
                 ) : null}
               </DropdownMenuContent>
@@ -1120,6 +1147,7 @@ export function TicketWalletList({
     ? showsCatalogUnapply(
       resolveAgentMeta(menuTicket.agentId).occupancy,
       extrasForTicket?.(menuTicket)?.isCurrent,
+      extrasForTicket?.(menuTicket)?.inList,
     )
     : false;
   const menuUnapplyBusy = Boolean(switchingTicketId);
@@ -1240,6 +1268,7 @@ export function TicketWalletList({
             const canUnapply = showsCatalogUnapply(
               resolveAgentMeta(row.ticket.agentId).occupancy,
               extrasForTicket?.(row.ticket)?.isCurrent,
+              extrasForTicket?.(row.ticket)?.inList,
             );
             return (
                 <TicketRow
@@ -1291,7 +1320,7 @@ export function TicketWalletList({
         {menuCanUnapply ? (
           <ContextMenuItem
             disabled={menuUnapplyDisabled}
-            aria-label={t('connections.list.removeFromCatalog')}
+            aria-label={catalogUnapplyLabel(menuTicket, t)}
             onSelect={() => {
               if (!menuTicket || menuUnapplyDisabled) return;
               onRemoveFromCatalog?.(menuTicket);
@@ -1299,7 +1328,7 @@ export function TicketWalletList({
             }}
           >
             <Undo2 className="h-3.5 w-3.5" />
-            {t('connections.list.removeFromCatalog')}
+            {catalogUnapplyLabel(menuTicket, t)}
           </ContextMenuItem>
         ) : null}
       </ContextMenu>

@@ -44,6 +44,15 @@ export async function deleteProvider(agentId: AgentKey, providerId: string): Pro
   providerAuthStateChanged(agentId);
 }
 
+/** Remove a Pi provider from Pi's live configuration, optionally deleting its pool row. */
+export async function disconnectPiProvider(
+  providerId: string,
+  deleteFromLibrary: boolean,
+): Promise<void> {
+  await getBackend().provider.disconnectPiProvider(providerId, deleteFromLibrary);
+  providerAuthStateChanged('pi');
+}
+
 export async function importProviderLive(agentId: AgentKey, name?: string): Promise<Provider> {
   const imported = await getBackend().provider.importProviderLive(agentId, name);
   providerAuthStateChanged(agentId);

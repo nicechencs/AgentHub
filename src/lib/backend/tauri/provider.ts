@@ -75,6 +75,18 @@ export function createTauriProviderPort(): ProviderPort {
       }
     },
 
+    async disconnectPiProvider(providerId, deleteFromLibrary) {
+      try {
+        await invoke('disconnect_pi_provider', {
+          id: providerId,
+          deleteFromLibrary,
+        });
+      } catch (e) {
+        log.error('disconnect_pi_provider failed', e);
+        throw e;
+      }
+    },
+
     async importProviderLive(agentId, name) {
       try {
         const row = await invoke<CoreProvider>('import_provider_live', {

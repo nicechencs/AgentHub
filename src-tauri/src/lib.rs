@@ -209,6 +209,7 @@ pub fn run() {
             commands::provider::get_provider,
             commands::provider::upsert_provider,
             commands::provider::delete_provider,
+            commands::provider::disconnect_pi_provider,
             commands::trash::list_connection_trash,
             commands::trash::restore_connection_trash,
             commands::trash::delete_connection_trash,

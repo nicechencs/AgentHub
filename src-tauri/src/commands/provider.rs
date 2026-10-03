@@ -7,8 +7,8 @@
 use agenthub_core::error::AppError;
 use agenthub_core::logging::{self, targets};
 use agenthub_core::models::{
-    AdapterBindingHealNotice, Provider, ProviderInput, ProviderPreset, ProviderSwitchResult,
-    SwitchConfirmPreview,
+    AdapterBindingHealNotice, AgentId, Provider, ProviderInput, ProviderPreset,
+    ProviderSwitchResult, SwitchConfirmPreview,
 };
 use agenthub_core::presets;
 use agenthub_core::services::provider_identity::{normalize_base_url, normalize_provider_base_url};
@@ -111,6 +111,27 @@ pub async fn delete_provider(
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
         delete_provider_inner(hub, &agent_id, &provider_id)
+    })
+    .await
+}
+
+/// Invoke: `disconnect_pi_provider` — remove a Pi provider from live config,
+/// optionally moving its pool row to the recovery bin.
+#[tauri::command]
+pub async fn disconnect_pi_provider(
+    state: State<'_, AppState>,
+    id: String,
+    delete_from_library: bool,
+) -> Result<(), String> {
+    let hub = state.hub_arc()?;
+    let _target_guard = state
+        .bridge_saga_coordinator()
+        .lock_target(AgentId::Pi)
+        .await;
+    with_hub_blocking(hub, move |hub| {
+        hub.providers()
+            .disconnect_pi_provider(&id, delete_from_library)
+            .map_err(|e| map_err_string("disconnect_pi_provider", e))
     })
     .await
 }

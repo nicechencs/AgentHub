@@ -1,15 +1,88 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it, vi } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
+import type { TicketView } from '@/lib/backend/contracts/ticket';
 import {
+  deleteConnectionTicket,
   describeProviderSwitchError,
+  describePiProviderActionError,
+  removeCatalogTicket,
   SWITCH_WROTE_LIVE,
   switchErrorText,
   switchWroteLiveLabel,
+  useConnectionPageActions,
+  type ConnectionActionApi,
 } from './use-connection-page-actions';
+
+const api = vi.hoisted(() => ({
+  disconnectPiProvider: vi.fn(),
+  undoSwitchAccount: vi.fn(),
+  undoSwitch: vi.fn(),
+  deleteAccount: vi.fn(),
+  deleteProvider: vi.fn(),
+  switchAccount: vi.fn(),
+  switchPreview: vi.fn(),
+  switchProvider: vi.fn(),
+  bindTicket: vi.fn(),
+  logGuiEvent: vi.fn(),
+}));
+
+vi.mock('@/lib/api/provider', () => ({
+  deleteProvider: api.deleteProvider,
+  disconnectPiProvider: api.disconnectPiProvider,
+  switchPreview: api.switchPreview,
+  switchProvider: api.switchProvider,
+  undoSwitch: api.undoSwitch,
+}));
+vi.mock('@/lib/api/account', () => ({
+  deleteAccount: api.deleteAccount,
+  switchAccount: api.switchAccount,
+  undoSwitchAccount: api.undoSwitchAccount,
+}));
+vi.mock('@/lib/api/settings', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/api/settings')>()),
+  logGuiEvent: api.logGuiEvent,
+}));
 
 const tZh = createTranslator('zh');
 const tEn = createTranslator('en');
+
+function ticket(overrides: Partial<TicketView> = {}): TicketView {
+  return {
+    id: 'provider:pi-current',
+    sourceKind: 'provider',
+    sourceId: 'pi-current',
+    agentId: 'pi',
+    label: 'Pi OpenAI',
+    surface: 'openai-api',
+    credentialClass: 'api_key',
+    speaks: ['openai-responses'],
+    importedFrom: 'pi',
+    ...overrides,
+  };
+}
+
+function actionApi(): ConnectionActionApi {
+  return {
+    disconnectPiProvider: api.disconnectPiProvider,
+    undoSwitchAccount: api.undoSwitchAccount,
+    undoSwitch: api.undoSwitch,
+    deleteAccount: api.deleteAccount,
+    deleteProvider: api.deleteProvider,
+  };
+}
+
+function mountActions(input: Parameters<typeof useConnectionPageActions>[0]): ReturnType<typeof useConnectionPageActions> {
+  let actions: ReturnType<typeof useConnectionPageActions> | null = null;
+  function Harness() {
+    actions = useConnectionPageActions(input);
+    return null;
+  }
+  renderToStaticMarkup(createElement(Harness));
+  return actions!;
+}
 
 describe('describeProviderSwitchError', () => {
   it('maps Cursor unsupported / rollback to a localized live-write failure (zh)', () => {
@@ -98,6 +171,126 @@ describe('switch toast copy', () => {
     expect(src).toContain('undoSwitch(ticket.agentId)');
     expect(src).toContain("t('connections.list.removeFromCatalogOk')");
     expect(src).toContain("t('connections.list.removeFromCatalogFail')");
+  });
+
+  it('cancels a current Pi provider through its concrete row without undo', async () => {
+    vi.resetAllMocks();
+    api.disconnectPiProvider.mockResolvedValue(undefined);
+    const current = ticket();
+
+    await expect(removeCatalogTicket(current, { isCurrent: true, inList: true }, actionApi()))
+      .resolves.toBe(true);
+    expect(api.disconnectPiProvider).toHaveBeenCalledWith('pi-current', false);
+    expect(api.undoSwitch).not.toHaveBeenCalled();
+    expect(api.undoSwitchAccount).not.toHaveBeenCalled();
+  });
+
+  it('deletes a current Pi provider from live config and an old Pi row from the pool only', async () => {
+    vi.resetAllMocks();
+    api.disconnectPiProvider.mockResolvedValue(undefined);
+    api.deleteProvider.mockResolvedValue(undefined);
+    const current = ticket();
+    const old = ticket({ id: 'provider:pi-old', sourceId: 'pi-old' });
+
+    await deleteConnectionTicket(current, { isCurrent: true }, actionApi());
+    await deleteConnectionTicket(old, { isCurrent: false }, actionApi());
+
+    expect(api.disconnectPiProvider).toHaveBeenCalledWith('pi-current', true);
+    expect(api.deleteProvider).toHaveBeenCalledWith('pi', 'pi-old');
+    expect(api.disconnectPiProvider).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the existing undo path for another Agent and allows retry after a failure', async () => {
+    vi.resetAllMocks();
+    api.undoSwitch.mockResolvedValue(true);
+    const other = ticket({
+      id: 'provider:workbuddy',
+      sourceId: 'workbuddy',
+      agentId: 'workbuddy',
+    });
+    await expect(removeCatalogTicket(other, { isCurrent: true }, actionApi())).resolves.toBe(true);
+    expect(api.undoSwitch).toHaveBeenCalledWith('workbuddy');
+    expect(api.disconnectPiProvider).not.toHaveBeenCalled();
+
+    const current = ticket({ id: 'provider:pi-failing', sourceId: 'pi-failing' });
+    api.disconnectPiProvider.mockRejectedValueOnce(new Error('temporary failure'));
+    await expect(removeCatalogTicket(current, { isCurrent: true }, actionApi())).rejects.toThrow('temporary failure');
+    api.disconnectPiProvider.mockResolvedValue(undefined);
+    await expect(removeCatalogTicket(current, { isCurrent: true }, actionApi())).resolves.toBe(true);
+    expect(api.disconnectPiProvider).toHaveBeenCalledTimes(2);
+  });
+
+  it('refreshes the wallet after a successful Pi cancellation and suppresses a concurrent second removal', async () => {
+    vi.resetAllMocks();
+    let resolveDisconnect!: () => void;
+    api.disconnectPiProvider.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { resolveDisconnect = resolve; }),
+    );
+    const current = ticket();
+    const other = ticket({ id: 'provider:pi-other', sourceId: 'pi-other' });
+    const loadWallet = vi.fn(async () => true);
+    const poolReload = vi.fn(async () => undefined);
+    const actions = mountActions({
+      filterAgent: 'all',
+      wallet: null,
+      extrasForTicket: (row) => row.id === current.id
+        ? { isCurrent: true }
+        : { isCurrent: true, inList: true },
+      loadWallet,
+      poolReload,
+    });
+    const first = actions.handleRemoveFromCatalog(current);
+    const second = actions.handleRemoveFromCatalog(other);
+    resolveDisconnect();
+    await first;
+    await second;
+
+    expect(api.disconnectPiProvider).toHaveBeenCalledTimes(1);
+    expect(poolReload).toHaveBeenCalledTimes(1);
+    expect(loadWallet).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the pending removal after failure so the same current Pi row can retry', async () => {
+    vi.resetAllMocks();
+    const current = ticket({ id: 'provider:pi-retry', sourceId: 'pi-retry' });
+    const loadWallet = vi.fn(async () => true);
+    const poolReload = vi.fn(async () => undefined);
+    api.disconnectPiProvider.mockRejectedValueOnce(new Error('temporary failure'));
+    const actions = mountActions({
+      filterAgent: 'all',
+      wallet: null,
+      extrasForTicket: () => ({ isCurrent: true }),
+      loadWallet,
+      poolReload,
+    });
+
+    await actions.handleRemoveFromCatalog(current);
+    api.disconnectPiProvider.mockResolvedValue(undefined);
+    await actions.handleRemoveFromCatalog(current);
+
+    expect(api.disconnectPiProvider).toHaveBeenCalledTimes(2);
+    expect(poolReload).toHaveBeenCalledTimes(1);
+    expect(loadWallet).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Pi provider action errors', () => {
+  it('maps live-config conflict codes to a localized refresh instruction', () => {
+    expect(describePiProviderActionError(
+      new Error('provider config changed [provider.pi.live_conflict]'),
+      tZh,
+    )).toBe('Pi 的本机配置已改变，请刷新连接页面后重试。');
+    expect(describePiProviderActionError(
+      'provider conflict [provider.conflict]',
+      tEn,
+    )).toBe("Pi's local config changed. Refresh the Connections page and try again.");
+  });
+
+  it('uses the generic Pi failure fallback for errors without a stable conflict code', () => {
+    expect(describePiProviderActionError(new Error('secret-bearing core detail'), tZh))
+      .toBe('无法取消接入，请重试');
+    expect(describePiProviderActionError(new Error('secret-bearing core detail'), tEn))
+      .toBe("Couldn't disconnect. Try again.");
   });
 });
 

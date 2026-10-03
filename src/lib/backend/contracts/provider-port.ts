@@ -7,6 +7,8 @@ export interface ProviderPort {
   listProviders(agentId?: AgentKey): Promise<Provider[]>;
   upsertProvider(p: Provider): Promise<Provider>;
   deleteProvider(agentId: AgentKey, providerId: string): Promise<void>;
+  /** Remove a Pi provider from the live Pi configuration, optionally deleting its pool row. */
+  disconnectPiProvider(providerId: string, deleteFromLibrary: boolean): Promise<void>;
   importProviderLive(agentId: AgentKey, name?: string): Promise<Provider>;
   switchPreview(agentId: AgentKey, toProviderId: string): Promise<SwitchPreview>;
   switchProvider(agentId: AgentKey, toProviderId: string): Promise<void>;

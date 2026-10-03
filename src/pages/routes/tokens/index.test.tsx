@@ -2,6 +2,7 @@ import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectApiKeyDraft } from '@/lib/connect-flow/connect-intent';
+import type { Provider } from '@/lib/types';
 import type { LocalTokenRow } from './tokens-model';
 
 const testState = vi.hoisted(() => ({
@@ -11,6 +12,10 @@ const testState = vi.hoisted(() => ({
   detailProps: null as Record<string, unknown> | null,
   providerProps: null as Record<string, unknown> | null,
   importButtonProps: null as Record<string, unknown> | null,
+  listProviders: vi.fn(),
+  applyImportedLogin: vi.fn(),
+  reload: vi.fn(),
+  toast: vi.fn(),
   inspect: {
     target: null as string | null,
     paneWidth: 420,
@@ -86,7 +91,7 @@ vi.mock('@/components/ui/dialog', () => ({
   DialogTitle: ({ children }: { children?: ReactNode }) => children ?? null,
 }));
 vi.mock('@/components/ui/input', () => ({ Input: () => null }));
-vi.mock('@/components/ui/toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock('@/components/ui/toast', () => ({ useToast: () => ({ toast: testState.toast }) }));
 vi.mock('@/components/connections/ApiKeyAccountDialog', () => ({ ApiKeyAccountDialog: () => null }));
 vi.mock('@/components/connections/ProviderEditDialog', () => ({
   ProviderEditDialog: (props: Record<string, unknown>) => {
@@ -102,7 +107,7 @@ vi.mock('@/lib/hooks/useInstalledAgents', () => ({
   }),
 }));
 vi.mock('@/lib/api/account', () => ({ deleteAccount: vi.fn(), listAccounts: vi.fn() }));
-vi.mock('@/lib/api/provider', () => ({ deleteProvider: vi.fn(), listProviders: vi.fn() }));
+vi.mock('@/lib/api/provider', () => ({ deleteProvider: vi.fn(), listProviders: testState.listProviders }));
 vi.mock('@/lib/api/adapter', () => ({
   createLocalToken: vi.fn(),
   deleteLocalToken: vi.fn(),
@@ -118,7 +123,7 @@ vi.mock('@/pages/routes/shared/use-bridge-resources', () => ({
     errors: { bridgeStatuses: {} },
     profileState: 'ready',
     loading: false,
-    reload: vi.fn(),
+    reload: testState.reload,
   }),
 }));
 vi.mock('@/pages/routes/shared/use-route-pool-state', () => ({
@@ -161,10 +166,10 @@ vi.mock('./TokenImportToAgentButton', () => ({
     return null;
   },
 }));
-vi.mock('./token-import-action', () => ({ applyImportedLogin: vi.fn() }));
+vi.mock('./token-import-action', () => ({ applyImportedLogin: testState.applyImportedLogin }));
 vi.mock('./token-connection-matches', () => ({
   connectionMatchAgentNames: () => [],
-  hashLocalToken: () => '',
+  hashLocalToken: async () => '2cff9e711198f8d8764d34d67f92c838c9dfb1a9bbf7a94e7cf49552df3c4da9',
   matchesConnectionEntryKeys: () => [],
 }));
 vi.mock('./tokens-model', () => ({
@@ -214,6 +219,32 @@ const PI_RESPONSES_DRAFT: ConnectApiKeyDraft = {
   piApi: 'openai-responses',
 };
 
+const REUSABLE_PI_PROVIDER: Provider = {
+  id: 'pi-existing',
+  agentId: 'pi',
+  name: 'custom',
+  preset: 'custom',
+  configText: JSON.stringify({
+    models: {
+      providers: {
+        custom: {
+          baseUrl: 'http://127.0.0.1:17034/v1',
+          api: 'openai-responses',
+          models: [{ id: 'gpt-5' }],
+        },
+      },
+    },
+  }),
+  configFormat: 'json',
+  isCurrent: false,
+  secretHash: '2cff9e711198f8d8764d34d67f92c838c9dfb1a9bbf7a94e7cf49552df3c4da9',
+  updatedAt: '2026-10-02T02:00:00.000Z',
+};
+
+async function flushImport(): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
 function renderPage(): string {
   testState.stateIndex = 0;
   testState.tokenListProps = null;
@@ -231,9 +262,15 @@ describe('RoutesTokensPage import wiring', () => {
     testState.inspect.open.mockClear();
     testState.inspect.close.mockClear();
     testState.setLocalToken.mockReset();
+    testState.listProviders.mockReset();
+    testState.listProviders.mockResolvedValue([]);
+    testState.applyImportedLogin.mockReset();
+    testState.applyImportedLogin.mockResolvedValue(undefined);
+    testState.reload.mockReset();
+    testState.toast.mockReset();
   });
 
-  it('passes the Pi Responses wire through the inline token-list import path', () => {
+  it('passes the Pi Responses wire through the inline token-list import path', async () => {
     renderPage();
     const onImport = testState.tokenListProps?.onImport as ((
       row: LocalTokenRow,
@@ -242,6 +279,7 @@ describe('RoutesTokensPage import wiring', () => {
     ) => void);
 
     onImport(ROW, 'pi', PI_RESPONSES_DRAFT);
+    await flushImport();
     renderPage();
 
     expect(testState.providerProps).toMatchObject({
@@ -250,6 +288,106 @@ describe('RoutesTokensPage import wiring', () => {
       initialApiKey: 'ahb_test',
       initialModel: 'gpt-5',
       initialPiApi: 'openai-responses',
+    });
+  });
+
+  it('reuses one matching Pi provider for repeated imports without opening a new dialog', async () => {
+    testState.listProviders.mockResolvedValue([REUSABLE_PI_PROVIDER]);
+    renderPage();
+    const onImport = testState.tokenListProps?.onImport as ((
+      row: LocalTokenRow,
+      agentId: 'pi',
+      draft: ConnectApiKeyDraft,
+    ) => void);
+
+    onImport(ROW, 'pi', PI_RESPONSES_DRAFT);
+    onImport(ROW, 'pi', PI_RESPONSES_DRAFT);
+    await flushImport();
+
+    expect(testState.listProviders).toHaveBeenCalledTimes(1);
+    expect(testState.applyImportedLogin).toHaveBeenCalledTimes(1);
+    expect(testState.applyImportedLogin).toHaveBeenCalledWith({
+      agentId: 'pi',
+      sourceKind: 'provider',
+      sourceId: 'pi-existing',
+      isCurrent: false,
+    });
+    expect(testState.providerProps).toBeNull();
+    expect(testState.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a safe error and does not expose lookup details when provider lookup fails', async () => {
+    testState.listProviders.mockRejectedValue(new Error('raw-entry-key-secret'));
+    renderPage();
+    const onImport = testState.tokenListProps?.onImport as ((
+      row: LocalTokenRow,
+      agentId: 'pi',
+      draft: ConnectApiKeyDraft,
+    ) => void);
+
+    onImport(ROW, 'pi', PI_RESPONSES_DRAFT);
+    await flushImport();
+
+    expect(testState.applyImportedLogin).not.toHaveBeenCalled();
+    expect(testState.providerProps).toBeNull();
+    expect(testState.toast).toHaveBeenCalledWith(expect.objectContaining({
+      variant: 'danger',
+    }));
+    expect(testState.toast.mock.calls.flat()).not.toContain('raw-entry-key-secret');
+  });
+
+  it('does not let a deferred Pi lookup be overwritten by a Codex import', async () => {
+    let resolveProviders!: (providers: Provider[]) => void;
+    testState.listProviders.mockReturnValue(new Promise<Provider[]>((resolve) => {
+      resolveProviders = resolve;
+    }));
+    renderPage();
+    const onImport = testState.tokenListProps?.onImport as ((
+      row: LocalTokenRow,
+      agentId: 'pi' | 'codex',
+      draft: ConnectApiKeyDraft,
+    ) => void);
+
+    onImport(ROW, 'pi', PI_RESPONSES_DRAFT);
+    onImport(ROW, 'codex', {
+      baseUrl: 'http://127.0.0.1:17034',
+      apiKey: 'ahb_test',
+      model: 'gpt-5',
+    });
+    resolveProviders([REUSABLE_PI_PROVIDER]);
+    await flushImport();
+    renderPage();
+
+    expect(testState.applyImportedLogin).toHaveBeenCalledWith({
+      agentId: 'pi',
+      sourceKind: 'provider',
+      sourceId: 'pi-existing',
+      isCurrent: false,
+    });
+    expect(testState.providerProps).toBeNull();
+  });
+
+  it('keeps the existing add flow for non-Pi Agents', () => {
+    renderPage();
+    const onImport = testState.tokenListProps?.onImport as ((
+      row: LocalTokenRow,
+      agentId: 'codex',
+      draft: ConnectApiKeyDraft,
+    ) => void);
+
+    onImport(ROW, 'codex', {
+      baseUrl: 'http://127.0.0.1:17034',
+      apiKey: 'ahb_test',
+      model: 'gpt-5',
+    });
+    renderPage();
+
+    expect(testState.listProviders).not.toHaveBeenCalled();
+    expect(testState.providerProps).toMatchObject({
+      agentId: 'codex',
+      initialBaseUrl: 'http://127.0.0.1:17034',
+      initialApiKey: 'ahb_test',
+      initialModel: 'gpt-5',
     });
   });
 });

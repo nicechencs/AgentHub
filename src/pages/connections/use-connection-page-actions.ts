@@ -3,7 +3,13 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import type { AgentTabId } from '@/components/layout/AgentTabStrip';
 import { deleteAccount, switchAccount, undoSwitchAccount } from '@/lib/api/account';
-import { deleteProvider, switchPreview, switchProvider, undoSwitch } from '@/lib/api/provider';
+import {
+  deleteProvider,
+  disconnectPiProvider,
+  switchPreview,
+  switchProvider,
+  undoSwitch,
+} from '@/lib/api/provider';
 import { logGuiEvent, guiErrorCode } from '@/lib/api/settings';
 import type { TranslateFn } from '@/lib/i18n';
 import {
@@ -20,6 +26,7 @@ import {
 import { resolveAgentMeta } from '@/config/agents';
 import { removeTicketFromWalletSnapshot } from '@/app/runtime';
 import { deleteConnectionToastDescription } from './connection-model';
+import { isPiProviderTicket } from './ticket-card-detail';
 
 /** Success toast: switch wrote the login into this Agent's local files (Chinese fallback for callers without a translator). */
 export const SWITCH_WROTE_LIVE = '已写入本机配置';
@@ -38,6 +45,60 @@ export function switchWroteLiveLabel(
 const FAILED_TO_WRITE_LIVE_FALLBACK = '未能写入本机配置';
 const CURSOR_LIVE_WRITE_UNSUPPORTED_FALLBACK =
   '未能写入本机配置。Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录。';
+
+function isCurrentListTicket(
+  extras: { isCurrent?: boolean; inList?: boolean } | null,
+): boolean {
+  return Boolean(extras?.isCurrent && (extras.inList ?? extras.isCurrent === true));
+}
+
+export type ConnectionActionApi = {
+  disconnectPiProvider: (providerId: string, deleteFromLibrary: boolean) => Promise<void>;
+  undoSwitchAccount: (agentId: TicketView['agentId']) => Promise<boolean>;
+  undoSwitch: (agentId: TicketView['agentId']) => Promise<boolean>;
+  deleteAccount: (agentId: TicketView['agentId'], accountId: string) => Promise<void>;
+  deleteProvider: (agentId: TicketView['agentId'], providerId: string) => Promise<void>;
+};
+
+const defaultConnectionActionApi: ConnectionActionApi = {
+  disconnectPiProvider,
+  undoSwitchAccount,
+  undoSwitch,
+  deleteAccount,
+  deleteProvider,
+};
+
+/** Runs the live-list removal for one concrete record. */
+export async function removeCatalogTicket(
+  ticket: TicketView,
+  extras: { isCurrent?: boolean; inList?: boolean } | null,
+  api: ConnectionActionApi = defaultConnectionActionApi,
+): Promise<boolean> {
+  if (!isListOccupancy(resolveAgentMeta(ticket.agentId).occupancy)) return false;
+  if (!isCurrentListTicket(extras)) return false;
+  if (isPiProviderTicket(ticket)) {
+    await api.disconnectPiProvider(ticket.sourceId, false);
+    return true;
+  }
+  return ticket.sourceKind === 'account'
+    ? api.undoSwitchAccount(ticket.agentId)
+    : api.undoSwitch(ticket.agentId);
+}
+
+/** Deletes one connection record, removing Pi's live slot only for its current provider. */
+export async function deleteConnectionTicket(
+  ticket: TicketView,
+  extras: { isCurrent?: boolean } | null,
+  api: ConnectionActionApi = defaultConnectionActionApi,
+): Promise<void> {
+  if (isPiProviderTicket(ticket) && extras?.isCurrent) {
+    await api.disconnectPiProvider(ticket.sourceId, true);
+  } else if (ticket.sourceKind === 'account') {
+    await api.deleteAccount(ticket.agentId, ticket.sourceId);
+  } else {
+    await api.deleteProvider(ticket.agentId, ticket.sourceId);
+  }
+}
 
 export function switchErrorText(error: unknown): string {
   if (typeof error === 'string' && error.trim()) return error.trim();
@@ -71,6 +132,19 @@ export function describeProviderSwitchError(
   return text || (t ? t('connections.list.failedToWriteLive') : FAILED_TO_WRITE_LIVE_FALLBACK);
 }
 
+/** Gives Pi's live-config conflict a safe, actionable explanation without exposing core details. */
+export function describePiProviderActionError(error: unknown, t?: TranslateFn): string {
+  const code = guiErrorCode(error)?.toLowerCase();
+  if (code === 'provider.pi.live_conflict' || code === 'provider.conflict') {
+    return t
+      ? t('connections.list.disconnectPiProviderConflict')
+      : 'Pi 的本机配置已改变，请刷新连接页面后重试。';
+  }
+  return t
+    ? t('connections.list.disconnectPiProviderFail')
+    : '无法取消接入，请重试';
+}
+
 /**
  * Connections 页切换当前登录与删除确认。
  * 世代丢弃、same-agent switch / other-agent bind、回收站删除语义未改。
@@ -90,16 +164,20 @@ export function useConnectionPageActions(input: {
   const switchGen = useRef(0);
   const [deleteTicket, setDeleteTicket] = useState<TicketView | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const catalogRemovalPendingRef = useRef(false);
+  const deletePendingRef = useRef(false);
 
   const handleRemoveFromCatalog = useCallback(async (ticket: TicketView) => {
+    if (catalogRemovalPendingRef.current) return;
+    const extras = extrasForTicket(ticket);
     if (!isListOccupancy(resolveAgentMeta(ticket.agentId).occupancy)) return;
-    if (!extrasForTicket(ticket)?.isCurrent) return;
+    if (!isCurrentListTicket(extras)) return;
+    catalogRemovalPendingRef.current = true;
     const generation = ++switchGen.current;
+    const isPiProvider = isPiProviderTicket(ticket);
     setSwitchingTicketId(ticket.id);
     try {
-      const undone = ticket.sourceKind === 'account'
-        ? await undoSwitchAccount(ticket.agentId)
-        : await undoSwitch(ticket.agentId);
+      const undone = await removeCatalogTicket(ticket, extras);
       if (switchGen.current !== generation) return;
       if (!undone) {
         toast({
@@ -110,7 +188,9 @@ export function useConnectionPageActions(input: {
       }
       void logGuiEvent('switch', { agent: ticket.agentId });
       toast({
-        title: t('connections.list.removeFromCatalogOk'),
+        title: isPiProvider
+          ? t('connections.list.disconnectPiProviderOk')
+          : t('connections.list.removeFromCatalogOk'),
         variant: 'success',
       });
       await poolReload().catch(() => {});
@@ -122,12 +202,17 @@ export function useConnectionPageActions(input: {
         code: guiErrorCode(e),
       });
       toast({
-        title: t('connections.list.removeFromCatalogFail'),
-        description: describeProviderSwitchError(ticket.agentId, e, t),
+        title: isPiProvider
+          ? t('connections.list.disconnectPiProviderFail')
+          : t('connections.list.removeFromCatalogFail'),
+        description: isPiProvider
+          ? describePiProviderActionError(e, t)
+          : describeProviderSwitchError(ticket.agentId, e, t),
         variant: 'danger',
       });
     } finally {
       if (switchGen.current === generation) setSwitchingTicketId(null);
+      catalogRemovalPendingRef.current = false;
     }
   }, [extrasForTicket, loadWallet, poolReload, t, toast]);
 
@@ -184,20 +269,21 @@ export function useConnectionPageActions(input: {
 
   const confirmDeleteTicket = async () => {
     if (!deleteTicket) return;
+    if (deletePendingRef.current) return;
+    deletePendingRef.current = true;
     const extras = extrasForTicket(deleteTicket);
+    const isCurrentPiProvider = isPiProviderTicket(deleteTicket) && extras?.isCurrent === true;
     setDeleteBusy(true);
     try {
-      if (deleteTicket.sourceKind === 'account') {
-        await deleteAccount(deleteTicket.agentId, deleteTicket.sourceId);
-      } else {
-        await deleteProvider(deleteTicket.agentId, deleteTicket.sourceId);
-      }
+      await deleteConnectionTicket(deleteTicket, extras);
       void logGuiEvent('delete_connection', { agent: deleteTicket.agentId });
       removeTicketFromWalletSnapshot(deleteTicket.id);
       setDeleteTicket(null);
       toast({
         title: t('connections.delete.toastOk'),
-        description: deleteConnectionToastDescription({ isCurrent: extras?.isCurrent === true }, t),
+        description: isCurrentPiProvider
+          ? t('connections.delete.toastPiCurrent')
+          : deleteConnectionToastDescription({ isCurrent: extras?.isCurrent === true }, t),
         variant: 'success',
       });
       await loadWallet();
@@ -209,11 +295,14 @@ export function useConnectionPageActions(input: {
       });
       toast({
         title: t('connections.delete.toastFail'),
-        description: e instanceof Error ? e.message : String(e),
+        description: isCurrentPiProvider
+          ? describePiProviderActionError(e, t)
+          : e instanceof Error ? e.message : String(e),
         variant: 'danger',
       });
     } finally {
       setDeleteBusy(false);
+      deletePendingRef.current = false;
     }
   };
 

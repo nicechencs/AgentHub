@@ -139,6 +139,24 @@ describe('connections layout wiring', () => {
     expect(block).not.toContain('inspect.close()');
   });
 
+  it('wires current Pi providers to concrete disconnect actions in the detail pane', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('const detailExtras = detailTicket ? extrasForTicket(detailTicket) : null;');
+    expect(page).toContain("detailTicket.agentId === 'pi'");
+    expect(page).toContain("detailTicket.sourceKind === 'provider'");
+    expect(page).toContain('showsCatalogUnapply(');
+    expect(page).toContain('detailExtras?.inList');
+    expect(page).toContain('onRemoveFromCatalog={detailCanUnapply');
+    expect(page).toContain('handleRemoveFromCatalog(detailTicket)');
+  });
+
+  it('uses Pi-specific deletion copy because deleting the current provider changes live config immediately', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('const deleteIsCurrentPiProvider = Boolean(');
+    expect(page).toContain("t('connections.delete.dialogPiCurrent')");
+    expect(page).toContain('!deleteIsCurrentPiProvider');
+  });
+
   it('keeps live config chrome to the path and folder button; hint is hover-only', () => {
     const provider = source('../../components/connections/ProviderEditDialog.tsx');
     expect(provider).toContain('Tip label={livePaths.hint}');

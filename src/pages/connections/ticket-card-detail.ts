@@ -377,8 +377,28 @@ export function piDefaultModelView(input: {
 export function showsCatalogUnapply(
   occupancy?: LiveOccupancyDto | null,
   isCurrent?: boolean,
+  inList?: boolean,
 ): boolean {
-  return isListOccupancy(occupancy) && isCurrent === true;
+  return isListOccupancy(occupancy)
+    && isCurrent === true
+    && (inList ?? isCurrent === true);
+}
+
+/** The Pi provider route is disconnected through its concrete provider row. */
+export function isPiProviderTicket(
+  ticket?: Pick<TicketView, 'agentId' | 'sourceKind'> | null,
+): boolean {
+  return ticket?.agentId === 'pi' && ticket.sourceKind === 'provider';
+}
+
+export function catalogUnapplyLabel(
+  ticket?: Pick<TicketView, 'agentId' | 'sourceKind'> | null,
+  t?: TranslateFn,
+): string {
+  if (isPiProviderTicket(ticket)) {
+    return t ? t('connections.list.disconnectPiProvider') : '取消接入';
+  }
+  return t ? t('connections.list.removeFromCatalog') : '取消添加';
 }
 
 export type TicketSwitchChipOpts = {

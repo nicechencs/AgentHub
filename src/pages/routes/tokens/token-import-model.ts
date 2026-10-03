@@ -21,9 +21,11 @@ import {
   type RouteEndpointId,
 } from '@/lib/route-endpoints';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
-import type { AgentKey, AgentStatus } from '@/lib/types';
+import { extractFormVars } from '@/lib/provider-detect/fields';
+import type { AgentKey, AgentStatus, Provider } from '@/lib/types';
 import { agentConversationSurfaces } from '@/pages/agents/agent-detail-model';
 import { agentSupportsLocalEndpointKind, tokenListenPort, type LocalTokenRow } from './tokens-model';
+import { hashLocalToken } from './token-connection-matches';
 
 export type TokenImportAgentRef = {
   id: AgentKey;
@@ -213,6 +215,51 @@ export function tokenImportApiKeyDraft(
       ? { apiBackend: row.kind === 'chat_completions' ? 'chat_completions' : 'responses' }
       : {}),
   };
+}
+
+/** Compare imported Pi providers without merging a different URL, API, or model. */
+export function canonicalTokenImportBaseUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = new URL(trimmed);
+    const path = parsed.pathname.replace(/\/+$/, '');
+    return `${parsed.origin}${path}${parsed.search}`;
+  } catch {
+    return trimmed.replace(/\/+$/, '').toLowerCase();
+  }
+}
+
+function providerUpdatedAt(provider: Provider): number {
+  const parsed = Date.parse(provider.updatedAt ?? '');
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+/** Find the newest exact Pi import match; no secret hash means no match. */
+export async function findReusablePiTokenProvider(input: {
+  draft: Pick<ConnectApiKeyDraft, 'baseUrl' | 'apiKey' | 'model' | 'piApi'>;
+  providers: readonly Provider[];
+}): Promise<Provider | null> {
+  const apiKey = input.draft.apiKey?.trim() ?? '';
+  const baseUrl = canonicalTokenImportBaseUrl(input.draft.baseUrl ?? '');
+  const model = input.draft.model?.trim() ?? '';
+  const piApi = input.draft.piApi?.trim() ?? '';
+  if (!apiKey || !baseUrl || !model || !piApi) return null;
+
+  const tokenHash = (await hashLocalToken(apiKey)).toLowerCase();
+  if (!tokenHash) return null;
+  const matches = input.providers.filter((provider) => {
+    if (provider.agentId !== 'pi' || provider.home === 'route_pool') return false;
+    if ((provider.secretHash?.trim().toLowerCase() ?? '') !== tokenHash) return false;
+    const vars = extractFormVars('pi', provider.configText, provider.configFormat);
+    return canonicalTokenImportBaseUrl(vars.baseUrl) === baseUrl
+      && vars.piApi.trim() === piApi
+      && vars.model.trim() === model;
+  });
+  return [...matches].sort((left, right) => (
+    providerUpdatedAt(right) - providerUpdatedAt(left)
+    || right.id.localeCompare(left.id)
+  ))[0] ?? null;
 }
 
 /** Prefer the live profile object; fall back to the row's entry in sibling list. */

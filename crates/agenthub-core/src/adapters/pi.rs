@@ -14,12 +14,16 @@ use super::{
 use crate::error::{AppError, Result};
 use crate::models::{
     AccountKind, AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult,
-    LiveAccount, RunOptions, RunSpec,
+    LiveAccount, Provider, RunOptions, RunSpec,
 };
 use crate::runtime;
 use crate::utils::atomic::{atomic_write, with_restored_files};
+use crate::utils::redact::{api_key_secret_hash, secret_sha256_hex};
 
 pub struct PiAdapter;
+
+#[cfg(test)]
+pub(crate) static PI_CONFIG_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Standalone install probe used by platform detectors (no full adapter required).
 pub(crate) fn detect_installation() -> DetectResult {
@@ -687,6 +691,286 @@ pub(crate) fn pi_slot_from_account(account: &LiveAccount) -> Option<String> {
             }
             body.keys().next().map(|k| k.trim().to_string())
         })
+}
+
+#[derive(Debug, Clone, Default)]
+struct PiOwnedSlot {
+    slot: String,
+    model: Option<serde_json::Value>,
+    auth: Option<serde_json::Value>,
+}
+
+/// Remove one AgentHub-owned Pi provider slot from the live files.
+///
+/// A Pi provider row is allowed to describe either a `models.json` provider,
+/// an `auth.json` slot, or both.  The slot name alone is not ownership proof:
+/// the same slot can be reused by another login.  Before removing anything,
+/// compare the saved base URL, API mode, and credential hash with the live
+/// entry.  A missing live entry is treated as an already-cancelled stale row.
+///
+/// This function only changes entries represented by `provider`; unrelated
+/// providers, settings fields, and unknown JSONC fields remain untouched.
+pub(crate) fn remove_pi_provider(provider: &Provider) -> Result<()> {
+    if provider.agent_id != AgentId::Pi {
+        return Err(AppError::InvalidArg("Pi provider agent mismatch".into()));
+    }
+    let owned = pi_owned_slots(&provider.settings_config);
+    if owned.is_empty() {
+        return Err(AppError::InvalidArg(
+            "Pi provider has no removable provider slot".into(),
+        ));
+    }
+
+    let dir = pi_config_dir()?;
+    let models_path = dir.join("models.json");
+    let auth_path = dir.join("auth.json");
+    let settings_path = dir.join("settings.json");
+    let live_models = read_pi_models_object_or_empty(&models_path)?;
+    let live_auth = read_json_object_or_empty(&auth_path)?;
+    let mut models_root = if models_path.exists() {
+        let text = std::fs::read_to_string(&models_path)?;
+        Some((text.clone(), parse_pi_models_jsonc(&models_path, &text)?))
+    } else {
+        None
+    };
+
+    // Validate every slot before mutating any of them.  This prevents a
+    // multi-slot row from partially deleting and then discovering a conflict.
+    for expected in &owned {
+        validate_pi_slot_ownership(expected, &live_models, &live_auth)?;
+        validate_pi_model_duplicates(expected, models_root.as_ref())?;
+    }
+
+    let mut removed_slots = std::collections::HashSet::new();
+
+    let mut models_removed = false;
+    if let Some((_, root)) = models_root.as_mut() {
+        for expected in owned.iter().filter(|slot| slot.model.is_some()) {
+            let mut removed = false;
+            for provider_prop in root.object_value().unwrap().properties() {
+                if provider_prop.decoded_name().as_deref() != Some("providers") {
+                    continue;
+                }
+                if let Some(providers) = provider_prop.object_value() {
+                    while let Some(entry) = providers.get(&expected.slot) {
+                        entry.remove();
+                        removed = true;
+                    }
+                }
+            }
+            if removed {
+                removed_slots.insert(expected.slot.clone());
+                models_removed = true;
+            }
+        }
+    }
+
+    let mut next_auth = live_auth.clone();
+    if let Some(auth_obj) = next_auth.as_object_mut() {
+        for expected in owned.iter().filter(|slot| slot.auth.is_some()) {
+            if auth_obj.remove(&expected.slot).is_some() {
+                removed_slots.insert(expected.slot.clone());
+            }
+        }
+    }
+
+    let mut next_settings = read_json_object_or_empty(&settings_path)?;
+    let default_slot = nonempty_json_str(&next_settings, "defaultProvider");
+    if default_slot.as_deref().is_some_and(|slot| {
+        removed_slots.contains(slot) || owned.iter().any(|item| item.slot == slot)
+    }) {
+        let remaining_models = models_root
+            .as_ref()
+            .and_then(|(_, root)| root.to_serde_value())
+            .unwrap_or_else(|| live_models.clone());
+        let remaining = remaining_pi_slots(&remaining_models, &next_auth);
+        if let Some(obj) = next_settings.as_object_mut() {
+            if let Some(next_slot) = remaining.first() {
+                obj.insert("defaultProvider".into(), serde_json::json!(next_slot));
+            } else {
+                obj.remove("defaultProvider");
+            }
+            // A model id belongs to the removed slot unless we know a
+            // replacement catalog.  Clearing it is safer than sending Pi to
+            // a model under the wrong provider.
+            obj.remove("defaultModel");
+        }
+    }
+
+    if models_removed {
+        if let Some((_, root)) = models_root {
+            atomic_write(&models_path, root.to_string().as_bytes())?;
+        }
+    }
+    if next_auth != live_auth {
+        write_json_value(&auth_path, &next_auth)?;
+    }
+    let original_settings = read_json_object_or_empty(&settings_path)?;
+    if next_settings != original_settings {
+        write_json_value(&settings_path, &next_settings)?;
+    }
+    Ok(())
+}
+
+fn pi_owned_slots(config: &serde_json::Value) -> Vec<PiOwnedSlot> {
+    let mut slots = std::collections::BTreeMap::<String, PiOwnedSlot>::new();
+    let model_providers = config
+        .get("models")
+        .and_then(|value| value.get("providers"))
+        .and_then(serde_json::Value::as_object)
+        .or_else(|| {
+            config
+                .get("providers")
+                .and_then(serde_json::Value::as_object)
+        });
+    if let Some(providers) = model_providers {
+        for (slot, entry) in providers {
+            if entry.is_object() {
+                slots.entry(slot.clone()).or_default().model = Some(entry.clone());
+            }
+        }
+    }
+    if let Some(auth) = config.get("auth").and_then(serde_json::Value::as_object) {
+        for (slot, entry) in auth {
+            if entry.is_object() {
+                slots.entry(slot.clone()).or_default().auth = Some(entry.clone());
+            }
+        }
+    }
+    slots
+        .into_iter()
+        .map(|(slot, mut owned)| {
+            owned.slot = slot;
+            owned
+        })
+        .collect()
+}
+
+fn validate_pi_slot_ownership(
+    expected: &PiOwnedSlot,
+    live_models: &serde_json::Value,
+    live_auth: &serde_json::Value,
+) -> Result<()> {
+    let live_model = live_models
+        .get("providers")
+        .and_then(|value| value.get(&expected.slot));
+    if let (Some(expected_model), Some(live_model)) = (expected.model.as_ref(), live_model) {
+        if !pi_model_entry_matches(expected_model, live_model) {
+            return Err(pi_live_ownership_conflict(&expected.slot));
+        }
+    }
+    let live_auth_entry = live_auth.get(&expected.slot);
+    if let (Some(expected_auth), Some(live_auth_entry)) = (expected.auth.as_ref(), live_auth_entry)
+    {
+        if !pi_auth_entry_matches(expected_auth, live_auth_entry) {
+            return Err(pi_live_ownership_conflict(&expected.slot));
+        }
+    }
+    Ok(())
+}
+
+fn validate_pi_model_duplicates(
+    expected: &PiOwnedSlot,
+    models_root: Option<&(String, CstRootNode)>,
+) -> Result<()> {
+    let Some(expected_model) = expected.model.as_ref() else {
+        return Ok(());
+    };
+    let Some((_, root)) = models_root else {
+        return Ok(());
+    };
+    for provider_prop in root.object_value().unwrap().properties() {
+        if provider_prop.decoded_name().as_deref() != Some("providers") {
+            continue;
+        }
+        let Some(providers) = provider_prop.object_value() else {
+            continue;
+        };
+        for entry in providers.properties() {
+            if entry.decoded_name().as_deref() != Some(expected.slot.as_str()) {
+                continue;
+            }
+            let Some(live_entry) = entry.to_serde_value() else {
+                return Err(pi_live_ownership_conflict(&expected.slot));
+            };
+            if !pi_model_entry_matches(expected_model, &live_entry) {
+                return Err(pi_live_ownership_conflict(&expected.slot));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn pi_model_entry_matches(expected: &serde_json::Value, live: &serde_json::Value) -> bool {
+    let expected_base = pi_base_url(expected);
+    let live_base = pi_base_url(live);
+    let expected_api = nonempty_json_str(expected, "api");
+    let live_api = nonempty_json_str(live, "api");
+    let expected_hash = pi_credential_hash(expected);
+    let live_hash = pi_credential_hash(live);
+    expected_base == live_base && expected_api == live_api && expected_hash == live_hash
+}
+
+fn pi_auth_entry_matches(expected: &serde_json::Value, live: &serde_json::Value) -> bool {
+    match (pi_credential_hash(expected), pi_credential_hash(live)) {
+        (Some(expected), Some(live)) => expected == live,
+        (None, None) => expected == live,
+        _ => false,
+    }
+}
+
+fn pi_live_ownership_conflict(slot: &str) -> AppError {
+    AppError::message(
+        "provider.pi.live_conflict",
+        format!("Pi 当前配置的服务商 {slot} 已变化，请刷新连接页面后重试"),
+    )
+}
+
+fn pi_base_url(value: &serde_json::Value) -> Option<String> {
+    ["baseUrl", "base_url", "url"]
+        .iter()
+        .find_map(|key| nonempty_json_str(value, key))
+        .map(|url| url.trim_end_matches('/').to_string())
+}
+
+fn pi_credential_hash(value: &serde_json::Value) -> Option<String> {
+    if let Some(hash) = api_key_secret_hash(value) {
+        return Some(hash);
+    }
+    for key in [
+        "access",
+        "access_token",
+        "accessToken",
+        "refresh",
+        "refresh_token",
+        "refreshToken",
+        "key",
+        "token",
+    ] {
+        if let Some(secret) = value
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|secret| !secret.is_empty() && *secret != REDACTED_MARKER)
+        {
+            return Some(secret_sha256_hex(secret));
+        }
+    }
+    None
+}
+
+fn remaining_pi_slots(models: &serde_json::Value, auth: &serde_json::Value) -> Vec<String> {
+    let mut slots = std::collections::BTreeSet::new();
+    if let Some(providers) = models
+        .get("providers")
+        .and_then(serde_json::Value::as_object)
+    {
+        slots.extend(providers.keys().cloned());
+    }
+    if let Some(auth) = auth.as_object() {
+        slots.extend(auth.keys().cloned());
+    }
+    slots.into_iter().collect()
 }
 
 /// True when settings.json still points Pi at a leftover slot/model.

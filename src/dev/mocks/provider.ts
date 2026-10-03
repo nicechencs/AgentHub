@@ -111,6 +111,19 @@ export function createMockProviderPort(): ProviderPort {
       mockState[agentId] = (mockState[agentId] ?? []).filter((p) => p.id !== providerId);
     },
 
+    async disconnectPiProvider(providerId, deleteFromLibrary) {
+      await delay(randomLatency());
+      const list = mockState.pi ?? [];
+      const provider = list.find((item) => item.id === providerId);
+      if (!provider) return;
+      if (deleteFromLibrary) {
+        moveMockProviderToTrash(provider);
+        mockState.pi = list.filter((item) => item.id !== providerId);
+        return;
+      }
+      provider.isCurrent = false;
+    },
+
     async importProviderLive(agentId, name) {
       await delay(randomLatency());
       const current = (mockState[agentId] ?? []).find((p) => p.isCurrent);

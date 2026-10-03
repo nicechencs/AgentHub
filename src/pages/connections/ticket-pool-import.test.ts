@@ -27,7 +27,7 @@ describe('pool shareable login rule', () => {
       return src.includes('POOL_SHAREABLE_OAUTH_AGENTS');
     });
     expect(hits.map((file) => path.relative(repoSrc, file))).toEqual([
-      'components/login-kernel/eligibility.ts',
+      path.join('components', 'login-kernel', 'eligibility.ts'),
     ]);
     expect(canSyncConnectionToPool({ agentId: 'workbuddy', kind: 'apikey' })).toBe(true);
     expect(canSyncConnectionToPool({ agentId: 'kimi', kind: 'oauth' })).toBe(false);

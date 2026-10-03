@@ -807,6 +807,30 @@ describe('TicketDetailPanel', () => {
     expect(markup).toContain('移入回收站');
   });
 
+  it('shows 取消接入 for the current Pi provider detail', () => {
+    const ticket = {
+      ...sampleWallet().tickets[0]!,
+      id: 'provider:pi-responses',
+      sourceKind: 'provider' as const,
+      sourceId: 'pi-responses',
+      agentId: 'pi' as const,
+      label: 'OpenAI Codex',
+      speaks: ['openai-responses'],
+    };
+    const markup = renderWithTooltip(
+      createElement(TicketDetailPanel, {
+        id: 'pi-provider-detail',
+        ticket,
+        extras: { isCurrent: true, inList: true },
+        onRemoveFromCatalog() {},
+        removeFromCatalogLabel: '取消接入',
+        onDelete() {},
+      }),
+    );
+    expect(markup).toContain('取消接入');
+    expect(markup).toContain('移入回收站');
+  });
+
   it('labels sync-current-login as 同步当前登录', () => {
     const markup = renderWithTooltip(
       createElement(TicketDetailPanel, {

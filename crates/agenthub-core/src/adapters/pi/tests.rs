@@ -1,10 +1,6 @@
 use super::*;
 use crate::models::RuntimeId;
 use serde_json::json;
-use std::sync::Mutex;
-
-static PI_CONFIG_ENV_LOCK: Mutex<()> = Mutex::new(());
-
 fn with_pi_official_catalog<T>(models: Vec<String>, f: impl FnOnce() -> T) -> T {
     super::TEST_PI_OFFICIAL_CATALOG.with(|cell| {
         *cell.borrow_mut() = Some(models);
@@ -1379,4 +1375,262 @@ fn apply_pi_node_requirement_keeps_ready_when_node22_present() {
     let out = apply_pi_node_requirement(detect, true);
     assert!(out.env_ready);
     assert!(out.notes.is_empty());
+}
+
+#[test]
+fn remove_pi_provider_removes_owned_slot_and_reselects_remaining_default() {
+    with_pi_config_dir(|dir| {
+        std::fs::write(
+            dir.join("models.json"),
+            serde_json::to_vec_pretty(&json!({
+                "providers": {
+                    "custom": {
+                        "baseUrl": "https://relay.example/v1",
+                        "api": "openai-responses",
+                        "apiKey": "sk-owned",
+                        "models": [{"id": "gpt-5"}]
+                    },
+                    "keep": {
+                        "baseUrl": "https://keep.example/v1",
+                        "api": "openai-completions",
+                        "apiKey": "sk-keep",
+                        "models": [{"id": "keep-model"}]
+                    }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("settings.json"),
+            br#"{"defaultProvider":"custom","defaultModel":"gpt-5","theme":"dark"}"#,
+        )
+        .unwrap();
+
+        remove_pi_provider(&Provider {
+            id: "p-current".into(),
+            agent_id: AgentId::Pi,
+            name: "Pi custom".into(),
+            settings_config: json!({
+                "models": {
+                    "providers": {
+                        "custom": {
+                            "baseUrl": "https://relay.example/v1",
+                            "api": "openai-responses",
+                            "apiKey": "sk-owned",
+                            "models": [{"id": "gpt-5"}]
+                        }
+                    }
+                }
+            }),
+            meta: json!({}),
+            is_current: true,
+            created_at: "".into(),
+            updated_at: "".into(),
+        })
+        .unwrap();
+
+        let models = read_json_object_or_empty(&dir.join("models.json")).unwrap();
+        assert!(models["providers"].get("custom").is_none());
+        assert_eq!(models["providers"]["keep"]["api"], "openai-completions");
+        let settings = read_json_object_or_empty(&dir.join("settings.json")).unwrap();
+        assert_eq!(settings["defaultProvider"], "keep");
+        assert!(settings.get("defaultModel").is_none());
+        assert_eq!(settings["theme"], "dark");
+    });
+}
+
+#[test]
+fn remove_pi_provider_rejects_live_ownership_mismatch_without_writing() {
+    with_pi_config_dir(|dir| {
+        let models_path = dir.join("models.json");
+        let settings_path = dir.join("settings.json");
+        let models_before = br#"{"providers":{"custom":{"baseUrl":"https://other.example/v1","api":"openai-responses","apiKey":"sk-other"}}}"#;
+        let settings_before = br#"{"defaultProvider":"custom","defaultModel":"other"}"#;
+        std::fs::write(&models_path, models_before).unwrap();
+        std::fs::write(&settings_path, settings_before).unwrap();
+
+        let error = remove_pi_provider(&Provider {
+            id: "p-current".into(),
+            agent_id: AgentId::Pi,
+            name: "Pi custom".into(),
+            settings_config: json!({
+                "models": {"providers": {"custom": {
+                    "baseUrl": "https://relay.example/v1",
+                    "api": "openai-responses",
+                    "apiKey": "sk-owned"
+                }}}
+            }),
+            meta: json!({}),
+            is_current: true,
+            created_at: "".into(),
+            updated_at: "".into(),
+        })
+        .unwrap_err();
+        assert_eq!(error.code(), "provider.pi.live_conflict");
+        assert_eq!(std::fs::read(&models_path).unwrap(), models_before);
+        assert_eq!(std::fs::read(&settings_path).unwrap(), settings_before);
+    });
+}
+
+#[test]
+fn remove_pi_provider_allows_missing_slot_and_clears_stale_default() {
+    with_pi_config_dir(|dir| {
+        let models_path = dir.join("models.json");
+        let models_before = br#"{"providers":{"keep":{"baseUrl":"https://keep.example/v1","api":"openai-responses","apiKey":"sk-keep"}}}"#;
+        std::fs::write(&models_path, models_before).unwrap();
+        std::fs::write(
+            dir.join("settings.json"),
+            br#"{"defaultProvider":"custom","defaultModel":"old"}"#,
+        )
+        .unwrap();
+
+        remove_pi_provider(&Provider {
+            id: "stale".into(),
+            agent_id: AgentId::Pi,
+            name: "stale".into(),
+            settings_config: json!({
+                "models": {"providers": {"custom": {
+                    "baseUrl": "https://relay.example/v1",
+                    "api": "openai-responses",
+                    "apiKey": "sk-owned"
+                }}}
+            }),
+            meta: json!({}),
+            is_current: true,
+            created_at: "".into(),
+            updated_at: "".into(),
+        })
+        .unwrap();
+        assert_eq!(std::fs::read(&models_path).unwrap(), models_before);
+        let settings = read_json_object_or_empty(&dir.join("settings.json")).unwrap();
+        assert_eq!(settings["defaultProvider"], "keep");
+        assert!(settings.get("defaultModel").is_none());
+    });
+}
+
+#[test]
+fn remove_pi_provider_rejects_divergent_duplicate_slot_without_writing() {
+    with_pi_config_dir(|dir| {
+        let models_path = dir.join("models.json");
+        let before = br#"{
+  "providers": {
+    "custom": {"baseUrl":"https://relay.example/v1","api":"openai-responses","apiKey":"sk-owned"},
+    "custom": {"baseUrl":"https://other.example/v1","api":"openai-completions","apiKey":"sk-other"}
+  }
+}"#;
+        std::fs::write(&models_path, before).unwrap();
+        let error = remove_pi_provider(&Provider {
+            id: "duplicate".into(),
+            agent_id: AgentId::Pi,
+            name: "duplicate".into(),
+            settings_config: json!({
+                "models": {"providers": {"custom": {
+                    "baseUrl": "https://relay.example/v1",
+                    "api": "openai-responses",
+                    "apiKey": "sk-owned"
+                }}}
+            }),
+            meta: json!({}),
+            is_current: true,
+            created_at: "".into(),
+            updated_at: "".into(),
+        })
+        .unwrap_err();
+        assert_eq!(error.code(), "provider.pi.live_conflict");
+        assert_eq!(std::fs::read(&models_path).unwrap(), before);
+    });
+}
+
+#[test]
+fn remove_pi_provider_keeps_same_slot_auth_default_when_model_override_is_removed() {
+    with_pi_config_dir(|dir| {
+        std::fs::write(
+            dir.join("models.json"),
+            br#"{"providers":{"custom":{"baseUrl":"https://relay.example/v1","api":"openai-responses","apiKey":"sk-owned"}}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("auth.json"),
+            br#"{"custom":{"type":"future","idToken":"still-live"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("settings.json"),
+            br#"{"defaultProvider":"custom","defaultModel":"gpt-5"}"#,
+        )
+        .unwrap();
+
+        remove_pi_provider(&Provider {
+            id: "model-only".into(),
+            agent_id: AgentId::Pi,
+            name: "model-only".into(),
+            settings_config: json!({
+                "models": {"providers": {"custom": {
+                    "baseUrl": "https://relay.example/v1",
+                    "api": "openai-responses",
+                    "apiKey": "sk-owned"
+                }}}
+            }),
+            meta: json!({}),
+            is_current: true,
+            created_at: "".into(),
+            updated_at: "".into(),
+        })
+        .unwrap();
+
+        let auth = read_json_object_or_empty(&dir.join("auth.json")).unwrap();
+        assert_eq!(auth["custom"]["idToken"], "still-live");
+        let settings = read_json_object_or_empty(&dir.join("settings.json")).unwrap();
+        assert_eq!(settings["defaultProvider"], "custom");
+    });
+}
+
+#[test]
+fn remove_pi_provider_rejects_changed_unknown_auth_without_writing() {
+    with_pi_config_dir(|dir| {
+        let auth_path = dir.join("auth.json");
+        let before = br#"{"custom":{"type":"future","idToken":"live"}}"#;
+        std::fs::write(&auth_path, before).unwrap();
+        let error = remove_pi_provider(&Provider {
+            id: "unknown-auth".into(),
+            agent_id: AgentId::Pi,
+            name: "unknown-auth".into(),
+            settings_config: json!({
+                "auth": {"custom": {"type":"future","idToken":"saved"}}
+            }),
+            meta: json!({}),
+            is_current: true,
+            created_at: "".into(),
+            updated_at: "".into(),
+        })
+        .unwrap_err();
+        assert_eq!(error.code(), "provider.pi.live_conflict");
+        assert_eq!(std::fs::read(&auth_path).unwrap(), before);
+    });
+}
+
+#[test]
+fn remove_pi_provider_allows_equal_unknown_auth_entry() {
+    with_pi_config_dir(|dir| {
+        let auth = br#"{"custom":{"type":"future","idToken":"same"}}"#;
+        std::fs::write(dir.join("auth.json"), auth).unwrap();
+        remove_pi_provider(&Provider {
+            id: "equal-auth".into(),
+            agent_id: AgentId::Pi,
+            name: "equal-auth".into(),
+            settings_config: json!({
+                "auth": {"custom": {"type":"future","idToken":"same"}}
+            }),
+            meta: json!({}),
+            is_current: true,
+            created_at: "".into(),
+            updated_at: "".into(),
+        })
+        .unwrap();
+        assert_eq!(
+            read_json_object_or_empty(&dir.join("auth.json")).unwrap(),
+            json!({})
+        );
+    });
 }

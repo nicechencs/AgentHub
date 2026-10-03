@@ -3,6 +3,7 @@ import {
   agentCanReceiveTokenImport,
   agentMatchesTokenSurface,
   agentWritesLocalTokenKind,
+  findReusablePiTokenProvider,
   eligibleAgentsForTokenImport,
   isTokenImportAgentVisible,
   resolveTokenImportProfile,
@@ -13,6 +14,7 @@ import {
   tokenImportSurface,
 } from './token-import-model';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
+import type { Provider } from '@/lib/types';
 import type { LocalTokenRow } from './tokens-model';
 
 function row(
@@ -24,6 +26,39 @@ function row(
     profileId: 'profile-1',
     unavailable: false,
     ...partial,
+  };
+}
+
+const PI_KEY_HASH = 'c63ba3b89ec037c1719d24cb78471adc9e4136d864c539892f01eb3c2eab4692';
+
+function piProvider(input: {
+  id: string;
+  baseUrl?: string;
+  piApi?: string;
+  model?: string;
+  secretHash?: string;
+  updatedAt?: string;
+}): Provider {
+  return {
+    id: input.id,
+    agentId: 'pi',
+    name: 'custom',
+    preset: 'custom',
+    configText: JSON.stringify({
+      models: {
+        providers: {
+          custom: {
+            baseUrl: input.baseUrl ?? 'http://127.0.0.1:17034/v1',
+            api: input.piApi ?? 'openai-responses',
+            models: [{ id: input.model ?? 'gpt-5' }],
+          },
+        },
+      },
+    }),
+    configFormat: 'json',
+    isCurrent: false,
+    secretHash: input.secretHash ?? PI_KEY_HASH,
+    updatedAt: input.updatedAt,
   };
 }
 
@@ -270,6 +305,56 @@ describe('tokenImportApiKeyDraft', () => {
     expect(tokenImportConnectionsUrl('claude')).toBe(
       '/connections?agent=claude&mode=providers&intent=add-key',
     );
+  });
+});
+
+describe('findReusablePiTokenProvider', () => {
+  const draft = {
+    baseUrl: 'http://127.0.0.1:17034/v1/',
+    apiKey: 'ahb_secret',
+    model: 'gpt-5',
+    piApi: 'openai-responses' as const,
+  };
+
+  it('selects the newest exact match and rejects model, API, URL, or hash changes', async () => {
+    const older = piProvider({ id: 'pi-old', updatedAt: '2026-10-01T01:00:00.000Z' });
+    const newer = piProvider({ id: 'pi-new', updatedAt: '2026-10-02T01:00:00.000Z' });
+    expect(await findReusablePiTokenProvider({ draft, providers: [older, newer] })).toMatchObject({
+      id: 'pi-new',
+    });
+    expect(await findReusablePiTokenProvider({
+      draft: { ...draft, model: 'gpt-5-mini' },
+      providers: [newer],
+    })).toBeNull();
+    expect(await findReusablePiTokenProvider({
+      draft: { ...draft, piApi: 'openai-completions' },
+      providers: [newer],
+    })).toBeNull();
+    expect(await findReusablePiTokenProvider({
+      draft: { ...draft, baseUrl: 'http://127.0.0.1:17035/v1' },
+      providers: [newer],
+    })).toBeNull();
+    expect(await findReusablePiTokenProvider({
+      draft: { ...draft, apiKey: 'ahb_other' },
+      providers: [newer],
+    })).toBeNull();
+    expect(await findReusablePiTokenProvider({
+      draft: { ...draft, model: undefined },
+      providers: [newer],
+    })).toBeNull();
+
+    const tenant = piProvider({
+      id: 'pi-tenant',
+      baseUrl: 'http://127.0.0.1:17034/v1?tenant=one',
+    });
+    expect(await findReusablePiTokenProvider({
+      draft: { ...draft, baseUrl: 'http://127.0.0.1:17034/v1/?tenant=one' },
+      providers: [tenant],
+    })).toMatchObject({ id: 'pi-tenant' });
+    expect(await findReusablePiTokenProvider({
+      draft: { ...draft, baseUrl: 'http://127.0.0.1:17034/v1?tenant=two' },
+      providers: [tenant],
+    })).toBeNull();
   });
 });
 

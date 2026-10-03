@@ -928,6 +928,7 @@ describe('ticket detail fields', () => {
       switching: false,
     });
     expect(showsCatalogUnapply('namedSlots', true)).toBe(true);
+    expect(showsCatalogUnapply('namedSlots', true, false)).toBe(false);
     expect(showsCatalogUnapply('catalogAppend', false)).toBe(false);
     expect(showsCatalogUnapply('namedSlots', false)).toBe(false);
     expect(showsCatalogUnapply('exclusive', true)).toBe(false);

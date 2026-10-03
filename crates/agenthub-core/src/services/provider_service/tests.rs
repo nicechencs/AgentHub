@@ -4,6 +4,10 @@ use crate::models::{
     AuthState, Capability, CapabilityState, DetectResult, DetectStatus, InstallChannel, RunOptions,
     RunSpec,
 };
+use crate::services::adapter_route_constants::{
+    KIMI_MEMBERSHIP_PRESET, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT,
+};
+use crate::services::adapter_secret_resolver::CONNECTION_SECRET_MARKER;
 use crate::services::LiveWriteAuthority;
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -167,6 +171,285 @@ fn input(id: &str, agent: AgentId, name: &str, current: bool) -> ProviderInput {
         meta: json!({"note": "n"}),
         is_current: current,
     }
+}
+
+fn with_pi_config_dir<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
+    let _guard = crate::adapters::pi::PI_CONFIG_ENV_LOCK.lock().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let previous = std::env::var_os("PI_CODING_AGENT_DIR");
+    std::env::set_var("PI_CODING_AGENT_DIR", dir.path());
+    let result = f(dir.path());
+    match previous {
+        Some(value) => std::env::set_var("PI_CODING_AGENT_DIR", value),
+        None => std::env::remove_var("PI_CODING_AGENT_DIR"),
+    }
+    result
+}
+
+fn pi_provider(id: &str, current: bool, key: &str) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Pi,
+        name: id.into(),
+        settings_config: json!({
+            "models": {"providers": {"custom": {
+                "baseUrl": "https://relay.example/v1",
+                "api": "openai-responses",
+                "apiKey": key,
+                "models": [{"id": "gpt-5"}]
+            }}}
+        }),
+        meta: json!({"preset": "custom"}),
+        is_current: current,
+        created_at: "2026-03-01 10:00:00".into(),
+        updated_at: format!("2026-03-02 11:00:00-{id}"),
+    }
+}
+
+#[test]
+fn disconnect_pi_current_cancel_removes_live_slot_and_keeps_row() {
+    with_pi_config_dir(|dir| {
+        std::fs::write(
+            dir.join("models.json"),
+            serde_json::to_vec_pretty(&json!({
+                "providers": {
+                    "custom": {
+                        "baseUrl": "https://relay.example/v1",
+                        "api": "openai-responses",
+                        "apiKey": "sk-owned",
+                        "models": [{"id": "gpt-5"}]
+                    }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("settings.json"),
+            br#"{"defaultProvider":"custom","defaultModel":"gpt-5"}"#,
+        )
+        .unwrap();
+        let root = tempdir().unwrap();
+        let db = Database::open(&root.path().join("ah.db")).unwrap();
+        let service = ProviderService::with_live(
+            db.clone(),
+            AdapterRegistry::default(),
+            root.path().join("backups"),
+        );
+        let row = pi_provider("pi-current", true, "sk-owned");
+        service.repo().upsert(&row).unwrap();
+
+        service.disconnect_pi_provider(&row.id, false).unwrap();
+
+        assert!(!service.get_by_id(&row.id).unwrap().unwrap().is_current);
+        assert!(service.get_current(AgentId::Pi).unwrap().is_none());
+        let models = serde_json::from_str::<serde_json::Value>(
+            &std::fs::read_to_string(dir.join("models.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(models["providers"].get("custom").is_none());
+    });
+}
+
+#[test]
+fn disconnect_pi_old_same_slot_deletes_only_database_row() {
+    with_pi_config_dir(|dir| {
+        let models_path = dir.join("models.json");
+        let live_before = br#"{"providers":{"custom":{"baseUrl":"https://relay.example/v1","api":"openai-responses","apiKey":"sk-current"}}}"#;
+        std::fs::write(&models_path, live_before).unwrap();
+        let root = tempdir().unwrap();
+        let db = Database::open(&root.path().join("ah.db")).unwrap();
+        let service = ProviderService::with_live(
+            db.clone(),
+            AdapterRegistry::default(),
+            root.path().join("backups"),
+        );
+        let current = pi_provider("pi-current", true, "sk-current");
+        let old = pi_provider("pi-old", false, "sk-old");
+        service.repo().upsert(&current).unwrap();
+        service.repo().upsert(&old).unwrap();
+
+        service.disconnect_pi_provider(&old.id, true).unwrap();
+
+        assert!(service.get_by_id(&old.id).unwrap().is_none());
+        assert_eq!(std::fs::read(&models_path).unwrap(), live_before);
+        assert!(service.get_by_id(&current.id).unwrap().unwrap().is_current);
+    });
+}
+
+#[test]
+fn disconnect_pi_generated_provider_materializes_source_key_before_ownership_check() {
+    with_pi_config_dir(|dir| {
+        let models_path = dir.join("models.json");
+        std::fs::write(
+            &models_path,
+            serde_json::to_vec_pretty(&json!({
+                "providers": {
+                    KIMI_PI_PROVIDER_SLOT: {
+                        "baseUrl": KIMI_PI_BASE_URL,
+                        "api": "openai-completions",
+                        "apiKey": "source-kimi-secret",
+                        "models": [{"id": "kimi-k2.5"}]
+                    }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("settings.json"),
+            format!(
+                r#"{{"defaultProvider":"{KIMI_PI_PROVIDER_SLOT}","defaultModel":"kimi-k2.5"}}"#
+            ),
+        )
+        .unwrap();
+
+        let root = tempdir().unwrap();
+        let db = Database::open(&root.path().join("ah.db")).unwrap();
+        let service =
+            ProviderService::with_live(db, AdapterRegistry::default(), root.path().join("backups"));
+        let source = Provider {
+            id: "kimi-source".into(),
+            agent_id: AgentId::Kimi,
+            name: "Kimi Code membership".into(),
+            settings_config: json!({"apiKey": "source-kimi-secret"}),
+            meta: json!({"preset": KIMI_MEMBERSHIP_PRESET}),
+            is_current: false,
+            created_at: "2026-03-01 10:00:00".into(),
+            updated_at: "2026-03-02 11:00:00-source".into(),
+        };
+        let generated = Provider {
+            id: "pi-generated-kimi".into(),
+            agent_id: AgentId::Pi,
+            name: "Kimi Code → Pi".into(),
+            settings_config: json!({
+                "models": {"providers": {
+                    KIMI_PI_PROVIDER_SLOT: {
+                        "baseUrl": KIMI_PI_BASE_URL,
+                        "api": "openai-completions",
+                        "apiKey": CONNECTION_SECRET_MARKER,
+                        "models": [{"id": "kimi-k2.5"}]
+                    }
+                }}
+            }),
+            meta: json!({
+                "generatedBy": "adapter",
+                "adapterRuleId": "kimi-membership-to-pi-v1",
+                "adapterRuleVersion": 1,
+                "adapterSecretMode": "source_reference",
+                "adapterSourceRef": {"kind": "provider", "id": source.id}
+            }),
+            is_current: true,
+            created_at: "2026-03-01 10:00:00".into(),
+            updated_at: "2026-03-02 11:00:00-generated".into(),
+        };
+        service.repo().upsert(&source).unwrap();
+        service.repo().upsert(&generated).unwrap();
+
+        service
+            .disconnect_pi_provider(&generated.id, false)
+            .unwrap();
+
+        assert!(
+            !service
+                .get_by_id(&generated.id)
+                .unwrap()
+                .unwrap()
+                .is_current
+        );
+        let models = serde_json::from_str::<serde_json::Value>(
+            &std::fs::read_to_string(models_path).unwrap(),
+        )
+        .unwrap();
+        assert!(models["providers"].get(KIMI_PI_PROVIDER_SLOT).is_none());
+    });
+}
+
+#[test]
+fn disconnect_pi_current_delete_moves_row_to_trash_after_removing_live_slot() {
+    with_pi_config_dir(|dir| {
+        let models_path = dir.join("models.json");
+        std::fs::write(
+            &models_path,
+            br#"{"providers":{"custom":{"baseUrl":"https://relay.example/v1","api":"openai-responses","apiKey":"sk-owned"}}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("settings.json"),
+            br#"{"defaultProvider":"custom","defaultModel":"gpt-5"}"#,
+        )
+        .unwrap();
+        let root = tempdir().unwrap();
+        let db = Database::open(&root.path().join("ah.db")).unwrap();
+        let service = ProviderService::with_live(
+            db.clone(),
+            AdapterRegistry::default(),
+            root.path().join("backups"),
+        );
+        let row = pi_provider("pi-delete-current", true, "sk-owned");
+        service.repo().upsert(&row).unwrap();
+
+        service.disconnect_pi_provider(&row.id, true).unwrap();
+
+        assert!(service.get_by_id(&row.id).unwrap().is_none());
+        let trash = crate::services::ConnectionService::new(db)
+            .list_trash(Some(AgentId::Pi))
+            .unwrap();
+        assert!(trash.iter().any(|item| item.source_id == row.id));
+        let models = serde_json::from_str::<serde_json::Value>(
+            &std::fs::read_to_string(models_path).unwrap(),
+        )
+        .unwrap();
+        assert!(models["providers"].get("custom").is_none());
+    });
+}
+
+#[test]
+fn disconnect_pi_db_cas_failure_restores_live_files() {
+    with_pi_config_dir(|dir| {
+        let models_path = dir.join("models.json");
+        let settings_path = dir.join("settings.json");
+        let models_before = br#"{"providers":{"custom":{"baseUrl":"https://relay.example/v1","api":"openai-responses","apiKey":"sk-owned"}}}"#;
+        let settings_before =
+            br#"{"defaultProvider":"custom","defaultModel":"gpt-5","theme":"dark"}"#;
+        std::fs::write(&models_path, models_before).unwrap();
+        std::fs::write(&settings_path, settings_before).unwrap();
+        let root = tempdir().unwrap();
+        let db = Database::open(&root.path().join("ah.db")).unwrap();
+        let service = ProviderService::with_live(
+            db.clone(),
+            AdapterRegistry::default(),
+            root.path().join("backups"),
+        );
+        let row = pi_provider("pi-cas", true, "sk-owned");
+        service.repo().upsert(&row).unwrap();
+        db.with_conn(|conn| {
+            conn.execute_batch(
+                "CREATE TRIGGER pi_disconnect_test_abort_delete
+                 BEFORE DELETE ON providers
+                 WHEN OLD.id = 'pi-cas'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'injected Pi provider delete failure');
+                 END;",
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        let error = service.disconnect_pi_provider(&row.id, true).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("injected Pi provider delete failure"));
+        let stored = service.get_by_id(&row.id).unwrap().unwrap();
+        assert!(stored.is_current);
+        assert_eq!(std::fs::read(&models_path).unwrap(), models_before);
+        assert_eq!(std::fs::read(&settings_path).unwrap(), settings_before);
+        assert!(crate::services::ConnectionService::new(db)
+            .list_trash(Some(AgentId::Pi))
+            .unwrap()
+            .is_empty());
+    });
 }
 
 #[test]

@@ -60,6 +60,7 @@ import {
   findTicketPoolSource,
   officialDetailQuotaNeedsProbe,
   scheduleAfterMenuClose,
+  showsCatalogUnapply,
   shouldIgnoreMenuDialogDismiss,
   ticketAddDialogState,
   ticketDetailEditLabel,
@@ -777,6 +778,17 @@ export default function ConnectionsPage() {
   const detailTicket = inspectTarget?.kind === 'detail'
     ? visibleWallet?.tickets.find((ticket) => ticket.id === inspectTarget.ticketId) ?? null
     : null;
+  const detailExtras = detailTicket ? extrasForTicket(detailTicket) : null;
+  const detailCanUnapply = Boolean(
+    detailTicket
+    && detailTicket.agentId === 'pi'
+    && detailTicket.sourceKind === 'provider'
+    && showsCatalogUnapply(
+      resolveAgentMeta(detailTicket.agentId).occupancy,
+      detailExtras?.isCurrent,
+      detailExtras?.inList,
+    )
+  );
   const piDefault = usePiDefaultModel({
     ticket: detailTicket,
     isCurrent: detailTicket ? extrasForTicket(detailTicket)?.isCurrent === true : false,
@@ -854,7 +866,7 @@ export default function ConnectionsPage() {
         open
         width={inspect.paneWidth}
         ticket={detailTicket}
-        extras={extrasForTicket(detailTicket)}
+        extras={detailExtras}
         bindings={detailBindings}
         refreshing={refreshingTicketId === detailTicket.id}
         refreshLocked={refreshingTicketId !== null}
@@ -864,6 +876,10 @@ export default function ConnectionsPage() {
             : undefined
         }
         onDelete={() => setDeleteTicket(detailTicket)}
+        onRemoveFromCatalog={detailCanUnapply
+          ? () => void handleRemoveFromCatalog(detailTicket)
+          : undefined}
+        removeFromCatalogBusy={switchingTicketId === detailTicket.id}
         onEdit={ticketDetailEditLabel(extrasForTicket(detailTicket), t)
           ? () => handleEditTicket(detailTicket)
           : undefined}
@@ -943,7 +959,13 @@ export default function ConnectionsPage() {
   const deleteIsCurrent = deleteTicket
     ? extrasForTicket(deleteTicket)?.isCurrent === true
     : false;
-  const deleteSwitchTargets = deleteTicket && deleteIsCurrent && wallet
+  const deleteIsCurrentPiProvider = Boolean(
+    deleteTicket
+    && deleteTicket.agentId === 'pi'
+    && deleteTicket.sourceKind === 'provider'
+    && deleteIsCurrent,
+  );
+  const deleteSwitchTargets = deleteTicket && deleteIsCurrent && !deleteIsCurrentPiProvider && wallet
     ? deleteCurrentSwitchTargets(
       deleteTicket,
       wallet.tickets,
@@ -1203,10 +1225,12 @@ export default function ConnectionsPage() {
             <DialogTitle>{t('connections.delete.title')}</DialogTitle>
             <DialogDescription>
               {deleteTicket
-                ? `${deleteTicket.label} · ${deleteConnectionDialogDescription({
-                    isCurrent: deleteIsCurrent,
-                    agentName: agentDisplayName(deleteTicket.agentId),
-                  }, t)}`
+                ? `${deleteTicket.label} · ${deleteIsCurrentPiProvider
+                  ? t('connections.delete.dialogPiCurrent')
+                  : deleteConnectionDialogDescription({
+                      isCurrent: deleteIsCurrent,
+                      agentName: agentDisplayName(deleteTicket.agentId),
+                    }, t)}`
                 : ''}
             </DialogDescription>
           </DialogHeader>

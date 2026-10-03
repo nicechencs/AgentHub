@@ -46,3 +46,24 @@ describe('createTauriProviderPort.switchProvider', () => {
     await expect(port.switchProvider('claude', 'p-1')).rejects.toThrow('provider not found: missing [not_found]');
   });
 });
+
+describe('createTauriProviderPort.disconnectPiProvider', () => {
+  it('forwards the provider id and camel-case delete flag', async () => {
+    invokeMock.mockResolvedValueOnce(undefined);
+    const port = createTauriProviderPort();
+
+    await port.disconnectPiProvider('pi-provider-1', true);
+
+    expect(invokeMock).toHaveBeenCalledWith('disconnect_pi_provider', {
+      id: 'pi-provider-1',
+      deleteFromLibrary: true,
+    });
+  });
+
+  it('rethrows disconnect failures', async () => {
+    invokeMock.mockRejectedValueOnce('provider not found [not_found]');
+    const port = createTauriProviderPort();
+
+    await expect(port.disconnectPiProvider('missing', false)).rejects.toBe('provider not found [not_found]');
+  });
+});

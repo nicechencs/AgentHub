@@ -172,6 +172,51 @@ impl ConnectionService {
         })
     }
 
+    /// Demote one provider only when its revision still matches the caller's
+    /// live-file snapshot.  Used by live disconnect sagas after file cleanup.
+    pub fn update_provider_non_current_if_revision(
+        &self,
+        provider: &Provider,
+        expected_updated_at: &str,
+    ) -> Result<Provider> {
+        if provider.is_current {
+            return Err(AppError::InvalidArg(
+                "update_provider_non_current_if_revision requires is_current=false".into(),
+            ));
+        }
+        self.db.with_conn(|conn| {
+            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+            let existing = provider_get_by_id_conn(&tx, &provider.id)?.ok_or_else(|| {
+                AppError::NotFound(format!("provider not found: {}", provider.id))
+            })?;
+            if existing.agent_id != provider.agent_id {
+                return Err(AppError::NotFound(format!(
+                    "provider not found: {} (agent filter: {})",
+                    provider.id,
+                    provider.agent_id.as_str()
+                )));
+            }
+            if existing.updated_at != expected_updated_at {
+                return Err(AppError::message(
+                    "provider.pi.cancel.conflict",
+                    "Pi 连接已变化，请刷新连接页面后重试",
+                ));
+            }
+            let mut demoted = provider.clone();
+            demoted.updated_at = Self::now();
+            let updated = provider_update_if_revision_conn(&tx, &demoted, expected_updated_at)?;
+            self.clear_connection_refs_if_match_conn(
+                &tx,
+                updated.agent_id,
+                None,
+                Some(updated.id.as_str()),
+                &updated.updated_at,
+            )?;
+            tx.commit()?;
+            Ok(updated)
+        })
+    }
+
     /// Upsert provider with `is_current=false`. Clears connection refs only when
     /// they reference this id; model/profile are preserved.
     pub fn upsert_provider_non_current(&self, provider: &Provider) -> Result<Provider> {

@@ -6,6 +6,7 @@
 mod compensate;
 mod live;
 mod lock;
+mod pi_disconnect;
 mod pool;
 mod switch_saga;
 
