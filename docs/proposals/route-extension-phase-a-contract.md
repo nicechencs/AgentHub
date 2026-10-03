@@ -31,7 +31,7 @@ updated: 2026-10-03
 
 ### 2.1 普通控制信封
 
-除 `Handshake` 尚未持有 `owner_term` 外，普通控制请求都带下列字段。字段名是候选契约，不是现行 JSON。
+除下面写明的豁免外，普通控制请求都带下列字段。字段名是候选契约，不是现行 JSON。`Handshake` 请求不带 `owner_term`。本 epoch 尚无 owner 时的首次 `AcquireOrRenewOwner`（`mode = acquire`）也不带、也不匹配已有 `owner_term`，因为此时还没有可匹配的 term；成功回复才发放第一个 `owner_term`。`takeover` 只可带已失效的 `previous_term`，新 term 同样只出现在成功回复里。`renew` 以及此后的控制请求必须带上并匹配当前 `owner_term`。
 
 | 字段 | 类型 | 作用 |
 |---|---|---|
@@ -42,7 +42,7 @@ updated: 2026-10-03
 | `owner_id` | 不透明字符串 | 当前 core 所有者标识 |
 | `app_data_dir` | 规范化绝对路径 | 应用数据目录范围，防止不同安装或旧 core 找错进程 |
 
-`Handshake` 成功回复发放 `instance_id` 与 `instance_epoch`。之后所有控制请求必须同时匹配 `instance_epoch`、`owner_term`、`owner_id` 与 `app_data_dir`。
+`Handshake` 成功回复发放 `instance_id` 与 `instance_epoch`。除首次 `acquire` 与 `takeover` 请求本身外，之后的控制请求必须同时匹配 `instance_epoch`、`owner_term`、`owner_id` 与 `app_data_dir`。首次 `acquire` 只匹配 `instance_epoch` 与 `app_data_dir`；`takeover` 匹配 epoch、目录，以及可选的已失效 `previous_term`，不要求匹配一个仍然有效的 term。
 
 ### 2.2 禁止出现在普通控制消息中的材料
 
@@ -126,7 +126,7 @@ updated: 2026-10-03
 
 | 方向 | 字段 |
 |---|---|
-| 请求 | 控制信封，`mode = acquire \| renew \| takeover`，可选 `previous_term`，`lease_budget`（候选，待 B 实测；方案起始值见提案第 5 节，不是当前默认） |
+| 请求 | 控制信封。`acquire`（本 epoch 尚无 owner）**豁免** `owner_term`，信封里不带该字段。`takeover` 不带当前有效 term，只可带已失效的 `previous_term`。`renew` 必须带并匹配当前 `owner_term`。另有 `mode = acquire \| renew \| takeover`，`lease_budget`（候选，待 B 实测；方案起始值见提案第 5 节，不是当前默认） |
 | 成功 | `owner_term`，`owner_lease_until`，`mode` 实际结果 |
 
 前置条件：
@@ -253,13 +253,15 @@ updated: 2026-10-03
 | 方向 | 字段 |
 |---|---|
 | 请求 | 控制信封，`drain_budget`（候选上限，方案起始 30 秒，待 B 实测） |
-| 成功 | `lifecycle = draining` 或随后 `not_serving`；`in_flight_count = 0` 或明确超时；`active` 作为版本基准保留；`prepared` 撤掉 |
+| 成功 | 预算内 `in_flight_count` 回到 0；`lifecycle` 随后为 `not_serving`；`active` 作为版本基准保留；`prepared` 撤掉。成功不等于「发生了超时」 |
 
 前置条件：当前 owner 或 owner 已失效后的受控排空；`instance_epoch` 匹配。
 
-成功：不再接新请求；在途按第 6.4 节策略结束。超出期限终止请求并释放资源，记录错误与请求数量，不能记为正常完成。
+成功：不再接新请求；在途在预算内按第 6.4 节策略结束并回到 0。这一结果记为正常排空完成。
 
-失败：`stale_epoch` / `drain_timeout`（超时仍算一次已执行的排空，结果可查）。锁文件或 PID 不能单独作为释放证明。
+超时是失败，不是成功的一种写法：超出 `drain_budget` 时终止剩余请求并释放资源，操作结果为 `drain_timeout`，记录错误与被终止的请求数量，不能记为正常完成。该次排空仍然已经执行过，结果可查，但不得与成功行叠在一起。
+
+失败：`stale_epoch`（请求被拒绝，排空未开始）/ `drain_timeout`（排空已执行，但预算用尽）。锁文件或 PID 不能单独作为释放证明。
 
 ### 3.10 Stop
 
@@ -421,7 +423,7 @@ core 按成员、协议、用途和最低有效期发放内存登录材料。独
 |---|---|---|---|
 | `config_revision` | 唯一 core | 该应用数据目录的 desired/actual 配置 | 持久单调；低版本拒绝；同版本同 `hash` 幂等；同版本异 `hash` 冲突；高版本须匹配 `base_revision` 后原子替换。恢复旧内容也必须分配新的前向 revision，只能产生「新版本含旧内容」 |
 | `hash` | core 对 `SnapshotBody` 计算 | 与 revision 成对 | 见第 4.3 节 |
-| `base_revision` | 调用方按当前 `active_revision` 填写 | 一次 Prepare/Commit | 必须匹配当前 `active_revision` 与 `expected_epoch` |
+| `base_revision` | 调用方按当前 `active_revision` 填写 | 只出现在 `PrepareDesired` 请求（以及准备令牌里绑定的基准） | 必须匹配当时的 `active_revision` 与 `expected_epoch`。`CommitDesired` 请求不带该字段；提交只凭 `prepare_token` 核对已经绑定的基准，不能在提交时另写一个覆盖用的 `base_revision` |
 | `expected_epoch` | 调用方 | 一次变更 | 迟到的旧实例响应不能更新当前界面 |
 | `instance_epoch` | runner，Handshake 发放 | 一次 runner 进程 | 新 epoch 从 `active = null` 开始 |
 | `owner_term` | runner，在 epoch 内发放 | 当前 epoch 的 owner 代数 | 首次取得或接管递增；正常续期不变。旧 epoch 或旧 term 的控制命令、准备令牌、异步登录回复和取消通知永久拒绝 |
