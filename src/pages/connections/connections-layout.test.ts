@@ -131,7 +131,7 @@ describe('connections layout wiring', () => {
   it('opens ticket detail without toggling closed on a second click of the same card', () => {
     const page = source('index.tsx');
     const start = page.indexOf('const handleShowDetail');
-    const end = page.indexOf('const importCoexistenceNotice', start);
+    const end = page.indexOf('const importDialogLines', start);
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
     const block = page.slice(start, end);
