@@ -23,6 +23,17 @@ const (
 	transportGrokResponses         = "grok_responses"
 	transportOpenAIChatCompletions = "openai_chat_completions"
 
+	upstreamTargetAnthropicAPI             = "anthropic_api"
+	upstreamTargetOpenAIAPI                = "openai_api"
+	upstreamTargetKimiCodeMembership       = "kimi_code_membership"
+	upstreamTargetCodexChatGPTSubscription = "codex_chatgpt_subscription"
+	upstreamTargetGrokXAISubscription      = "grok_xai_subscription"
+	upstreamTargetLoopback                 = "loopback"
+
+	credentialClassAPIKey        = "api_key"
+	credentialClassOfficialLogin = "official_login"
+	credentialClassLocal         = "local"
+
 	refreshNone       = "none"
 	refreshCodexOAuth = "codex_oauth"
 	refreshGrokOAuth  = "grok_oauth"
@@ -55,6 +66,8 @@ type RuntimeMemberConfig struct {
 	UpstreamKey       string   `json:"upstream_key"`
 	UpstreamAuth      string   `json:"upstream_auth"`
 	UpstreamTransport string   `json:"upstream_transport"`
+	UpstreamTarget    string   `json:"upstream_target,omitempty"`
+	CredentialClass   string   `json:"credential_class,omitempty"`
 	Priority          int64    `json:"priority"`
 	Position          int64    `json:"position"`
 	Models            []string `json:"models"`
@@ -194,6 +207,8 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 			member.UpstreamBaseURL = strings.TrimSpace(member.UpstreamBaseURL)
 			member.UpstreamAuth = strings.TrimSpace(member.UpstreamAuth)
 			member.UpstreamTransport = strings.TrimSpace(member.UpstreamTransport)
+			member.UpstreamTarget = strings.TrimSpace(member.UpstreamTarget)
+			member.CredentialClass = strings.TrimSpace(member.CredentialClass)
 			if member.ID == "" || member.UpstreamBaseURL == "" || member.UpstreamKey == "" {
 				return fmt.Errorf("runtime edge %s member %d is incomplete", edge.ID, memberIndex)
 			}
@@ -223,7 +238,14 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 			if !refreshMatchesMember(member) {
 				return fmt.Errorf("runtime edge %s member %s refresh kind does not match source or transport", edge.ID, member.ID)
 			}
-			if err := validateRuntimeUpstreamURL(member.UpstreamBaseURL, member.UpstreamTransport); err != nil {
+			if err := validateRuntimeUpstreamURL(
+				member.UpstreamBaseURL,
+				edge.Surface,
+				member.UpstreamTransport,
+				member.UpstreamAuth,
+				member.UpstreamTarget,
+				member.CredentialClass,
+			); err != nil {
 				return fmt.Errorf("runtime edge %s member %s upstream is not allowed", edge.ID, member.ID)
 			}
 			if len(member.Models) == 0 && edge.FixtureModel == "" {
@@ -295,6 +317,8 @@ func runtimeEdges(config *RuntimeConfig) ([]*RuntimeEdge, error) {
 				UpstreamKey:       member.UpstreamKey,
 				UpstreamAuth:      member.UpstreamAuth,
 				UpstreamTransport: member.UpstreamTransport,
+				UpstreamTarget:    member.UpstreamTarget,
+				CredentialClass:   member.CredentialClass,
 				Priority:          member.Priority,
 				Position:          member.Position,
 				Models:            append([]string(nil), member.Models...),
@@ -305,6 +329,7 @@ func runtimeEdges(config *RuntimeConfig) ([]*RuntimeEdge, error) {
 			IngressKey:     edge.IngressKey,
 			FixtureModel:   edge.FixtureModel,
 			SchedulePolicy: edge.SchedulePolicy,
+			Surface:        edge.Surface,
 			Members:        members,
 		})
 		if err != nil {

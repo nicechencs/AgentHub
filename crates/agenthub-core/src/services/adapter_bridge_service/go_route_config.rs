@@ -9,7 +9,7 @@ use crate::bridge::{
     BridgeMemberSpec, BridgeStartSpec, BridgeUpstreamProtocol, MemberCapabilitySnapshot,
 };
 use crate::error::{AppError, Result};
-use crate::models::{RouteDownstreamSurface, RoutePool};
+use crate::models::{AdapterSourceKind, AdapterSourceProduct, RouteDownstreamSurface, RoutePool};
 
 const CONFIG_VERSION: &str = "route-config.v0-isolated";
 const PRODUCT_DEFAULT_PORT: u16 = 43121;
@@ -17,6 +17,15 @@ const TRANSPORT_ANTHROPIC_MESSAGES: &str = "anthropic_messages";
 const TRANSPORT_CODEX_RESPONSES: &str = "codex_responses";
 const TRANSPORT_GROK_RESPONSES: &str = "grok_responses";
 const TRANSPORT_OPENAI_CHAT_COMPLETIONS: &str = "openai_chat_completions";
+const UPSTREAM_TARGET_ANTHROPIC_API: &str = "anthropic_api";
+const UPSTREAM_TARGET_OPENAI_API: &str = "openai_api";
+const UPSTREAM_TARGET_KIMI_CODE_MEMBERSHIP: &str = "kimi_code_membership";
+const UPSTREAM_TARGET_CODEX_CHATGPT_SUBSCRIPTION: &str = "codex_chatgpt_subscription";
+const UPSTREAM_TARGET_GROK_XAI_SUBSCRIPTION: &str = "grok_xai_subscription";
+const UPSTREAM_TARGET_LOOPBACK: &str = "loopback";
+const CREDENTIAL_CLASS_API_KEY: &str = "api_key";
+const CREDENTIAL_CLASS_OFFICIAL_LOGIN: &str = "official_login";
+const CREDENTIAL_CLASS_LOCAL: &str = "local";
 const REFRESH_NONE: &str = "none";
 const REFRESH_CODEX_OAUTH: &str = "codex_oauth";
 const REFRESH_GROK_OAUTH: &str = "grok_oauth";
@@ -60,11 +69,20 @@ struct GoRouteIsolatedMember {
     upstream_key: String,
     upstream_auth: &'static str,
     upstream_transport: &'static str,
+    upstream_target: &'static str,
+    credential_class: &'static str,
     priority: i64,
     position: i64,
     models: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     quota_remaining_pct: Option<f64>,
+}
+
+#[derive(Clone, Copy)]
+struct TrustedUpstreamSource {
+    target: &'static str,
+    credential_class: &'static str,
+    index_provider: Option<&'static str>,
 }
 
 impl AdapterBridgeService {
@@ -196,23 +214,19 @@ fn go_edge_from_spec(
         let (upstream_auth, upstream_transport) =
             compatible_protocol(pool.downstream_surface, spec.upstream.protocol)
                 .ok_or_else(incompatible_go_config_error)?;
-        if !is_allowed_upstream(
-            &spec.upstream.base_url,
-            pool.downstream_surface,
-            upstream_transport,
-        ) {
-            return Err(incompatible_go_config_error());
-        }
         spec.members
             .iter()
             .map(|member| {
+                let trusted_source = upstream_source(service, member, &spec.upstream.base_url)?;
                 flat_member(
                     service,
+                    pool.downstream_surface,
                     member,
                     &spec.upstream.base_url,
                     upstream_auth,
                     upstream_transport,
                     spec.listed_models.clone(),
+                    trusted_source,
                 )
             })
             .collect::<Result<Vec<_>>>()?
@@ -241,6 +255,7 @@ fn indexed_member(
     member: &BridgeMemberSpec,
     snapshots: &[MemberCapabilitySnapshot],
 ) -> Result<GoRouteIsolatedMember> {
+    let mut trusted_source: Option<TrustedUpstreamSource> = None;
     let mut upstream_base_url: Option<&str> = None;
     let mut upstream_auth = None;
     let mut upstream_transport = None;
@@ -251,13 +266,35 @@ fn indexed_member(
         .iter()
         .filter(|snapshot| snapshot.member_id == member.source_id)
     {
+        let snapshot_source = upstream_source(service, member, &snapshot.upstream_endpoint)?;
+        if snapshot_source
+            .index_provider
+            .is_some_and(|provider| snapshot.upstream_provider.trim() != provider)
+        {
+            return Err(incompatible_go_config_error());
+        }
         if snapshot.public_model.trim() != snapshot.upstream_model.trim() {
             return Err(incompatible_go_config_error());
         }
         let (auth, transport) = compatible_transport(surface, &snapshot.transport_key)
             .ok_or_else(incompatible_go_config_error)?;
-        if !is_allowed_upstream(&snapshot.upstream_endpoint, surface, transport) {
+        if !is_allowed_upstream(
+            &snapshot.upstream_endpoint,
+            surface,
+            transport,
+            snapshot_source.target,
+        ) {
             return Err(incompatible_go_config_error());
+        }
+        match trusted_source {
+            Some(existing)
+                if existing.target != snapshot_source.target
+                    || existing.credential_class != snapshot_source.credential_class =>
+            {
+                return Err(incompatible_go_config_error())
+            }
+            None => trusted_source = Some(snapshot_source),
+            _ => {}
         }
         match upstream_base_url {
             Some(existing) if !same_upstream(existing, &snapshot.upstream_endpoint) => {
@@ -284,22 +321,34 @@ fn indexed_member(
 
     flat_member(
         service,
+        surface,
         member,
         upstream_base_url.ok_or_else(incompatible_go_config_error)?,
         upstream_auth.ok_or_else(incompatible_go_config_error)?,
         upstream_transport.ok_or_else(incompatible_go_config_error)?,
         models,
+        trusted_source.ok_or_else(incompatible_go_config_error)?,
     )
 }
 
 fn flat_member(
     service: &AdapterBridgeService,
+    surface: RouteDownstreamSurface,
     member: &BridgeMemberSpec,
     upstream_base_url: &str,
     upstream_auth: &'static str,
     upstream_transport: &'static str,
     models: Vec<String>,
+    trusted_source: TrustedUpstreamSource,
 ) -> Result<GoRouteIsolatedMember> {
+    if !is_allowed_upstream(
+        upstream_base_url,
+        surface,
+        upstream_transport,
+        trusted_source.target,
+    ) {
+        return Err(incompatible_go_config_error());
+    }
     let source_kind = member.source_kind.trim();
     let source_id = member.source_id.trim();
     let id = if member.ticket_id.trim().is_empty() {
@@ -328,11 +377,66 @@ fn flat_member(
         upstream_key,
         upstream_auth,
         upstream_transport,
+        upstream_target: trusted_source.target,
+        credential_class: trusted_source.credential_class,
         priority: member.priority,
         position: member.position,
         models,
         quota_remaining_pct: member.quota_remaining_pct.filter(|value| value.is_finite()),
     })
+}
+
+fn upstream_source(
+    service: &AdapterBridgeService,
+    member: &BridgeMemberSpec,
+    upstream_base_url: &str,
+) -> Result<TrustedUpstreamSource> {
+    if is_loopback_upstream(upstream_base_url) {
+        return Ok(TrustedUpstreamSource {
+            target: UPSTREAM_TARGET_LOOPBACK,
+            credential_class: CREDENTIAL_CLASS_LOCAL,
+            index_provider: None,
+        });
+    }
+    let source_kind =
+        AdapterSourceKind::parse(&member.source_kind).ok_or_else(incompatible_go_config_error)?;
+    let product = service
+        .routes
+        .classify_source_product(source_kind, member.source_id.trim())
+        .map_err(|_| incompatible_go_config_error())?;
+    match product {
+        AdapterSourceProduct::AnthropicApi => Ok(TrustedUpstreamSource {
+            target: UPSTREAM_TARGET_ANTHROPIC_API,
+            credential_class: CREDENTIAL_CLASS_API_KEY,
+            index_provider: Some("anthropic"),
+        }),
+        AdapterSourceProduct::OpenaiApi => Ok(TrustedUpstreamSource {
+            target: UPSTREAM_TARGET_OPENAI_API,
+            credential_class: CREDENTIAL_CLASS_API_KEY,
+            index_provider: Some("openai"),
+        }),
+        AdapterSourceProduct::KimiCodeMembership => Ok(TrustedUpstreamSource {
+            target: UPSTREAM_TARGET_KIMI_CODE_MEMBERSHIP,
+            credential_class: CREDENTIAL_CLASS_API_KEY,
+            index_provider: Some("kimi"),
+        }),
+        AdapterSourceProduct::CodexChatGptSubscription => Ok(TrustedUpstreamSource {
+            target: UPSTREAM_TARGET_CODEX_CHATGPT_SUBSCRIPTION,
+            credential_class: CREDENTIAL_CLASS_OFFICIAL_LOGIN,
+            index_provider: Some("codex"),
+        }),
+        AdapterSourceProduct::XaiGrokSubscription => Ok(TrustedUpstreamSource {
+            target: UPSTREAM_TARGET_GROK_XAI_SUBSCRIPTION,
+            credential_class: CREDENTIAL_CLASS_OFFICIAL_LOGIN,
+            index_provider: Some("grok"),
+        }),
+        AdapterSourceProduct::XaiApi
+        | AdapterSourceProduct::GlmCodingPlan
+        | AdapterSourceProduct::DeepseekApi
+        | AdapterSourceProduct::ClaudeSubscription
+        | AdapterSourceProduct::Kiro
+        | AdapterSourceProduct::Other => Err(incompatible_go_config_error()),
+    }
 }
 
 fn refresh_kind(
@@ -420,11 +524,67 @@ fn compatible_transport(
     }
 }
 
-fn is_allowed_upstream(raw: &str, surface: RouteDownstreamSurface, transport: &str) -> bool {
-    is_loopback_upstream(raw)
-        || (surface == RouteDownstreamSurface::Messages
-            && transport == TRANSPORT_ANTHROPIC_MESSAGES
-            && is_official_anthropic_upstream(raw))
+fn is_allowed_upstream(
+    raw: &str,
+    surface: RouteDownstreamSurface,
+    transport: &str,
+    target: &str,
+) -> bool {
+    if target == UPSTREAM_TARGET_LOOPBACK {
+        return is_loopback_upstream(raw) && transport_matches_surface(transport, surface);
+    }
+    if !trusted_target_matches_route(target, surface, transport) {
+        return false;
+    }
+    match target {
+        UPSTREAM_TARGET_ANTHROPIC_API => is_exact_https_base(raw, "api.anthropic.com", "/v1"),
+        UPSTREAM_TARGET_OPENAI_API => is_exact_https_base(raw, "api.openai.com", "/v1"),
+        UPSTREAM_TARGET_KIMI_CODE_MEMBERSHIP => {
+            is_exact_https_base(raw, "api.kimi.com", "/coding/v1")
+        }
+        // The URL policy stays closed until the Go runner implements the
+        // vendor-specific request contract for these official-login routes.
+        UPSTREAM_TARGET_CODEX_CHATGPT_SUBSCRIPTION | UPSTREAM_TARGET_GROK_XAI_SUBSCRIPTION => false,
+        _ => false,
+    }
+}
+
+fn transport_matches_surface(transport: &str, surface: RouteDownstreamSurface) -> bool {
+    match surface {
+        RouteDownstreamSurface::Messages => transport == TRANSPORT_ANTHROPIC_MESSAGES,
+        RouteDownstreamSurface::Responses => matches!(
+            transport,
+            TRANSPORT_CODEX_RESPONSES
+                | TRANSPORT_GROK_RESPONSES
+                | TRANSPORT_OPENAI_CHAT_COMPLETIONS
+        ),
+        RouteDownstreamSurface::ChatCompletions => transport == TRANSPORT_OPENAI_CHAT_COMPLETIONS,
+    }
+}
+
+fn trusted_target_matches_route(
+    target: &str,
+    surface: RouteDownstreamSurface,
+    transport: &str,
+) -> bool {
+    match target {
+        UPSTREAM_TARGET_ANTHROPIC_API => {
+            surface == RouteDownstreamSurface::Messages && transport == TRANSPORT_ANTHROPIC_MESSAGES
+        }
+        UPSTREAM_TARGET_OPENAI_API | UPSTREAM_TARGET_KIMI_CODE_MEMBERSHIP => {
+            matches!(
+                surface,
+                RouteDownstreamSurface::Responses | RouteDownstreamSurface::ChatCompletions
+            ) && transport == TRANSPORT_OPENAI_CHAT_COMPLETIONS
+        }
+        UPSTREAM_TARGET_CODEX_CHATGPT_SUBSCRIPTION => {
+            surface == RouteDownstreamSurface::Responses && transport == TRANSPORT_CODEX_RESPONSES
+        }
+        UPSTREAM_TARGET_GROK_XAI_SUBSCRIPTION => {
+            surface == RouteDownstreamSurface::Responses && transport == TRANSPORT_GROK_RESPONSES
+        }
+        _ => false,
+    }
 }
 
 fn is_loopback_upstream(raw: &str) -> bool {
@@ -447,30 +607,30 @@ fn is_loopback_upstream(raw: &str) -> bool {
             .is_ok_and(|address| address.is_loopback())
 }
 
-fn is_official_anthropic_upstream(raw: &str) -> bool {
+fn is_exact_https_base(raw: &str, expected_host: &str, expected_path: &str) -> bool {
     let Ok(url) = reqwest::Url::parse(raw.trim()) else {
         return false;
     };
     url.scheme() == "https"
-        && has_official_anthropic_authority(raw)
+        && has_exact_https_authority(raw, expected_host)
         && url.username().is_empty()
         && url.password().is_none()
         && url
             .host_str()
-            .is_some_and(|host| host.eq_ignore_ascii_case("api.anthropic.com"))
+            .is_some_and(|host| host.eq_ignore_ascii_case(expected_host))
         && url.port_or_known_default() == Some(443)
         && url.query().is_none()
         && url.fragment().is_none()
-        && matches!(url.path(), "" | "/" | "/v1")
+        && url.path() == expected_path
 }
 
-fn has_official_anthropic_authority(raw: &str) -> bool {
+fn has_exact_https_authority(raw: &str, expected_host: &str) -> bool {
     raw.trim()
         .split_once("://")
         .and_then(|(_, remainder)| remainder.split(['/', '?', '#']).next())
         .is_some_and(|authority| {
-            authority.eq_ignore_ascii_case("api.anthropic.com")
-                || authority.eq_ignore_ascii_case("api.anthropic.com:443")
+            authority.eq_ignore_ascii_case(expected_host)
+                || authority.eq_ignore_ascii_case(&format!("{expected_host}:443"))
         })
 }
 

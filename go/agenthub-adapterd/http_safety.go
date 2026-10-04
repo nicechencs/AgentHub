@@ -209,9 +209,13 @@ func minInt64(value, max int64) int {
 
 func newUpstreamHTTPClientWithPolicy(policy routeHTTPSafetyPolicy) *http.Client {
 	dialer := &net.Dialer{Timeout: policy.UpstreamDialTimeout, KeepAlive: 30 * time.Second}
+	return newUpstreamHTTPClientWithNetwork(policy, net.DefaultResolver, dialer)
+}
+
+func newUpstreamHTTPClientWithNetwork(policy routeHTTPSafetyPolicy, resolver upstreamIPResolver, dialer upstreamContextDialer) *http.Client {
 	transport := &http.Transport{
-		Proxy:                  http.ProxyFromEnvironment,
-		DialContext:            dialer.DialContext,
+		Proxy:                  nil,
+		DialContext:            validatedUpstreamDialContext(resolver, dialer),
 		ForceAttemptHTTP2:      true,
 		MaxIdleConns:           policy.UpstreamMaxConns,
 		MaxIdleConnsPerHost:    policy.UpstreamMaxConns,

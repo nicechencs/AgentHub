@@ -156,6 +156,7 @@ type ProbeFixture struct {
 	FixtureModel    string        `json:"fixture_model"`
 	SchedulePolicy  string        `json:"schedule_policy,omitempty"`
 	Members         []ProbeMember `json:"members,omitempty"`
+	Surface         string        `json:"-"`
 }
 
 type ProbeMember struct {
@@ -167,6 +168,8 @@ type ProbeMember struct {
 	UpstreamKey       string   `json:"upstream_key,omitempty"`
 	UpstreamAuth      string   `json:"upstream_auth,omitempty"`
 	UpstreamTransport string   `json:"-"`
+	UpstreamTarget    string   `json:"-"`
+	CredentialClass   string   `json:"-"`
 	Priority          int64    `json:"priority"`
 	Position          int64    `json:"position"`
 	Models            []string `json:"models,omitempty"`

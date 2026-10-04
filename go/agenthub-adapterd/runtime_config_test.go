@@ -246,47 +246,57 @@ func TestRuntimeConfigAllowsResponsesToChatTransport(t *testing.T) {
 
 func TestRuntimeUpstreamURLPolicy(t *testing.T) {
 	for _, allowed := range []struct {
-		url, transport string
+		url, surface, transport, auth, target, credentialClass string
 	}{
-		{"http://127.0.0.1:18080/v1", transportCodexResponses},
-		{"https://api.anthropic.com", transportAnthropicMessages},
-		{"https://API.ANTHROPIC.COM/", transportAnthropicMessages},
-		{"https://api.anthropic.com:443/v1", transportAnthropicMessages},
+		{"http://127.0.0.1:18080/v1", surfaceResponses, transportCodexResponses, authBearer, "", ""},
+		{"http://127.0.0.1:18080/v1", surfaceResponses, transportCodexResponses, authBearer, upstreamTargetLoopback, credentialClassLocal},
+		{"https://api.anthropic.com/v1", surfaceMessages, transportAnthropicMessages, authAPIKey, upstreamTargetAnthropicAPI, credentialClassAPIKey},
+		{"https://API.ANTHROPIC.COM:443/v1", surfaceMessages, transportAnthropicMessages, authAPIKey, upstreamTargetAnthropicAPI, credentialClassAPIKey},
+		{"https://api.openai.com/v1", surfaceResponses, transportOpenAIChatCompletions, authBearer, upstreamTargetOpenAIAPI, credentialClassAPIKey},
+		{"https://api.openai.com/v1", surfaceChatCompletions, transportOpenAIChatCompletions, authBearer, upstreamTargetOpenAIAPI, credentialClassAPIKey},
+		{"https://api.kimi.com/coding/v1", surfaceResponses, transportOpenAIChatCompletions, authBearer, upstreamTargetKimiCodeMembership, credentialClassAPIKey},
 	} {
-		if err := validateRuntimeUpstreamURL(allowed.url, allowed.transport); err != nil {
+		if err := validateRuntimeUpstreamURL(allowed.url, allowed.surface, allowed.transport, allowed.auth, allowed.target, allowed.credentialClass); err != nil {
 			t.Errorf("allowed URL %q rejected: %v", allowed.url, err)
 		}
 	}
 	for _, denied := range []struct {
-		url, transport string
+		url, surface, transport, auth, target, credentialClass string
 	}{
-		{"http://api.anthropic.com/v1", transportAnthropicMessages},
-		{"http://user@127.0.0.1:18080/custom", transportCodexResponses},
-		{"http://127.0.0.1:18080/custom?key=value", transportCodexResponses},
-		{"http://127.0.0.1:18080/custom?", transportCodexResponses},
-		{"http://127.0.0.1:18080/custom#fragment", transportCodexResponses},
-		{"http://127.0.0.1:18080/custom#", transportCodexResponses},
-		{"https://api.anthropic.com.evil.example/v1", transportAnthropicMessages},
-		{"https://user@api.anthropic.com/v1", transportAnthropicMessages},
-		{"https://@api.anthropic.com/v1", transportAnthropicMessages},
-		{"https://api.anthropic.com/v1?key=value", transportAnthropicMessages},
-		{"https://api.anthropic.com/v1#fragment", transportAnthropicMessages},
-		{"https://api.anthropic.com:8443/v1", transportAnthropicMessages},
-		{"https://api.anthropic.com:/v1", transportAnthropicMessages},
-		{"https://api.anthropic.com/v1/", transportAnthropicMessages},
-		{"https://api.anthropic.com/%76%31", transportAnthropicMessages},
-		{"https://api.anthropic.com/v1", transportCodexResponses},
-		{"https://chatgpt.com/backend-api/codex", transportCodexResponses},
-		{"https://cli-chat-proxy.grok.com/v1", transportGrokResponses},
+		{"http://api.anthropic.com/v1", surfaceMessages, transportAnthropicMessages, authAPIKey, upstreamTargetAnthropicAPI, credentialClassAPIKey},
+		{"http://user@127.0.0.1:18080/custom", surfaceResponses, transportCodexResponses, authBearer, "", ""},
+		{"http://127.0.0.1:18080/custom?key=value", surfaceResponses, transportCodexResponses, authBearer, "", ""},
+		{"http://127.0.0.1:18080/custom?", surfaceResponses, transportCodexResponses, authBearer, "", ""},
+		{"http://127.0.0.1:18080/custom#fragment", surfaceResponses, transportCodexResponses, authBearer, "", ""},
+		{"http://127.0.0.1:18080/custom#", surfaceResponses, transportCodexResponses, authBearer, "", ""},
+		{"http://127.0.0.1:18080/v1", surfaceResponses, transportCodexResponses, authBearer, upstreamTargetLoopback, credentialClassAPIKey},
+		{"https://api.anthropic.com.evil.example/v1", surfaceMessages, transportAnthropicMessages, authAPIKey, upstreamTargetAnthropicAPI, credentialClassAPIKey},
+		{"https://user@api.anthropic.com/v1", surfaceMessages, transportAnthropicMessages, authAPIKey, upstreamTargetAnthropicAPI, credentialClassAPIKey},
+		{"https://@api.anthropic.com/v1", surfaceMessages, transportAnthropicMessages, authAPIKey, upstreamTargetAnthropicAPI, credentialClassAPIKey},
+		{"https://api.anthropic.com/v1?key=value", surfaceMessages, transportAnthropicMessages, authAPIKey, upstreamTargetAnthropicAPI, credentialClassAPIKey},
+		{"https://api.anthropic.com/v1?", surfaceMessages, transportAnthropicMessages, authAPIKey, upstreamTargetAnthropicAPI, credentialClassAPIKey},
+		{"https://api.anthropic.com/v1#fragment", surfaceMessages, transportAnthropicMessages, authAPIKey, upstreamTargetAnthropicAPI, credentialClassAPIKey},
+		{"https://api.anthropic.com/v1#", surfaceMessages, transportAnthropicMessages, authAPIKey, upstreamTargetAnthropicAPI, credentialClassAPIKey},
+		{"https://api.anthropic.com:8443/v1", surfaceMessages, transportAnthropicMessages, authAPIKey, upstreamTargetAnthropicAPI, credentialClassAPIKey},
+		{"https://api.anthropic.com:/v1", surfaceMessages, transportAnthropicMessages, authAPIKey, upstreamTargetAnthropicAPI, credentialClassAPIKey},
+		{"https://api.anthropic.com/v1/", surfaceMessages, transportAnthropicMessages, authAPIKey, upstreamTargetAnthropicAPI, credentialClassAPIKey},
+		{"https://api.anthropic.com/%76%31", surfaceMessages, transportAnthropicMessages, authAPIKey, upstreamTargetAnthropicAPI, credentialClassAPIKey},
+		{"https://api.anthropic.com/v1", surfaceMessages, transportAnthropicMessages, authAPIKey, upstreamTargetOpenAIAPI, credentialClassAPIKey},
+		{"https://api.openai.com/v1", surfaceMessages, transportOpenAIChatCompletions, authBearer, upstreamTargetOpenAIAPI, credentialClassAPIKey},
+		{"https://api.kimi.com/coding/v1", surfaceResponses, transportOpenAIChatCompletions, authBearer, upstreamTargetOpenAIAPI, credentialClassAPIKey},
+		{"https://api.openai.com/v1", surfaceResponses, transportOpenAIChatCompletions, authBearer, "", ""},
+		{"https://api.openai.com/v1", surfaceResponses, transportOpenAIChatCompletions, authBearer, upstreamTargetLoopback, credentialClassLocal},
+		{"https://chatgpt.com/backend-api/codex", surfaceResponses, transportCodexResponses, authBearer, upstreamTargetCodexChatGPTSubscription, credentialClassOfficialLogin},
+		{"https://cli-chat-proxy.grok.com/v1", surfaceResponses, transportGrokResponses, authBearer, upstreamTargetGrokXAISubscription, credentialClassOfficialLogin},
 	} {
-		if err := validateRuntimeUpstreamURL(denied.url, denied.transport); err == nil {
+		if err := validateRuntimeUpstreamURL(denied.url, denied.surface, denied.transport, denied.auth, denied.target, denied.credentialClass); err == nil {
 			t.Errorf("denied URL %q transport %q was accepted", denied.url, denied.transport)
 		}
 	}
 }
 
 func TestOfficialAnthropicConfigAndHeaders(t *testing.T) {
-	raw := `{"version":"route-config.v0-isolated","edges":[{"id":"edge","ingress_key":"ingress","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"claude-model","members":[{"id":"member","upstream_base_url":"https://api.anthropic.com/v1","upstream_key":"synthetic-anthropic-key","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","priority":0,"position":0,"models":["claude-model"]}]}]}`
+	raw := `{"version":"route-config.v0-isolated","edges":[{"id":"edge","ingress_key":"ingress","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"claude-model","members":[{"id":"member","upstream_base_url":"https://api.anthropic.com/v1","upstream_key":"synthetic-anthropic-key","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","upstream_target":"anthropic_api","credential_class":"api_key","priority":0,"position":0,"models":["claude-model"]}]}]}`
 	config, err := LoadRuntimeConfig(strings.NewReader(raw))
 	if err != nil {
 		t.Fatal(err)
@@ -314,6 +324,8 @@ func TestOfficialAnthropicConfigAndHeaders(t *testing.T) {
 		UpstreamKey:       member.UpstreamKey,
 		UpstreamAuth:      member.UpstreamAuth,
 		UpstreamTransport: member.UpstreamTransport,
+		UpstreamTarget:    member.UpstreamTarget,
+		CredentialClass:   member.CredentialClass,
 	}, "/v1/messages", []byte(`{"model":"claude-model"}`), false)
 	if err != nil {
 		t.Fatal(err)
@@ -361,38 +373,48 @@ func TestLegacyProbeAPIKeyStillAddsAnthropicVersion(t *testing.T) {
 }
 
 func TestUpstreamClientDoesNotFollowRedirects(t *testing.T) {
-	targetHit := make(chan struct{}, 1)
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		targetHit <- struct{}{}
-		w.WriteHeader(http.StatusOK)
-	}))
-	t.Cleanup(target.Close)
-	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Redirect(w, &http.Request{}, target.URL, http.StatusTemporaryRedirect)
-	}))
-	t.Cleanup(redirect.Close)
+	for _, status := range []int{
+		http.StatusMovedPermanently,
+		http.StatusFound,
+		http.StatusSeeOther,
+		http.StatusTemporaryRedirect,
+		http.StatusPermanentRedirect,
+	} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			targetHit := make(chan struct{}, 1)
+			target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				targetHit <- struct{}{}
+				w.WriteHeader(http.StatusOK)
+			}))
+			t.Cleanup(target.Close)
+			redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Redirect(w, &http.Request{}, target.URL, status)
+			}))
+			t.Cleanup(redirect.Close)
 
-	response, err := doMemberMessages(context.Background(), newUpstreamHTTPClient(), &PoolMember{
-		UpstreamBaseURL:   redirect.URL,
-		UpstreamKey:       "synthetic-key",
-		UpstreamAuth:      authAPIKey,
-		UpstreamTransport: transportAnthropicMessages,
-	}, "/v1/messages", []byte(`{"model":"claude-model"}`), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = response.Body.Close()
-	if response.StatusCode != http.StatusTemporaryRedirect {
-		t.Fatalf("redirect status=%d", response.StatusCode)
-	}
-	select {
-	case <-targetHit:
-		t.Fatal("upstream client followed redirect and risked resending the API key")
-	default:
+			response, err := doMemberMessages(context.Background(), newUpstreamHTTPClient(), &PoolMember{
+				UpstreamBaseURL:   redirect.URL,
+				UpstreamKey:       "synthetic-key",
+				UpstreamAuth:      authAPIKey,
+				UpstreamTransport: transportAnthropicMessages,
+			}, "/v1/messages", []byte(`{"model":"claude-model"}`), false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = response.Body.Close()
+			if response.StatusCode != status {
+				t.Fatalf("redirect status=%d", response.StatusCode)
+			}
+			select {
+			case <-targetHit:
+				t.Fatal("upstream client followed redirect and risked resending the API key")
+			default:
+			}
+		})
 	}
 }
 
-func TestJoinUpstreamPathAvoidsDuplicateV1(t *testing.T) {
+func TestBuildLoopbackUpstreamURLAvoidsDuplicateV1(t *testing.T) {
 	for _, item := range []struct {
 		base, endpoint, want string
 	}{
@@ -401,8 +423,12 @@ func TestJoinUpstreamPathAvoidsDuplicateV1(t *testing.T) {
 		{"http://127.0.0.1:18080/v1", "/v1/messages", "http://127.0.0.1:18080/v1/messages"},
 		{"http://127.0.0.1:18080/v1/", "/v1/chat/completions", "http://127.0.0.1:18080/v1/chat/completions"},
 	} {
-		if got := joinUpstreamPath(item.base, item.endpoint); got != item.want {
-			t.Fatalf("joinUpstreamPath(%q, %q)=%q want %q", item.base, item.endpoint, got, item.want)
+		got, err := buildFinalUpstreamURL(item.base, item.endpoint, transportAnthropicMessages, authAPIKey, "", "")
+		if err != nil {
+			t.Fatalf("buildFinalUpstreamURL(%q, %q): %v", item.base, item.endpoint, err)
+		}
+		if got != item.want {
+			t.Fatalf("buildFinalUpstreamURL(%q, %q)=%q want %q", item.base, item.endpoint, got, item.want)
 		}
 	}
 }

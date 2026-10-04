@@ -484,8 +484,15 @@ func dispatchMemberStream(
 }
 
 func doMemberMessages(ctx context.Context, client *http.Client, member *PoolMember, upstreamPath string, body []byte, stream bool) (*http.Response, error) {
-	upstream := joinUpstreamPath(member.UpstreamBaseURL, upstreamPath)
-	if err := validateFinalUpstreamURL(upstream, member.UpstreamTransport); err != nil {
+	upstream, err := buildFinalUpstreamURL(
+		member.UpstreamBaseURL,
+		upstreamPath,
+		member.UpstreamTransport,
+		member.UpstreamAuth,
+		member.UpstreamTarget,
+		member.CredentialClass,
+	)
+	if err != nil {
 		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstream, bytes.NewReader(body))
@@ -505,14 +512,6 @@ func doMemberMessages(ctx context.Context, client *http.Client, member *PoolMemb
 		req.Header.Set("Authorization", "Bearer "+member.UpstreamKey)
 	}
 	return client.Do(req)
-}
-
-func joinUpstreamPath(base, endpoint string) string {
-	base = strings.TrimRight(base, "/")
-	if strings.HasSuffix(base, "/v1") && strings.HasPrefix(endpoint, "/v1/") {
-		return base + strings.TrimPrefix(endpoint, "/v1")
-	}
-	return base + "/" + strings.TrimLeft(endpoint, "/")
 }
 
 func (rt *Runtime) handleModels(w http.ResponseWriter, r *http.Request) {

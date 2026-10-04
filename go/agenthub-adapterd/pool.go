@@ -31,6 +31,8 @@ type PoolMember struct {
 	UpstreamKey       string
 	UpstreamAuth      string
 	UpstreamTransport string
+	UpstreamTarget    string
+	CredentialClass   string
 	Priority          int64
 	Position          int64
 	Models            []string
@@ -135,7 +137,14 @@ func NewPoolFromFixture(fixture ProbeFixture) (*Pool, error) {
 			if err := loopbackURL(base); err != nil {
 				return nil, err
 			}
-		} else if err := validateRuntimeUpstreamURL(base, item.UpstreamTransport); err != nil {
+		} else if err := validateRuntimeUpstreamURL(
+			base,
+			fixture.Surface,
+			item.UpstreamTransport,
+			normalizedUpstreamAuth(item.UpstreamAuth),
+			strings.TrimSpace(item.UpstreamTarget),
+			strings.TrimSpace(item.CredentialClass),
+		); err != nil {
 			return nil, err
 		}
 		models := append([]string(nil), item.Models...)
@@ -163,6 +172,8 @@ func NewPoolFromFixture(fixture ProbeFixture) (*Pool, error) {
 			UpstreamKey:       item.UpstreamKey,
 			UpstreamAuth:      auth,
 			UpstreamTransport: transport,
+			UpstreamTarget:    strings.TrimSpace(item.UpstreamTarget),
+			CredentialClass:   strings.TrimSpace(item.CredentialClass),
 			Priority:          item.Priority,
 			Position:          item.Position,
 			Models:            models,

@@ -26,24 +26,37 @@ These slices prove, in an isolated scratch directory:
 `Start` is the product control name for this isolated slice. It does not write
 real agent config, refuses the product default port `43121` and real
 `~/.agenthub`. The application supervisor resolves eligible saved loopback
-routes and official Anthropic API Key routes through core, sends the initial
-complete runtime snapshot as a length-framed document, and keeps stdin open
-for later atomic replacements. The active configuration is retained only in
-memory. It can contain multiple Messages, Responses, and Chat Completions
+routes and the allowlisted official API Key routes through core, sends the
+initial complete runtime snapshot as a length-framed document, and keeps stdin
+open for later atomic replacements. The active configuration is retained only
+in memory. It can contain multiple Messages, Responses, and Chat Completions
 entries selected by their entry key and surface.
 
 The older `$AGENTHUB_HOME/config/probe.json` input remains only for the
 standalone probes and `ActivateProbeListen`; application start does not use it.
 
-Runtime validation accepts external upstreams only for Anthropic Messages
-routes that use an API Key and the exact official
-`https://api.anthropic.com` endpoint (optionally `/v1`). It rejects user info,
-query/fragment data, other ports, encoded paths, and redirects. The isolated
-probes do not call the real Anthropic service. Responses-to-Chat conversion is
-loopback-only until exact Kimi / OpenAI HTTPS addresses are added separately.
-The final joined request URL is validated again immediately before dispatch.
-The outbound client does not follow redirects and shares a bounded connection
-pool. Successful JSON responses must be JSON media types containing valid JSON;
+Runtime validation accepts only these exact official external routes:
+
+| Target | Accepted base | Fixed final request URL | Route contract |
+| --- | --- | --- | --- |
+| Anthropic API Key | `https://api.anthropic.com/v1` | `https://api.anthropic.com/v1/messages` | Messages + `anthropic_messages` + `x_api_key` |
+| OpenAI API Key | `https://api.openai.com/v1` | `https://api.openai.com/v1/chat/completions` | Responses or Chat Completions + `openai_chat_completions` + bearer |
+| Kimi Code membership API Key | `https://api.kimi.com/coding/v1` | `https://api.kimi.com/coding/v1/chat/completions` | Responses or Chat Completions + `openai_chat_completions` + bearer |
+
+Core and Go bind the target, login type, surface, transport, and authentication
+as one row. Changing only a URL or one metadata field cannot turn another saved
+login into an allowed route. Loopback fixtures remain compatible. Codex and
+Grok official-login external routes remain closed until their vendor-specific
+request contracts are implemented; Kimi OAuth, arbitrary relays, and other
+external targets are also rejected.
+
+External request URLs are built from the fixed target table rather than joined
+from user-controlled paths. The outbound client ignores environment proxy
+settings. Before each connection attempt it resolves the approved hostname,
+rejects non-public or mixed DNS answers, then dials one of those checked
+addresses while retaining the approved HTTPS hostname. It does not follow
+redirects and shares a bounded connection pool. Successful JSON responses must
+be JSON media types containing valid JSON;
 successful streams must be `text/event-stream`. Errors, redirects, malformed
 responses, and responses over the limit use a synthetic local error body.
 
@@ -88,6 +101,7 @@ scripts/route-runtime-probe/http-safety-isolated.sh
 scripts/route-runtime-probe/packaged-sidecar-security-isolated.sh
 scripts/route-runtime-probe/control-tcp-isolated.sh
 scripts/route-runtime-probe/bind-go-e2e-isolated.sh
+scripts/route-runtime-probe/external-policy-isolated.sh
 ```
 
 The scripts list every data/config/log path before start, check they stay
@@ -115,6 +129,14 @@ exercises `plan` / `bind` / provider switch / delete / `unbind`, including two
 required hot reloads, startup-secret scans, and backup restoration after the
 original provider row has been deleted. The normal Unix supervisor still uses
 its local socket.
+
+The external-policy probe builds a real core example and the real Go process,
+then pipes core-generated configurations into Go. It starts and stops the local
+listener for five allowed cases and confirms ten denied cases, the accepted
+configuration hash, secret scanning, and port release. It sends zero route
+requests and makes zero external requests, so it does not validate any real
+Anthropic, OpenAI, or Kimi service or API Key. Run it with
+`pnpm probe:go-route-external-policy`.
 
 ## Run the daemon yourself
 
@@ -160,10 +182,12 @@ formats.
 
 ## Out of scope
 
-Non-allowlisted external upstreams, live/default gateway cutover, real
+Non-allowlisted external upstreams, Codex/Grok official-login external routes,
+live/default gateway cutover, real
 `~/.agenthub` reads/writes, combined desktop-to-Agent configuration
 write/recovery, Windows desktop supervisor integration and real execution,
 plugin SDK/ABI, and stages E/F.
 Eligible Go members can request an official-login refresh from the desktop
 controller and retry once, but the isolated probes use synthetic logins and do
-not call a real external service or use a real API Key.
+not call a real external service or use a real API Key. The external-policy
+probe validates only configuration acceptance and local process lifecycle.

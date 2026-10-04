@@ -23,6 +23,7 @@
     "build:go-sidecar": "node scripts/build-go-sidecar.mjs",
     "check:go-sidecar": "node scripts/build-go-sidecar.mjs --check",
     "probe:go-sidecar-security": "scripts/route-runtime-probe/packaged-sidecar-security-isolated.sh",
+    "probe:go-route-external-policy": "scripts/route-runtime-probe/external-policy-isolated.sh",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.app.json --pretty false",
     "typecheck:test": "tsc -p tsconfig.test.json --pretty false",

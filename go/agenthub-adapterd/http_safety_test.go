@@ -567,7 +567,7 @@ func TestHTTPUpstreamClientSharesBoundedTransportPolicy(t *testing.T) {
 		t.Fatalf("transport type=%T", newUpstreamHTTPClient().Transport)
 	}
 	policy := defaultRouteHTTPSafetyPolicy
-	if transport.DialContext == nil || transport.TLSHandshakeTimeout != policy.UpstreamTLSHandshake ||
+	if transport.Proxy != nil || transport.DialContext == nil || transport.TLSHandshakeTimeout != policy.UpstreamTLSHandshake ||
 		transport.ResponseHeaderTimeout != policy.UpstreamHeaderTimeout || transport.IdleConnTimeout != policy.UpstreamIdleTimeout ||
 		transport.MaxConnsPerHost != policy.UpstreamMaxConns || transport.MaxIdleConnsPerHost != policy.UpstreamMaxConns ||
 		transport.MaxResponseHeaderBytes != int64(policy.MaxHeaderBytes) || newUpstreamHTTPClient().CheckRedirect == nil ||
@@ -577,33 +577,26 @@ func TestHTTPUpstreamClientSharesBoundedTransportPolicy(t *testing.T) {
 }
 
 func TestHTTPFinalURLValidationDoesNotExpandAllowlist(t *testing.T) {
-	allowed := []struct {
-		url       string
-		transport string
-	}{
-		{"http://127.0.0.1:18080/v1/messages", transportAnthropicMessages},
-		{"http://[::1]:18080/v1/responses", transportCodexResponses},
-		{"https://api.anthropic.com/v1/messages", transportAnthropicMessages},
-		{"https://api.anthropic.com:443/v1/messages", transportAnthropicMessages},
-	}
-	for _, item := range allowed {
-		if err := validateFinalUpstreamURL(item.url, item.transport); err != nil {
-			t.Errorf("allowed final URL %q: %v", item.url, err)
+	for target, policy := range upstreamTargetPolicies {
+		if !policy.ExternalAllowed {
+			continue
+		}
+		url := "https://" + policy.Host + policy.FinalPath
+		if err := validateFinalUpstreamURL(url, policy); err != nil {
+			t.Errorf("target %s rejected final URL %q: %v", target, url, err)
 		}
 	}
-	denied := []struct {
-		url       string
-		transport string
-	}{
-		{"https://api.anthropic.com/v1/responses", transportAnthropicMessages},
-		{"https://api.anthropic.com/v1/messages?key=secret", transportAnthropicMessages},
-		{"https://api.anthropic.com.evil.invalid/v1/messages", transportAnthropicMessages},
-		{"https://chatgpt.com/backend-api/codex/responses", transportCodexResponses},
-		{"file:///tmp/socket", transportAnthropicMessages},
-	}
-	for _, item := range denied {
-		if err := validateFinalUpstreamURL(item.url, item.transport); err == nil {
-			t.Errorf("denied final URL accepted: %q", item.url)
+	policy := upstreamTargetPolicies[upstreamTargetAnthropicAPI]
+	for _, denied := range []string{
+		"https://api.anthropic.com:443/v1/messages",
+		"https://api.anthropic.com/v1/responses",
+		"https://api.anthropic.com/v1/messages?key=secret",
+		"https://api.anthropic.com.evil.invalid/v1/messages",
+		"https://chatgpt.com/backend-api/codex/responses",
+		"file:///tmp/socket",
+	} {
+		if err := validateFinalUpstreamURL(denied, policy); err == nil {
+			t.Errorf("denied final URL accepted: %q", denied)
 		}
 	}
 }
