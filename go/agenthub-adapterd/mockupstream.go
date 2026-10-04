@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,6 +40,8 @@ func runMockUpstream(listen string) error {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/messages", mockMessages)
+	mux.HandleFunc("/v1/responses", mockResponses)
+	mux.HandleFunc("/v1/chat/completions", mockChat)
 	srv := &http.Server{
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
@@ -80,6 +83,393 @@ func mockMessages(w http.ResponseWriter, r *http.Request) {
 		writeCommitThenClose(w, model)
 	default:
 		writeUnknownMember(w)
+	}
+}
+
+func mockResponses(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+	stream, model, tools := parseResponsesReq(body)
+	token := bearerToken(r.Header.Get("Authorization"))
+
+	switch token {
+	case memberQuota:
+		writeQuotaError(w)
+	case memberDown:
+		writeDownError(w)
+	case memberSlow:
+		writeSlowResponses(w, r, stream, model, tools)
+	case memberCommit:
+		writeResponsesCommit(w, model)
+	case memberHi:
+		writeResponsesMember(w, stream, model, tools, "isolated-responses-ok")
+	case memberLo:
+		writeResponsesMember(w, stream, model, tools, "isolated-responses-lo")
+	case memberA:
+		writeResponsesMember(w, stream, model, tools, "isolated-responses-a")
+	case memberB:
+		writeResponsesMember(w, stream, model, tools, "isolated-responses-b")
+	default:
+		// Missing Authorization stays a Messages-only success. Responses requires a known member bearer.
+		writeUnknownMember(w)
+	}
+}
+
+func parseResponsesReq(body []byte) (stream bool, model string, tools bool) {
+	var req struct {
+		Stream bool   `json:"stream"`
+		Model  string `json:"model"`
+	}
+	_ = json.Unmarshal(body, &req)
+	model = req.Model
+	if model == "" {
+		model = "gpt-5-probe"
+	}
+	return req.Stream, model, bytes.Contains(body, []byte(`"tools"`))
+}
+
+func writeResponsesMember(w http.ResponseWriter, stream bool, model string, tools bool, text string) {
+	if stream && tools {
+		writeResponsesToolSSE(w, model)
+		return
+	}
+	if stream {
+		writeResponsesTextSSE(w, model, text)
+		return
+	}
+	writeResponsesJSON(w, model, text)
+}
+
+func writeResponsesJSON(w http.ResponseWriter, model, text string) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id":     "resp_probe_fixture",
+		"object": "response",
+		"status": "completed",
+		"model":  model,
+		"output": []any{
+			map[string]any{
+				"id":     "msg_probe_fixture",
+				"type":   "message",
+				"role":   "assistant",
+				"status": "completed",
+				"content": []any{
+					map[string]any{"type": "output_text", "text": text},
+				},
+			},
+		},
+	})
+}
+
+func writeResponsesTextSSE(w http.ResponseWriter, model, text string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	flusher, _ := w.(http.Flusher)
+	writeSSEFrame(w, flusher, "response.created", map[string]any{
+		"type": "response.created",
+		"response": map[string]any{
+			"id":     "resp_probe_text",
+			"object": "response",
+			"status": "in_progress",
+			"model":  model,
+			"output": []any{},
+		},
+	})
+	writeSSEFrame(w, flusher, "response.output_text.delta", map[string]any{
+		"type":  "response.output_text.delta",
+		"delta": text,
+	})
+	writeSSEFrame(w, flusher, "response.completed", map[string]any{
+		"type": "response.completed",
+		"response": map[string]any{
+			"id":     "resp_probe_text",
+			"object": "response",
+			"status": "completed",
+			"model":  model,
+			"output": []any{
+				map[string]any{
+					"type": "message",
+					"role": "assistant",
+					"content": []any{
+						map[string]any{"type": "output_text", "text": text},
+					},
+				},
+			},
+		},
+	})
+}
+
+func writeResponsesToolSSE(w http.ResponseWriter, model string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	flusher, _ := w.(http.Flusher)
+	const (
+		respID = "resp_probe_tool"
+		itemID = "fc_probe_weather"
+		callID = "call_probe_weather"
+		args   = `{"city":"Paris"}`
+	)
+	itemInProgress := map[string]any{
+		"id":        itemID,
+		"type":      "function_call",
+		"status":    "in_progress",
+		"name":      "weather",
+		"call_id":   callID,
+		"arguments": "",
+	}
+	itemDone := map[string]any{
+		"id":        itemID,
+		"type":      "function_call",
+		"status":    "completed",
+		"name":      "weather",
+		"call_id":   callID,
+		"arguments": args,
+	}
+	writeSSEFrame(w, flusher, "response.created", map[string]any{
+		"type": "response.created",
+		"response": map[string]any{
+			"id":     respID,
+			"object": "response",
+			"status": "in_progress",
+			"model":  model,
+			"output": []any{},
+		},
+	})
+	writeSSEFrame(w, flusher, "response.output_item.added", map[string]any{
+		"type":         "response.output_item.added",
+		"output_index": 0,
+		"item":         itemInProgress,
+	})
+	writeSSEFrame(w, flusher, "response.function_call_arguments.delta", map[string]any{
+		"type":         "response.function_call_arguments.delta",
+		"output_index": 0,
+		"item_id":      itemID,
+		"delta":        args,
+	})
+	writeSSEFrame(w, flusher, "response.function_call_arguments.done", map[string]any{
+		"type":         "response.function_call_arguments.done",
+		"output_index": 0,
+		"item_id":      itemID,
+		"arguments":    args,
+	})
+	writeSSEFrame(w, flusher, "response.output_item.done", map[string]any{
+		"type":         "response.output_item.done",
+		"output_index": 0,
+		"item":         itemDone,
+	})
+	writeSSEFrame(w, flusher, "response.completed", map[string]any{
+		"type": "response.completed",
+		"response": map[string]any{
+			"id":     respID,
+			"object": "response",
+			"status": "completed",
+			"model":  model,
+			"output": []any{itemDone},
+		},
+	})
+}
+
+func writeResponsesCommit(w http.ResponseWriter, model string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	flusher, _ := w.(http.Flusher)
+	writeSSEFrame(w, flusher, "response.created", map[string]any{
+		"type": "response.created",
+		"response": map[string]any{
+			"id":     "resp_probe_commit",
+			"object": "response",
+			"status": "in_progress",
+			"model":  model,
+			"output": []any{},
+		},
+	})
+}
+
+func writeSSEFrame(w http.ResponseWriter, flusher http.Flusher, event string, data any) {
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, payload)
+	if flusher != nil {
+		flusher.Flush()
+	}
+}
+
+func mockChat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+	stream, model, tools := parseResponsesReq(body)
+	token := bearerToken(r.Header.Get("Authorization"))
+	switch token {
+	case memberQuota:
+		writeQuotaError(w)
+	case memberDown:
+		writeDownError(w)
+	case memberSlow:
+		writeSlowChat(w, r, stream, model, tools)
+	case memberCommit:
+		writeChatCommit(w, model)
+	case memberHi:
+		writeChatMember(w, stream, model, tools, "isolated-chat-ok")
+	case memberLo:
+		writeChatMember(w, stream, model, tools, "isolated-chat-lo")
+	case memberA:
+		writeChatMember(w, stream, model, tools, "isolated-chat-a")
+	case memberB:
+		writeChatMember(w, stream, model, tools, "isolated-chat-b")
+	default:
+		writeUnknownMember(w)
+	}
+}
+
+func writeChatMember(w http.ResponseWriter, stream bool, model string, tools bool, text string) {
+	if stream && tools {
+		writeChatToolSSE(w, model)
+		return
+	}
+	if stream {
+		writeChatTextSSE(w, model, text)
+		return
+	}
+	writeChatJSON(w, model, text)
+}
+
+func writeChatJSON(w http.ResponseWriter, model, text string) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id":      "chatcmpl_probe_fixture",
+		"object":  "chat.completion",
+		"created": 1720000000,
+		"model":   model,
+		"choices": []any{
+			map[string]any{
+				"index": 0,
+				"message": map[string]any{
+					"role":    "assistant",
+					"content": text,
+				},
+				"finish_reason": "stop",
+			},
+		},
+	})
+}
+
+func writeChatTextSSE(w http.ResponseWriter, model, text string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	flusher, _ := w.(http.Flusher)
+	writeChatChunk(w, flusher, model, map[string]any{
+		"role":    "assistant",
+		"content": text,
+	}, nil)
+	writeChatDone(w, flusher)
+}
+
+func writeChatToolSSE(w http.ResponseWriter, model string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	flusher, _ := w.(http.Flusher)
+	writeChatChunk(w, flusher, model, map[string]any{
+		"role": "assistant",
+		"tool_calls": []any{
+			map[string]any{
+				"index": 0,
+				"id":    "call_probe_weather",
+				"type":  "function",
+				"function": map[string]any{
+					"name":      "weather",
+					"arguments": `{"city":`,
+				},
+			},
+		},
+	}, nil)
+	writeChatChunk(w, flusher, model, map[string]any{
+		"tool_calls": []any{
+			map[string]any{
+				"index": 0,
+				"function": map[string]any{
+					"arguments": `"Paris"}`,
+				},
+			},
+		},
+	}, "tool_calls")
+	writeChatDone(w, flusher)
+}
+
+func writeChatCommit(w http.ResponseWriter, model string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	flusher, _ := w.(http.Flusher)
+	writeChatChunk(w, flusher, model, map[string]any{
+		"role":    "assistant",
+		"content": "",
+	}, nil)
+}
+
+func writeChatChunk(w http.ResponseWriter, flusher http.Flusher, model string, delta map[string]any, finish any) {
+	payload, err := json.Marshal(map[string]any{
+		"id":      "chatcmpl_probe_stream",
+		"object":  "chat.completion.chunk",
+		"created": 1720000000,
+		"model":   model,
+		"choices": []any{
+			map[string]any{
+				"index":         0,
+				"delta":         delta,
+				"finish_reason": finish,
+			},
+		},
+	})
+	if err != nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
+	if flusher != nil {
+		flusher.Flush()
+	}
+}
+
+func writeChatDone(w http.ResponseWriter, flusher http.Flusher) {
+	_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	if flusher != nil {
+		flusher.Flush()
+	}
+}
+
+func writeSlowChat(w http.ResponseWriter, r *http.Request, stream bool, model string, tools bool) {
+	timer := time.NewTimer(8 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-r.Context().Done():
+		return
+	case <-timer.C:
+		writeChatMember(w, stream, model, tools, "isolated-chat-slow")
+	}
+}
+
+func writeSlowResponses(w http.ResponseWriter, r *http.Request, stream bool, model string, tools bool) {
+	timer := time.NewTimer(8 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-r.Context().Done():
+		return
+	case <-timer.C:
+		writeResponsesMember(w, stream, model, tools, "isolated-member-slow")
 	}
 }
 
