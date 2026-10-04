@@ -20,10 +20,10 @@ use agenthub_core::AgentHub;
 use tauri::{AppHandle, State};
 
 use crate::adapter_bridge_controller::{
-    local_gateway_status as read_local_gateway_status, refresh_local_gateway_models,
-    set_local_gateway_custom_models, start_local_gateway as start_shared_local_gateway,
-    stop_local_gateway as stop_shared_local_gateway, sync_extra_local_bearers,
-    AdapterBridgeStatusDto,
+    create_local_gateway_token, local_gateway_status as read_local_gateway_status,
+    refresh_local_gateway_models, set_local_gateway_custom_models,
+    start_local_gateway as start_shared_local_gateway,
+    stop_local_gateway as stop_shared_local_gateway, AdapterBridgeStatusDto,
 };
 use crate::adapter_control_host::apply_result_from_binding;
 use crate::commands::{
@@ -585,19 +585,16 @@ pub async fn create_local_token(
     pool_id: String,
     name: String,
 ) -> Result<LocalTokenRecord, GuiError> {
-    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    let host = state.bridge_host();
-    let record = with_hub_blocking(hub.clone(), move |hub| {
-        hub.route_pools()
-            .create_local_token(&pool_id, &name)
-            .map_err(|err| map_err_string("create_local_token", err))
-    })
+    create_local_gateway_token(
+        state.hub_arc().map_err(adapter_error_from_string)?,
+        state.bridge_host(),
+        state.bridge_saga_coordinator(),
+        state.lifecycle_shutdown_barrier(),
+        pool_id,
+        name,
+    )
     .await
-    .map_err(adapter_error_from_string)?;
-    sync_extra_local_bearers(hub, &host)
-        .await
-        .map_err(adapter_error_from_string)?;
-    Ok(record)
+    .map_err(adapter_error_from_string)
 }
 
 #[tauri::command]

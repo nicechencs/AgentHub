@@ -11,12 +11,13 @@
 //! Process-local profile / target gates and the credential-free status DTO live
 //! in [`agenthub_core::adapter_control`] so commands stay Tauri-neutral.
 
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use agenthub_core::adapter_control::{
-    surface_unbind_and_restart, AdapterBridgeStatus, LocalGatewayStatus,
+    surface_unbind_and_restart, AdapterBridgeStatus, LocalGatewayMutationKind, LocalGatewayStatus,
 };
 use agenthub_core::bridge::{
     BridgeHostError, BridgeLocalSurface, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState,
@@ -151,6 +152,7 @@ pub(crate) async fn apply_local_bridge(
 ) -> Result<AdapterApplyResult, String> {
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let profile_id = bridge_profile_id_for_request(hub.clone(), request.clone()).await?;
+    let _gateway_guard = coordinator.lock_local_gateway().await;
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
     apply_local_bridge_locked(hub, host, coordinator, request).await
 }
@@ -338,6 +340,7 @@ pub(crate) async fn start_local_bridge(
     profile_id: String,
 ) -> Result<AdapterBridgeStatusDto, String> {
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _gateway_guard = coordinator.lock_local_gateway().await;
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
     let profile = load_bridge_profile(hub.clone(), profile_id).await?;
     let request = AdapterBridgePrepareRequest {
@@ -379,6 +382,7 @@ pub(crate) async fn unbind_local_bridge(
     request: agenthub_core::models::TicketUnbindRequest,
 ) -> Result<(), String> {
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _gateway_guard = coordinator.lock_local_gateway().await;
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
     let profile = load_bridge_profile(hub.clone(), profile_id.clone()).await?;
     let target_guard = coordinator.lock_target(profile.target_agent_id).await;
@@ -435,6 +439,7 @@ pub(crate) async fn stop_local_bridge(
     profile_id: String,
 ) -> Result<AdapterBridgeStatusDto, String> {
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _gateway_guard = coordinator.lock_local_gateway().await;
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
     let profile = load_bridge_profile(hub, profile_id).await?;
     let status = stop_bridge_runtime(&host, &profile).await?;
@@ -512,6 +517,7 @@ pub(crate) async fn remove_adapter_with_bridge_cleanup(
     profile_id: String,
 ) -> Result<(), String> {
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _gateway_guard = coordinator.lock_local_gateway().await;
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
     let profile = load_adapter_profile(hub.clone(), profile_id.clone()).await?;
     // Every route takes the same target authority before selecting its Core
@@ -612,6 +618,7 @@ pub(crate) fn restore_adapter_bridges(
                 Ok(permit) => permit,
                 Err(_) => return,
             };
+            let _gateway_guard = coordinator.lock_local_gateway().await;
             let _profile_guard = coordinator.lock_profile(&profile.id).await;
             let profile_id = profile.id.clone();
             let material = match with_hub_blocking(hub.clone(), move |hub| {
@@ -766,7 +773,7 @@ pub(crate) fn restore_adapter_bridges(
         // even when there are no auto-start profiles to iterate above.
         let shared_restore = async {
             let _lifecycle_permit = lifecycle_barrier.enter().await?;
-            let _gate = coordinator.lock_profile("local-gateway").await;
+            let _gate = coordinator.lock_local_gateway().await;
             let status = start_local_gateway_entries(
                 hub.clone(),
                 host.clone(),
@@ -1632,7 +1639,7 @@ pub(crate) async fn start_local_gateway(
 ) -> Result<LocalGatewayStatus, String> {
     let _restarting_guard = LocalGatewayRestartingGuard::begin(restarting.clone(), Some(app));
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
-    let _gate = coordinator.lock_profile("local-gateway").await;
+    let _gate = coordinator.lock_local_gateway().await;
     let mut status = start_local_gateway_entries(
         hub.clone(),
         host.clone(),
@@ -1921,6 +1928,214 @@ async fn start_local_gateway_entries(
     local_gateway_status_from_host(&host, started, restarting)
 }
 
+/// Create an extra entry key and publish the updated accepted-bearer table.
+pub(crate) async fn create_local_gateway_token(
+    hub: Arc<AgentHub>,
+    host: Arc<BridgeRuntimeHost>,
+    coordinator: Arc<AdapterSagaCoordinator>,
+    lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+    pool_id: String,
+    name: String,
+) -> Result<LocalTokenRecord, String> {
+    let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _gate = coordinator.lock_local_gateway().await;
+    recover_pending_local_gateway_restarts(hub.clone(), &host, &coordinator).await?;
+    // Read restart intent before the create transaction. After persistence,
+    // every fallible step is handled as publish/recovery so retry cannot create
+    // a second Key for an operation that already committed.
+    let should_start = local_gateway_pool_should_run(hub.clone(), pool_id.clone()).await?;
+    let record = with_hub_blocking(hub.clone(), move |hub| {
+        hub.route_pools()
+            .create_local_token(&pool_id, &name)
+            .map_err(|error| map_err_string("create_local_token", error))
+    })
+    .await?;
+    let publish = async {
+        sync_extra_local_bearers(hub.clone(), &host).await?;
+        if should_start {
+            start_pool_listener_if_listed(hub.clone(), &host, record.pool_id.clone()).await?;
+        }
+        Ok::<(), String>(())
+    }
+    .await;
+    if let Err(error) = publish {
+        let stopped_was_running = match stop_pool_listener_if_running(&host, &record.pool_id).await
+        {
+            Ok(was_running) => was_running,
+            Err(stop_error) => {
+                tracing::warn!(
+                    target: targets::GUI,
+                    op = "create_local_gateway_token",
+                    pool_id = %record.pool_id,
+                    error = %stop_error,
+                    "入口 Key 发布失败后停止本机路由也失败"
+                );
+                true
+            }
+        };
+        coordinator.mark_local_gateway_restart_pending(
+            &record.id,
+            &record.pool_id,
+            LocalGatewayMutationKind::Create,
+            true,
+            stopped_was_running || should_start,
+        );
+        tracing::warn!(
+            target: targets::GUI,
+            op = "create_local_gateway_token",
+            pool_id = %record.pool_id,
+            error = %error,
+            "入口 Key 已保存；本机路由将在下次操作或重新开启时恢复"
+        );
+    }
+    Ok(record)
+}
+
+#[derive(Clone)]
+struct LocalTokenMutationContext {
+    pool_id: String,
+    primary: bool,
+    target_agent: Option<AgentId>,
+    should_run: bool,
+}
+
+async fn local_gateway_pool_should_run(
+    hub: Arc<AgentHub>,
+    pool_id: String,
+) -> Result<bool, String> {
+    with_hub_blocking(hub, move |hub| {
+        let desired_running = hub
+            .route_pools()
+            .local_gateway_desired_running()
+            .map_err(|error| map_err_string("local_gateway_desired_running", error))?;
+        let pool_auto_start = hub
+            .route_pools()
+            .get(&pool_id)
+            .map_err(|error| map_err_string("get_route_pool", error))?
+            .is_some_and(|pool| pool.auto_start);
+        let profile_auto_start = hub
+            .route_pools()
+            .get_adapter_profile(&pool_id)
+            .map_err(|error| map_err_string("get_local_token_adapter_profile", error))?
+            .is_some_and(|profile| profile.auto_start);
+        Ok(desired_running || pool_auto_start || profile_auto_start)
+    })
+    .await
+}
+
+/// Finish a prior Key operation before accepting another one. The database is
+/// already authoritative at this point; republish accepted Keys, then start
+/// each stopped pool from that current state.
+async fn recover_pending_local_gateway_restarts(
+    hub: Arc<AgentHub>,
+    host: &BridgeRuntimeHost,
+    coordinator: &AdapterSagaCoordinator,
+) -> Result<HashSet<String>, String> {
+    let pending = coordinator.local_gateway_restart_pending();
+    if pending.is_empty() {
+        return Ok(HashSet::new());
+    }
+    sync_extra_local_bearers(hub.clone(), host).await?;
+    let mut recovered_operations = HashSet::new();
+    let mut recovered_pools = HashSet::new();
+    for (_, pool_id, _, _, restart_required) in &pending {
+        if recovered_pools.insert(pool_id.clone()) {
+            if *restart_required
+                || pending
+                    .iter()
+                    .any(|(_, candidate_pool_id, _, _, candidate_restart)| {
+                        candidate_pool_id == pool_id && *candidate_restart
+                    })
+            {
+                start_pool_listener_if_listed(hub.clone(), host, pool_id.clone()).await?;
+            }
+            coordinator.clear_local_gateway_restart_pending_for_pool(pool_id);
+        }
+    }
+    for (operation_id, _, mutation_kind, mutation_committed, _) in pending {
+        if mutation_committed && mutation_kind == LocalGatewayMutationKind::Delete {
+            recovered_operations.insert(operation_id);
+        }
+    }
+    Ok(recovered_operations)
+}
+
+async fn local_token_mutation_context(
+    hub: Arc<AgentHub>,
+    requested_id: String,
+) -> Result<LocalTokenMutationContext, String> {
+    with_hub_blocking(hub, move |hub| {
+        let listed = hub
+            .route_pools()
+            .list_local_tokens()
+            .map_err(|error| map_err_string("list_local_tokens", error))?;
+        let (pool_id, primary) = listed
+            .into_iter()
+            .find(|record| record.id == requested_id)
+            .map(|record| (record.pool_id, record.primary))
+            .unwrap_or_else(|| (requested_id.clone(), true));
+        let pool = hub
+            .route_pools()
+            .get(&pool_id)
+            .map_err(|error| map_err_string("get_route_pool", error))?;
+        if primary && pool.is_none() {
+            return Err(format!("入口 Key 不存在：{requested_id}"));
+        }
+        let desired_running = hub
+            .route_pools()
+            .local_gateway_desired_running()
+            .map_err(|error| map_err_string("local_gateway_desired_running", error))?;
+        let should_run = desired_running
+            || pool.as_ref().is_some_and(|pool| pool.auto_start)
+            || hub
+                .route_pools()
+                .get_adapter_profile(&pool_id)
+                .map_err(|error| map_err_string("get_local_token_adapter_profile", error))?
+                .is_some_and(|profile| profile.auto_start);
+        Ok(LocalTokenMutationContext {
+            pool_id,
+            primary,
+            target_agent: pool.map(|pool| pool.target_agent_id),
+            should_run,
+        })
+    })
+    .await
+}
+
+fn refresh_current_generated_provider(
+    hub: &AgentHub,
+    core_guard: &ProviderLiveSagaGuard<'_>,
+    pool_id: &str,
+    target_agent: AgentId,
+) -> Result<(), String> {
+    let Some(profile) = hub
+        .route_pools()
+        .get_adapter_profile(pool_id)
+        .map_err(|error| map_err_string("get_local_token_adapter_profile", error))?
+    else {
+        return Ok(());
+    };
+    let Some(provider_id) = profile.generated_provider_id.as_deref() else {
+        return Ok(());
+    };
+    let Some(provider) = hub
+        .providers()
+        .get_by_id(provider_id)
+        .map_err(|error| map_err_string("get_local_token_generated_provider", error))?
+    else {
+        return Ok(());
+    };
+    if provider.agent_id != target_agent {
+        return Err("入口 Key 对应的 Agent 配置不一致，请刷新后重试。".to_owned());
+    }
+    if provider.is_current {
+        hub.providers()
+            .switch_with_guard(core_guard, provider_id, target_agent)
+            .map_err(|error| map_err_string("refresh_local_token_agent_config", error))?;
+    }
+    Ok(())
+}
+
 /// Persist a pool loopback bearer and restart that edge if it is live.
 pub(crate) async fn set_local_gateway_token(
     hub: Arc<AgentHub>,
@@ -1931,21 +2146,64 @@ pub(crate) async fn set_local_gateway_token(
     token: String,
 ) -> Result<LocalTokenRecord, String> {
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
-    let _gate = coordinator.lock_profile("local-gateway").await;
+    let _gate = coordinator.lock_local_gateway().await;
+    recover_pending_local_gateway_restarts(hub.clone(), &host, &coordinator).await?;
+    if token.trim().is_empty() {
+        return Err("入口 Key 不能为空。".to_owned());
+    }
+    let context = local_token_mutation_context(hub.clone(), pool_id.clone()).await?;
+    let _target_guard = match context.target_agent {
+        Some(target_agent) => Some(coordinator.lock_target(target_agent).await),
+        None => None,
+    };
+    // Retire the old accepted Key before persistence. Once persistence starts,
+    // failures only move forward: the listener stays stopped until a retry can
+    // publish the stored Key and (for a current generated Provider) live config.
+    let was_running = stop_pool_listener_if_running(&host, &context.pool_id).await?;
+    let restart_required = was_running || context.should_run;
+    coordinator.mark_local_gateway_restart_pending(
+        &pool_id,
+        &context.pool_id,
+        LocalGatewayMutationKind::Set,
+        false,
+        restart_required,
+    );
     let record = {
-        let pool_id = pool_id.clone();
+        let requested_id = pool_id;
+        let pool_id = context.pool_id.clone();
+        let target_agent = context.target_agent;
+        let mutation_coordinator = Arc::clone(&coordinator);
         with_hub_blocking(hub.clone(), move |hub| {
-            hub.route_pools()
-                .set_local_token(&pool_id, &token)
-                .map_err(|error| map_err_string("set_local_token", error))
+            if context.primary {
+                let target_agent = target_agent
+                    .ok_or_else(|| "主入口 Key 对应的本机路由不存在，请刷新后重试。".to_owned())?;
+                let core_guard = hub
+                    .providers()
+                    .begin_live_saga(target_agent)
+                    .map_err(|error| map_err_string("begin_local_token_provider_saga", error))?;
+                let record = hub
+                    .route_pools()
+                    .set_local_token(&requested_id, &token)
+                    .map_err(|error| map_err_string("set_local_token", error))?;
+                mutation_coordinator.mark_local_gateway_mutation_committed(&requested_id);
+                refresh_current_generated_provider(hub, &core_guard, &pool_id, target_agent)?;
+                Ok(record)
+            } else {
+                let record = hub
+                    .route_pools()
+                    .set_local_token(&requested_id, &token)
+                    .map_err(|error| map_err_string("set_local_token", error))?;
+                mutation_coordinator.mark_local_gateway_mutation_committed(&requested_id);
+                Ok(record)
+            }
         })
         .await?
     };
-    if record.primary {
-        restart_pool_listener_if_running(hub.clone(), &host, record.pool_id.clone()).await?;
+    sync_extra_local_bearers(hub.clone(), &host).await?;
+    if restart_required {
+        start_pool_listener_if_listed(hub, &host, record.pool_id.clone()).await?;
     }
-    // Primary rotate used to skip this; live extras then still held the old hub.
-    sync_extra_local_bearers(hub, &host).await?;
+    coordinator.clear_local_gateway_restart_pending_for_pool(&record.pool_id);
     Ok(record)
 }
 
@@ -1958,57 +2216,71 @@ pub(crate) async fn delete_local_gateway_token(
     id: String,
 ) -> Result<(), String> {
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
-    let _gate = coordinator.lock_profile("local-gateway").await;
-    // Named extras use their own row id. Resolve the owning pool before the
-    // delete so the live listener and its bearer table are reconciled for the
-    // actual edge rather than silently leaving an extra's pool running.
-    let requested_id = id.clone();
-    let pool_id = with_hub_blocking(hub.clone(), move |hub| {
-        let pool_id = hub
-            .route_pools()
-            .list_local_tokens()
-            .map_err(|error| map_err_string("list_local_tokens", error))?
-            .into_iter()
-            .find(|record| record.id == requested_id)
-            .map(|record| record.pool_id)
-            .unwrap_or(requested_id);
-        Ok(pool_id)
+    let _gate = coordinator.lock_local_gateway().await;
+    let recovered =
+        recover_pending_local_gateway_restarts(hub.clone(), &host, &coordinator).await?;
+    if recovered.contains(&id) {
+        return Ok(());
+    }
+    let context = match local_token_mutation_context(hub.clone(), id.clone()).await {
+        Ok(context) => context,
+        Err(error) => return Err(error),
+    };
+    let _target_guard = match context.target_agent {
+        Some(target_agent) => Some(coordinator.lock_target(target_agent).await),
+        None => None,
+    };
+    // Close the old auth edge before touching persistence. If the delete or a
+    // later refresh fails, the old Key stays unusable and retry resumes from
+    // the newly persisted state instead of reviving a stale listener spec.
+    let was_running = stop_pool_listener_if_running(&host, &context.pool_id).await?;
+    let restart_required = was_running || context.should_run;
+    coordinator.mark_local_gateway_restart_pending(
+        &id,
+        &context.pool_id,
+        LocalGatewayMutationKind::Delete,
+        false,
+        restart_required,
+    );
+    let pool_id = context.pool_id.clone();
+    let pool_id_for_mutation = pool_id.clone();
+    let target_agent = context.target_agent;
+    let mutation_coordinator = Arc::clone(&coordinator);
+    with_hub_blocking(hub.clone(), move |hub| {
+        if context.primary {
+            let target_agent = target_agent
+                .ok_or_else(|| "主入口 Key 对应的本机路由不存在，请刷新后重试。".to_owned())?;
+            let core_guard = hub
+                .providers()
+                .begin_live_saga(target_agent)
+                .map_err(|error| map_err_string("begin_local_token_provider_saga", error))?;
+            hub.route_pools()
+                .delete_local_token(&id)
+                .map_err(|error| map_err_string("delete_local_token", error))?;
+            mutation_coordinator.mark_local_gateway_mutation_committed(&id);
+            refresh_current_generated_provider(
+                hub,
+                &core_guard,
+                &pool_id_for_mutation,
+                target_agent,
+            )
+        } else {
+            hub.route_pools()
+                .delete_local_token(&id)
+                .map_err(|error| map_err_string("delete_local_token", error))?;
+            mutation_coordinator.mark_local_gateway_mutation_committed(&id);
+            Ok(())
+        }
     })
     .await?;
-    // Close the old auth edge before touching persistence. If the delete or a
-    // later refresh fails, the old bearer stays unusable and the user can retry
-    // after fixing the reported problem.
-    let was_running = stop_pool_listener_if_running(&host, &pool_id).await?;
-    let delete_result = with_hub_blocking(hub.clone(), move |hub| {
-        hub.route_pools()
-            .delete_local_token(&id)
-            .map_err(|error| map_err_string("delete_local_token", error))
-    })
-    .await;
-    if let Err(error) = delete_result {
-        if was_running {
-            if let Err(restore_error) =
-                start_pool_listener_from_pool_id(hub.clone(), &host, pool_id.clone()).await
-            {
-                tracing::error!(
-                    target: targets::GUI,
-                    op = "delete_local_gateway_token",
-                    code = CODE_BRIDGE_START,
-                    error = %restore_error,
-                    "删除入口失败后恢复本机转发失败"
-                );
-                return Err(format!("{error}；删除未完成，本机转发恢复失败，请点重试。"));
-            }
-        }
-        return Err(error);
-    }
     // Keep the affected pool stopped while rebuilding the accepted-bearer
     // table. If this read or the subsequent start fails, no old key can be
     // accepted by a still-running edge.
     sync_extra_local_bearers(hub.clone(), &host).await?;
-    if was_running {
-        start_pool_listener_after_local_token_delete(hub, &host, pool_id).await?;
+    if restart_required {
+        start_pool_listener_if_listed(hub, &host, context.pool_id).await?;
     }
+    coordinator.clear_local_gateway_restart_pending_for_pool(&pool_id);
     Ok(())
 }
 
@@ -2021,7 +2293,7 @@ pub(crate) async fn refresh_local_gateway_models(
     token: String,
 ) -> Result<Vec<String>, String> {
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
-    let _gate = coordinator.lock_profile("local-gateway").await;
+    let _gate = coordinator.lock_local_gateway().await;
     let listed = {
         let token = token.clone();
         with_hub_blocking(hub.clone(), move |hub| {
@@ -2045,7 +2317,7 @@ pub(crate) async fn set_local_gateway_custom_models(
     models: Vec<String>,
 ) -> Result<Vec<String>, String> {
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
-    let _gate = coordinator.lock_profile("local-gateway").await;
+    let _gate = coordinator.lock_local_gateway().await;
     let listed = {
         let token = token.clone();
         with_hub_blocking(hub.clone(), move |hub| {
@@ -2155,7 +2427,7 @@ async fn stop_pool_listener_if_running(
     }
 }
 
-async fn start_pool_listener_after_local_token_delete(
+async fn start_pool_listener_if_listed(
     hub: Arc<AgentHub>,
     host: &BridgeRuntimeHost,
     pool_id: String,
@@ -2169,21 +2441,6 @@ async fn start_pool_listener_after_local_token_delete(
     let Some(pool) = pools.into_iter().find(|pool| pool.id == pool_id) else {
         return Ok(());
     };
-    start_pool_listener_from_pool(hub, host, pool).await
-}
-
-async fn start_pool_listener_from_pool_id(
-    hub: Arc<AgentHub>,
-    host: &BridgeRuntimeHost,
-    pool_id: String,
-) -> Result<(), String> {
-    let pool = with_hub_blocking(hub.clone(), move |hub| {
-        hub.route_pools()
-            .get(&pool_id)
-            .map_err(|error| map_err_string("get_route_pool", error))
-    })
-    .await?
-    .ok_or_else(|| "删除未完成，本机转发恢复失败，请点重试。".to_owned())?;
     start_pool_listener_from_pool(hub, host, pool).await
 }
 
@@ -2211,7 +2468,7 @@ pub(crate) async fn stop_local_gateway(
     restarting: Arc<AtomicBool>,
 ) -> Result<LocalGatewayStatus, String> {
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
-    let _gate = coordinator.lock_profile("local-gateway").await;
+    let _gate = coordinator.lock_local_gateway().await;
     let ids = host.running_ids().map_err(map_bridge_host_error)?;
     for id in ids {
         match host.stop(&id).await {

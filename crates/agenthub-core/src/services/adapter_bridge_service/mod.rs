@@ -1205,6 +1205,18 @@ impl AdapterBridgeService {
         let pool = self.route_pools.ensure_legacy_pool(profile)?;
         if let Some(pool) = pool.as_ref() {
             validate_route_pool_profile(&material, pool)?;
+            // RoutePool owns the shared listener entry key even when the route
+            // index itself is disabled. Keep the runtime and generated Agent
+            // projection on that single value; the desktop gateway saga
+            // serializes this read with entry-key rotation.
+            let pool_bearer = pool.hub_token.trim();
+            if pool_bearer.is_empty() {
+                return Err(AppError::message(
+                    "adapter.route_pool_invalid",
+                    "route pool entry key is empty",
+                ));
+            }
+            material.local_bearer = pool_bearer.to_owned();
             // A persisted RoutePool dialect is authoritative. Legacy material
             // already carries the one-time target-agent fallback above.
             material.downstream_dialect = pool.downstream_dialect;

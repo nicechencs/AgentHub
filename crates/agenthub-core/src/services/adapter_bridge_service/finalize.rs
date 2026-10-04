@@ -375,15 +375,17 @@ impl AdapterBridgeService {
             },
             &profile,
         )?;
-        Ok(AdapterBridgeRestoreMaterial {
-            material,
-            needs_reprojection: !provider_matches_current_projection(
+        let needs_reprojection = local_bearer_from_provider(&provider)? != material.local_bearer
+            || !provider_matches_current_projection(
                 &provider,
                 &profile,
                 Some(local_port),
                 &upstream_model,
                 context_window_tokens,
-            ),
+            );
+        Ok(AdapterBridgeRestoreMaterial {
+            material,
+            needs_reprojection,
             profile,
         })
     }

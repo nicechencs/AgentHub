@@ -373,26 +373,104 @@ impl RoutePoolService {
         if token.is_empty() {
             return Err(AppError::InvalidArg("entry key must not be empty".into()));
         }
-        if let Some(existing) = self.entry_keys.get(pool_id)? {
-            if !existing.token.trim().is_empty() {
-                let saved = self.entry_keys.update(&LocalEntryKey {
-                    token: token.to_owned(),
-                    updated_at: now(),
-                    ..existing
-                })?;
+        self.db.with_conn(|conn| {
+            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+            let stamp = now();
+            let existing: Option<LocalEntryKey> = tx
+                .query_row(
+                    r#"
+                    SELECT id, pool_id, name, token, created_at, updated_at
+                    FROM local_entry_keys
+                    WHERE id = ?1
+                    "#,
+                    params![pool_id],
+                    |row| {
+                        Ok(LocalEntryKey {
+                            id: row.get(0)?,
+                            pool_id: row.get(1)?,
+                            name: row.get(2)?,
+                            token: row.get(3)?,
+                            created_at: row.get(4)?,
+                            updated_at: row.get(5)?,
+                        })
+                    },
+                )
+                .optional()?;
+            if let Some(existing) = existing.as_ref().filter(|row| !row.token.trim().is_empty()) {
+                ensure_local_token_unique(
+                    &tx,
+                    token,
+                    &existing.pool_id,
+                    None,
+                    Some(existing.id.as_str()),
+                )?;
+                let changed = tx
+                    .execute(
+                        r#"
+                        UPDATE local_entry_keys
+                        SET token = ?2, updated_at = ?3
+                        WHERE id = ?1
+                        "#,
+                        params![existing.id, token, stamp],
+                    )
+                    .map_err(map_local_entry_key_constraint)?;
+                if changed != 1 {
+                    return Err(AppError::NotFound(format!(
+                        "entry key not found: {}",
+                        existing.id
+                    )));
+                }
+                let mut saved = existing.clone();
+                saved.token = token.to_owned();
+                saved.updated_at = stamp;
+                tx.commit()?;
                 return Ok(to_extra_record(saved));
             }
-        }
-        let pool = self
-            .pools
-            .get_pool(pool_id)?
-            .ok_or_else(|| AppError::NotFound(format!("route pool not found: {pool_id}")))?;
-        if !pool.is_default {
-            self.pools.set_default(pool_id)?;
-        }
-        let saved = self.pools.set_hub_token(pool_id, token, &now())?;
-        self.unhide_primary_if_needed(pool_id)?;
-        Ok(self.primary_record(&saved)?)
+
+            let pool = promote_local_token_pool(&tx, pool_id, &stamp)?;
+            ensure_local_token_unique(&tx, token, pool_id, Some(pool_id), None)?;
+            let changed = tx
+                .execute(
+                    "UPDATE route_pools SET hub_token = ?2, updated_at = ?3 WHERE id = ?1",
+                    params![pool_id, token, stamp],
+                )
+                .map_err(map_local_token_pool_constraint)?;
+            if changed != 1 {
+                return Err(AppError::NotFound(format!(
+                    "route pool not found: {pool_id}"
+                )));
+            }
+
+            let primary_name = match existing {
+                Some(marker) if marker.name == HIDDEN_PRIMARY_ENTRY_NAME => {
+                    let deleted = tx.execute(
+                        "DELETE FROM local_entry_keys WHERE id = ?1",
+                        params![pool_id],
+                    )?;
+                    if deleted != 1 {
+                        return Err(AppError::NotFound(format!(
+                            "entry key not found: {pool_id}"
+                        )));
+                    }
+                    String::new()
+                }
+                Some(marker) => marker.name,
+                None => String::new(),
+            };
+            update_generated_provider_projection(&tx, pool_id, token, &stamp)?;
+            let record = LocalTokenRecord {
+                id: pool_id.to_owned(),
+                pool_id: pool_id.to_owned(),
+                token: token.to_owned(),
+                name: primary_name,
+                primary: true,
+                lifecycle: LocalTokenLifecycle::Active,
+                target_agent_id: Some(pool.target_agent_id),
+                surface: Some(pool.downstream_surface),
+            };
+            tx.commit()?;
+            Ok(record)
+        })
     }
 
     pub fn create_local_token(&self, pool_id: &str, name: &str) -> Result<LocalTokenRecord> {
@@ -403,23 +481,37 @@ impl RoutePoolService {
                 "entry key name must not be empty".into(),
             ));
         }
-        let pool = self
-            .pools
-            .get_pool(pool_id)?
-            .ok_or_else(|| AppError::NotFound(format!("route pool not found: {pool_id}")))?;
-        if !pool.is_default {
-            self.pools.set_default(pool_id)?;
-        }
         let stamp = now();
-        let saved = self.entry_keys.insert(&LocalEntryKey {
+        let saved = LocalEntryKey {
             id: Uuid::new_v4().to_string(),
-            pool_id: pool.id,
+            pool_id: pool_id.to_owned(),
             name: name.to_owned(),
             token: generate_hub_token()?,
             created_at: stamp.clone(),
-            updated_at: stamp,
-        })?;
-        Ok(to_extra_record(saved))
+            updated_at: stamp.clone(),
+        };
+        self.db.with_conn(|conn| {
+            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+            promote_local_token_pool(&tx, pool_id, &stamp)?;
+            ensure_local_token_unique(&tx, &saved.token, pool_id, None, None)?;
+            tx.execute(
+                r#"
+                INSERT INTO local_entry_keys (id, pool_id, name, token, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                "#,
+                params![
+                    saved.id,
+                    saved.pool_id,
+                    saved.name,
+                    saved.token,
+                    saved.created_at,
+                    saved.updated_at,
+                ],
+            )
+            .map_err(map_local_entry_key_constraint)?;
+            tx.commit()?;
+            Ok(to_extra_record(saved))
+        })
     }
 
     pub fn set_local_token_name(&self, id: &str, name: &str) -> Result<LocalTokenRecord> {
@@ -503,14 +595,13 @@ impl RoutePoolService {
                 .unwrap_or(HIDDEN_PRIMARY_ENTRY_NAME);
             let extra_id = extra.as_ref().map(|(id, _name, _token)| id.as_str());
             let stamp = now();
-            let previous_hub_token: String = tx
-                .query_row(
-                    "SELECT hub_token FROM route_pools WHERE id = ?1",
-                    params![pool_id],
-                    |row| row.get(0),
-                )
-                .optional()?
-                .ok_or_else(|| AppError::NotFound(format!("route pool not found: {pool_id}")))?;
+            ensure_local_token_unique(
+                &tx,
+                &next_token,
+                pool_id,
+                Some(pool_id),
+                extra_id,
+            )?;
             let changed = tx.execute(
                 "UPDATE route_pools SET hub_token = ?2, updated_at = ?3 WHERE id = ?1",
                 params![pool_id, next_token, stamp],
@@ -562,33 +653,12 @@ impl RoutePoolService {
             update_generated_provider_projection(
                 &tx,
                 pool_id,
-                &previous_hub_token,
                 &next_token,
                 &stamp,
             )?;
             tx.commit()?;
             Ok(())
         })
-    }
-
-    fn unhide_primary_if_needed(&self, pool_id: &str) -> Result<()> {
-        let Some(existing) = self.entry_keys.get(pool_id)? else {
-            return Ok(());
-        };
-        if existing.token.trim().is_empty() && existing.name == HIDDEN_PRIMARY_ENTRY_NAME {
-            self.entry_keys.delete(pool_id)?;
-        }
-        Ok(())
-    }
-
-    fn primary_record(&self, pool: &RoutePool) -> Result<LocalTokenRecord> {
-        let name = self
-            .entry_keys
-            .get(&pool.id)?
-            .filter(|row| row.token.trim().is_empty())
-            .map(|row| row.name)
-            .unwrap_or_default();
-        Ok(named_primary_record(pool, name))
     }
 
     pub fn chat_completions_shared(&self) -> Result<bool> {
@@ -2433,19 +2503,18 @@ impl RoutePoolService {
     }
 }
 
-/// Rotate the local bearer in the generated provider owned by this pool. The
-/// generated provider is a projection of the local route, so changing only
-/// `route_pools.hub_token` would leave its old bearer accepted as an alias.
-/// Upstream login fields remain untouched; only an exact occurrence of the
-/// old local bearer is replaced, and the write is part of the pool transaction.
+/// Converge the local bearer in every generated provider owned by this pool.
+/// The generated provider is a projection of the local route, so changing only
+/// `route_pools.hub_token` would leave a historical projected bearer accepted
+/// as an alias. Upstream login fields remain untouched; only the bearer
+/// identified by the projection schema is replaced in the pool transaction.
 fn update_generated_provider_projection(
     tx: &Transaction<'_>,
     pool_id: &str,
-    previous_token: &str,
     next_token: &str,
     stamp: &str,
 ) -> Result<()> {
-    if previous_token.trim().is_empty() || previous_token == next_token {
+    if next_token.trim().is_empty() {
         return Ok(());
     }
     let generated_provider_id: Option<String> = tx
@@ -2473,7 +2542,12 @@ fn update_generated_provider_projection(
             continue;
         }
         let mut settings: Value = serde_json::from_str(&settings_raw)?;
-        if !replace_local_bearer(&mut settings, previous_token, next_token) {
+        let Some(projected_token) = projected_local_bearer(&settings) else {
+            continue;
+        };
+        if projected_token == next_token
+            || !replace_local_bearer(&mut settings, &projected_token, next_token)
+        {
             continue;
         }
         let serialized = serde_json::to_string(&settings)?;
@@ -2488,6 +2562,166 @@ fn update_generated_provider_projection(
         }
     }
     Ok(())
+}
+
+struct LocalTokenPoolProjection {
+    target_agent_id: String,
+    downstream_surface: String,
+}
+
+/// Read and, when needed, promote the pool inside the caller's transaction.
+/// Key creation/rotation must not expose a newly-default pool without the key
+/// mutation that caused the promotion.
+fn promote_local_token_pool(
+    tx: &Transaction<'_>,
+    pool_id: &str,
+    stamp: &str,
+) -> Result<LocalTokenPoolProjection> {
+    let pool: Option<(String, String, bool)> = tx
+        .query_row(
+            r#"
+            SELECT target_agent_id, downstream_surface, is_default
+            FROM route_pools
+            WHERE id = ?1
+            "#,
+            params![pool_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let Some((target_agent_id, downstream_surface, is_default)) = pool else {
+        return Err(AppError::NotFound(format!(
+            "route pool not found: {pool_id}"
+        )));
+    };
+    if !is_default {
+        tx.execute(
+            r#"
+            UPDATE route_pools
+            SET is_default = 0, updated_at = ?3
+            WHERE target_agent_id = ?1
+              AND downstream_surface = ?2
+              AND id != ?4
+              AND is_default = 1
+            "#,
+            params![target_agent_id, downstream_surface, stamp, pool_id],
+        )?;
+        let changed = tx.execute(
+            r#"
+            UPDATE route_pools
+            SET is_default = 1,
+                policy_revision = policy_revision + 1,
+                updated_at = ?2
+            WHERE id = ?1
+            "#,
+            params![pool_id, stamp],
+        )?;
+        if changed != 1 {
+            return Err(AppError::NotFound(format!(
+                "route pool not found: {pool_id}"
+            )));
+        }
+    }
+    Ok(LocalTokenPoolProjection {
+        target_agent_id,
+        downstream_surface,
+    })
+}
+
+/// `route_pools.hub_token` and named extras have separate SQLite indexes. All
+/// token writers use an IMMEDIATE transaction, so this explicit cross-table
+/// check provides one unambiguous bearer → pool mapping.
+fn ensure_local_token_unique(
+    tx: &Transaction<'_>,
+    token: &str,
+    target_pool_id: &str,
+    excluded_pool_id: Option<&str>,
+    excluded_entry_id: Option<&str>,
+) -> Result<()> {
+    let pool_conflict: bool = tx.query_row(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM route_pools
+            WHERE hub_token = ?1 AND (?2 IS NULL OR id != ?2)
+        )
+        "#,
+        params![token, excluded_pool_id],
+        |row| row.get(0),
+    )?;
+    let entry_conflict: bool = tx.query_row(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM local_entry_keys
+            WHERE token = ?1 AND (?2 IS NULL OR id != ?2)
+        )
+        "#,
+        params![token, excluded_entry_id],
+        |row| row.get(0),
+    )?;
+    if pool_conflict || entry_conflict {
+        return Err(AppError::InvalidArg(
+            "entry key already belongs to another route pool".into(),
+        ));
+    }
+    let generated_by_provider: HashMap<String, String> = {
+        let mut statement = tx.prepare(
+            "SELECT generated_provider_id, id FROM adapter_profiles WHERE generated_provider_id IS NOT NULL",
+        )?;
+        let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect::<std::result::Result<HashMap<_, _>, _>>()?
+    };
+    let mut statement = tx.prepare("SELECT id, settings_config, meta FROM providers")?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    })?;
+    for row in rows {
+        let (provider_id, settings_raw, meta_raw) = row?;
+        let meta: Value = serde_json::from_str(&meta_raw)?;
+        if meta.get("generatedBy").and_then(Value::as_str) != Some("adapter") {
+            continue;
+        }
+        let settings: Value = serde_json::from_str(&settings_raw)?;
+        if projected_local_bearer(&settings).as_deref() != Some(token) {
+            continue;
+        }
+        let linked_pool_id = meta
+            .get("adapterProfileId")
+            .and_then(Value::as_str)
+            .or_else(|| generated_by_provider.get(&provider_id).map(String::as_str));
+        if linked_pool_id.is_some_and(|pool_id| pool_id != target_pool_id) {
+            return Err(AppError::InvalidArg(
+                "entry key already belongs to another route pool".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn map_local_entry_key_constraint(error: rusqlite::Error) -> AppError {
+    match &error {
+        rusqlite::Error::SqliteFailure(info, _)
+            if info.code == rusqlite::ErrorCode::ConstraintViolation =>
+        {
+            AppError::InvalidArg("entry key already exists".into())
+        }
+        _ => AppError::from(error),
+    }
+}
+
+fn map_local_token_pool_constraint(error: rusqlite::Error) -> AppError {
+    match &error {
+        rusqlite::Error::SqliteFailure(info, _)
+            if info.code == rusqlite::ErrorCode::ConstraintViolation =>
+        {
+            AppError::InvalidArg(
+                "route pool default or hub token uniqueness constraint violated".into(),
+            )
+        }
+        _ => AppError::from(error),
+    }
 }
 
 fn replace_local_bearer(value: &mut Value, previous_token: &str, next_token: &str) -> bool {
