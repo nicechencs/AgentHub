@@ -74,6 +74,10 @@ import {
   usageSurfaceToPoolSurface,
 } from '@/pages/routes/board/board-usage-model';
 import { BoardUsageSection } from '@/pages/routes/board/board-usage-section';
+import {
+  goIsolatedVisibleError,
+  retainGoIsolatedConfigError,
+} from '@/pages/routes/board/go-isolated-strip';
 
 function localGatewayStatusLabel(control: LocalGatewayControl, t: TranslateFn): string {
   if (control.restarting) return t('routes.localForward.restarting');
@@ -150,7 +154,7 @@ function GoIsolatedStrip() {
             generationRef.current,
             cancelled || busyRef.current,
           )) {
-            setStatus(next);
+            setStatus((current) => retainGoIsolatedConfigError(current, next));
           }
         })
         .catch((error: unknown) => {
@@ -212,6 +216,7 @@ function GoIsolatedStrip() {
   }, [status.state]);
 
   const disabled = busy || status.state === 'starting';
+  const visibleError = goIsolatedVisibleError(status, t);
 
   return (
     <Card className="p-3">
@@ -257,12 +262,9 @@ function GoIsolatedStrip() {
           </Button>
         </div>
       </div>
-      {status.state === 'failed' ? (
+      {visibleError ? (
         <div className="mt-2">
-          <AdapterErrorLines
-            error={status.lastError}
-            fallback={t('routes.board.goIsolatedFailed')}
-          />
+          <p className="text-sm text-danger" role="alert">{visibleError}</p>
         </div>
       ) : null}
     </Card>
