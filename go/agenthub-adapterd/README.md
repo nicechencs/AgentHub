@@ -110,9 +110,11 @@ stale-session cleanup removes only strictly owned and marked scratch roots.
 The TCP-control probe checks authentication before request processing, a
 child-selected port, the connection ceiling, hot reload, inherited-stdin token
 delivery, command-line and file secret scans, graceful stop, and port release.
-The bind probe exercises the
-desktop `plan` / `bind` / provider switch / delete / `unbind` path, including
-backup restoration after the original provider row has been deleted.
+The bind probe makes the real desktop supervisor use that TCP control path and
+exercises `plan` / `bind` / provider switch / delete / `unbind`, including two
+required hot reloads, startup-secret scans, and backup restoration after the
+original provider row has been deleted. The normal Unix supervisor still uses
+its local socket.
 
 ## Run the daemon yourself
 

@@ -267,6 +267,25 @@ async fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     };
+    #[cfg(feature = "go-route-tcp-control-probe")]
+    let (
+        control_transport,
+        startup_control_secret_scan,
+        tcp_semantic_rejection_preserved,
+        control_port,
+    ) = (
+        "tcp",
+        go_host.probe_tcp_control_startup_secret_scan()?,
+        true,
+        Some(go_host.probe_tcp_control_semantic_rejection()?),
+    );
+    #[cfg(not(feature = "go-route-tcp-control-probe"))]
+    let (
+        control_transport,
+        startup_control_secret_scan,
+        tcp_semantic_rejection_preserved,
+        control_port,
+    ) = ("unix", false, false, None);
     let response = post_go(go_port, request_token)?;
     ensure(response.0 == 200, "Go request did not return HTTP 200")?;
     let response_json: Value = serde_json::from_str(&response.1)
@@ -377,8 +396,14 @@ async fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
         .map_err(|error| format!("join Go stop: {error}"))?;
     ensure(stopped.state == "stopped", "Go route did not stop")?;
     ensure(port_released(go_port), "Go listener port was not released")?;
+    if let Some(control_port) = control_port {
+        ensure(
+            port_released(control_port),
+            "Go TCP control port was not released",
+        )?;
+    }
 
-    Ok(json!({
+    let mut evidence = json!({
         "schema": "go-route-bind-e2e-probe.v1",
         "status": "ok",
         "source_fingerprint": required_env("AGENTHUB_PROBE_SOURCE_FINGERPRINT")?,
@@ -420,7 +445,13 @@ async fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
         "go_port_stable_after_reload": true,
         "go_stopped": true,
         "go_port_released": true,
-    }))
+    });
+    evidence["control_transport"] = json!(control_transport);
+    evidence["startup_control_secret_scan"] = json!(startup_control_secret_scan);
+    evidence["tcp_semantic_rejection_preserved"] = json!(tcp_semantic_rejection_preserved);
+    evidence["control_port"] = json!(control_port);
+    evidence["control_port_released"] = json!(control_port.is_some());
+    Ok(evidence)
 }
 
 fn probe_bridge_rollback_preserves_legacy_snapshot(

@@ -13,6 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [features]
 default = []
 go-route-bind-probe = []
+go-route-tcp-control-probe = []
 plugin-write-probe = []
 
 [[bin]]
@@ -42,6 +43,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 base64 = { workspace = true }
+getrandom = { workspace = true }
 urlencoding = { workspace = true }
 libc = { workspace = true }
 tauri = { version = "2", features = ["tray-icon"] }

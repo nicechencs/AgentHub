@@ -3,6 +3,7 @@
 //! Scratch home only. Refuses product port 43121 and real ~/.agenthub.
 //! Does not start BridgeRuntimeHost or write login / connection / Agent config.
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -11,7 +12,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, OpenOptions};
 #[cfg(unix)]
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::net::TcpListener;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 #[cfg(any(unix, feature = "go-route-bind-probe"))]
@@ -59,6 +60,15 @@ const OAUTH_REFRESH_COMPLETED_ID_TTL: Duration = Duration::from_secs(90);
 const START_STOP_WAIT: Duration = Duration::from_secs(10);
 const GRACEFUL_STOP_WAIT: Duration = Duration::from_secs(9);
 const CONFIG_WRITE_WAIT: Duration = Duration::from_secs(8);
+const CONTROL_START_WAIT: Duration = Duration::from_secs(8);
+const CONTROL_TOKEN_BYTES: usize = 32;
+const CONTROL_TOKEN_ENCODED_BYTES: usize = 43;
+const LEGACY_CONTROL_TOKEN_ENV: &str = "AGENTHUB_ADAPTERD_CONTROL_TOKEN";
+const TCP_CONTROL_STDOUT_PREFIX: &str = "agenthub-adapterd control listener: tcp4 ";
+const MAX_CONTROL_STDOUT_LINE_BYTES: usize = 4 * 1024;
+const MAX_CONTROL_STDOUT_LOG_BYTES: usize = 64 * 1024;
+const MAX_CONTROL_RESPONSE_HEADER_BYTES: usize = 32 * 1024;
+const MAX_CONTROL_RESPONSE_BYTES: usize = 1024 * 1024;
 const MAX_RECOVERY_BUDGET: u32 = 3;
 const STABLE_RUN_RESET: Duration = Duration::from_secs(30);
 const ERROR_ISOLATED_UNAVAILABLE: &str = "Go route is unavailable in this build";
@@ -165,7 +175,7 @@ struct RuntimePlan {
 
 struct Session {
     home: PathBuf,
-    socket: PathBuf,
+    endpoint: ControlEndpoint,
     owner_term: i64,
     instance_epoch: String,
     port: u16,
@@ -173,6 +183,15 @@ struct Session {
     oauth_refresh_supported: bool,
     config_stdin: Arc<Mutex<ChildStdin>>,
     adapterd: Child,
+}
+
+#[derive(Clone)]
+enum ControlEndpoint {
+    Unix(PathBuf),
+    Tcp {
+        address: SocketAddrV4,
+        bearer: Arc<str>,
+    },
 }
 
 #[cfg(unix)]
@@ -207,7 +226,7 @@ impl Drop for ScratchHomeGuard {
 #[derive(Clone)]
 struct ControlSession {
     home: PathBuf,
-    socket: PathBuf,
+    endpoint: ControlEndpoint,
     owner_term: i64,
     instance_epoch: String,
 }
@@ -342,6 +361,77 @@ impl GoRouteIsolatedHost {
     #[cfg(feature = "go-route-bind-probe")]
     pub(crate) fn probe_required_reload_ack_count(&self) -> u64 {
         self.required_reload_ack_count.load(Ordering::SeqCst)
+    }
+
+    #[cfg(all(unix, feature = "go-route-tcp-control-probe"))]
+    pub(crate) fn probe_tcp_control_startup_secret_scan(&self) -> Result<bool, String> {
+        #[cfg(not(target_os = "linux"))]
+        {
+            return Err("TCP control startup secret scan requires Linux /proc".into());
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let inner = self.lock();
+            let session = inner
+                .session
+                .as_ref()
+                .ok_or_else(|| "Go route session is not running".to_string())?;
+            let ControlEndpoint::Tcp { bearer, .. } = &session.endpoint else {
+                return Err("Go route is not using TCP control".into());
+            };
+            let needles = [bearer.as_bytes(), LEGACY_CONTROL_TOKEN_ENV.as_bytes()];
+            let proc_root = PathBuf::from(format!("/proc/{}", session.adapterd.id()));
+            if file_contains_any(&proc_root.join("cmdline"), &needles)?
+                || file_contains_any(&proc_root.join("environ"), &needles)?
+                || regular_tree_contains_any(&session.home, &needles)?
+            {
+                return Err("TCP control startup secret scan failed".into());
+            }
+            Ok(true)
+        }
+    }
+
+    #[cfg(all(unix, feature = "go-route-tcp-control-probe"))]
+    pub(crate) fn probe_tcp_control_semantic_rejection(&self) -> Result<u16, String> {
+        let (control, active_hash, control_port) = {
+            let inner = self.lock();
+            let session = inner
+                .session
+                .as_ref()
+                .ok_or_else(|| "Go route session is not running".to_string())?;
+            let ControlEndpoint::Tcp { address, .. } = &session.endpoint else {
+                return Err("Go route is not using TCP control".into());
+            };
+            let active_hash = inner
+                .committed_plan
+                .as_ref()
+                .map(|plan| plan.config_hash.clone())
+                .ok_or_else(|| "Go route has no committed configuration".to_string())?;
+            (ControlSession::from(session), active_hash, address.port())
+        };
+        let event = OAuthRefreshEvent {
+            refresh_id: "probe-unknown-refresh".into(),
+            instance_epoch: control.instance_epoch.clone(),
+            owner_term: control.owner_term,
+            active_hash,
+            edge_id: "probe-edge".into(),
+            member_id: "probe-member".into(),
+            source_kind: "provider".into(),
+            source_id: "probe-source".into(),
+            refresh_kind: "official_login".into(),
+        };
+        match complete_oauth_refresh(
+            &control,
+            &event,
+            &OAuthRefreshCompletion::NotRefreshed,
+            &request_id("probe-complete-oauth-refresh"),
+        ) {
+            Err(CompleteOAuthRefreshError::Rejected) => Ok(control_port),
+            Err(CompleteOAuthRefreshError::Transport) => {
+                Err("TCP control treated a semantic rejection as a transport failure".into())
+            }
+            Ok(()) => Err("TCP control accepted an unknown OAuth refresh completion".into()),
+        }
     }
 
     #[cfg(feature = "go-route-bind-probe")]
@@ -954,6 +1044,59 @@ impl GoRouteIsolatedHost {
                 count = 1_u64,
                 "Go route OAuth refresh worker could not start"
             );
+        }
+    }
+}
+
+#[cfg(all(unix, target_os = "linux", feature = "go-route-tcp-control-probe"))]
+fn regular_tree_contains_any(root: &Path, needles: &[&[u8]]) -> Result<bool, String> {
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(path) = pending.pop() {
+        let metadata = fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        if metadata.is_file() {
+            if file_contains_any(&path, needles)? {
+                return Ok(true);
+            }
+            continue;
+        }
+        if metadata.is_dir() {
+            for entry in fs::read_dir(path).map_err(|error| error.to_string())? {
+                pending.push(entry.map_err(|error| error.to_string())?.path());
+            }
+        }
+    }
+    Ok(false)
+}
+
+#[cfg(all(unix, target_os = "linux", feature = "go-route-tcp-control-probe"))]
+fn file_contains_any(path: &Path, needles: &[&[u8]]) -> Result<bool, String> {
+    let mut file = fs::File::open(path).map_err(|error| error.to_string())?;
+    let overlap = needles
+        .iter()
+        .map(|needle| needle.len().saturating_sub(1))
+        .max()
+        .unwrap_or(0);
+    let mut retained = Vec::with_capacity(overlap + 8192);
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let read = file.read(&mut chunk).map_err(|error| error.to_string())?;
+        if read == 0 {
+            return Ok(false);
+        }
+        retained.extend_from_slice(&chunk[..read]);
+        if needles.iter().any(|needle| {
+            !needle.is_empty()
+                && retained
+                    .windows(needle.len())
+                    .any(|window| window == *needle)
+        }) {
+            return Ok(true);
+        }
+        if retained.len() > overlap {
+            retained.drain(..retained.len() - overlap);
         }
     }
 }
@@ -1608,7 +1751,7 @@ fn next_oauth_refresh(
     control: &ControlSession,
 ) -> Result<Option<OAuthRefreshEvent>, NextOAuthRefreshError> {
     let reply = post_control_with_timeout(
-        &control.socket,
+        &control.endpoint,
         &json!({
             "type": "NextOAuthRefresh",
             "request_id": request_id("next-oauth-refresh"),
@@ -1669,7 +1812,7 @@ fn complete_oauth_refresh(
         OAuthRefreshCompletion::NotRefreshed => ("not_refreshed", ""),
     };
     let reply = post_control_with_timeout(
-        &control.socket,
+        &control.endpoint,
         &json!({
             "type": "CompleteOAuthRefresh",
             "request_id": completion_request_id,
@@ -1781,7 +1924,7 @@ fn reset_stable_recovery_budget(inner: &mut Inner) {
 fn stop_session(session: &mut Session) {
     let started = Instant::now();
     let _ = post_control_with_timeout(
-        &session.socket,
+        &session.endpoint,
         &json!({
             "type": "Stop",
             "request_id": request_id("stop"),
@@ -1857,27 +2000,45 @@ fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
     let scratch_root = home.parent().unwrap_or(home.as_path());
     let bin = resolve_adapterd_bin(scratch_root)?;
     let adapterd_log = home.join("logs/adapterd.stdout.log");
-    let mut adapterd = spawn_logged(
-        Command::new(&bin.path)
-            .arg("run")
-            .arg("--home")
-            .arg(&home)
-            .arg("--listen-port")
-            .arg(plan.port.to_string())
-            .arg("--runtime-config-stdin-stream")
-            .stdin(Stdio::piped())
-            .env("AGENTHUB_HOME", &home),
-        &adapterd_log,
-    )
-    .map_err(|err| format!("adapterd spawn failed: {err}"))?;
+    let tcp_control = tcp_control_requested()?;
+    let bearer = tcp_control.then(generate_control_bearer).transpose()?;
+    let mut command = Command::new(&bin.path);
+    command
+        .arg("run")
+        .arg("--home")
+        .arg(&home)
+        .arg("--listen-port")
+        .arg(plan.port.to_string())
+        .arg("--runtime-config-stdin-stream")
+        .stdin(Stdio::piped())
+        .env("AGENTHUB_HOME", &home)
+        .env_remove(LEGACY_CONTROL_TOKEN_ENV);
+    if tcp_control {
+        command
+            .arg("--control-listen")
+            .arg("127.0.0.1:0")
+            .arg("--control-token-stdin");
+    }
+    let (mut adapterd, endpoint_receiver) = if tcp_control {
+        let (child, receiver) = spawn_tcp_control_logged(&mut command, &adapterd_log)
+            .map_err(|err| format!("adapterd spawn failed: {err}"))?;
+        (child, Some(receiver))
+    } else {
+        (
+            spawn_logged(&mut command, &adapterd_log)
+                .map_err(|err| format!("adapterd spawn failed: {err}"))?,
+            None,
+        )
+    };
     let Some(config_stdin) = adapterd.stdin.take() else {
         let _ = adapterd.kill();
         let _ = adapterd.wait();
         return Err("adapterd stdin unavailable".into());
     };
     let config_stdin = Arc::new(Mutex::new(config_stdin));
-    if let Err(error) = write_runtime_config_with_timeout(
+    if let Err(error) = write_startup_input_with_timeout(
         Arc::clone(&config_stdin),
+        bearer.clone(),
         plan.config.clone(),
         CONFIG_WRITE_WAIT,
     ) {
@@ -1886,17 +2047,37 @@ fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
         return Err(format!("adapterd runtime config write failed: {error}"));
     }
 
-    let socket = home.join("run/adapterd.sock");
+    let endpoint = match (bearer, endpoint_receiver) {
+        (Some(bearer), Some(receiver)) => match receiver.recv_timeout(CONTROL_START_WAIT) {
+            Ok(Ok(address)) => ControlEndpoint::Tcp { address, bearer },
+            Ok(Err(error)) => {
+                let _ = adapterd.kill();
+                let _ = adapterd.wait();
+                return Err(error);
+            }
+            Err(_) => {
+                let _ = adapterd.kill();
+                let _ = adapterd.wait();
+                return Err("timed out waiting for TCP control listener".into());
+            }
+        },
+        (None, None) => ControlEndpoint::Unix(home.join("run/adapterd.sock")),
+        _ => {
+            let _ = adapterd.kill();
+            let _ = adapterd.wait();
+            return Err("control transport setup was inconsistent".into());
+        }
+    };
     let started = match handshake_start(
         &home,
-        &socket,
+        &endpoint,
         plan.port,
         &plan.config_hash,
         bin.package_version,
     ) {
         Ok(session) => Session {
             home: session.home,
-            socket: session.socket,
+            endpoint: session.endpoint,
             owner_term: session.owner_term,
             instance_epoch: session.instance_epoch,
             port: session.port,
@@ -1913,6 +2094,47 @@ fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
     };
     scratch_guard.disarm();
     Ok(started)
+}
+
+#[cfg(unix)]
+fn tcp_control_requested() -> Result<bool, String> {
+    match std::env::var("AGENTHUB_GO_ROUTE_CONTROL_TRANSPORT") {
+        Err(std::env::VarError::NotPresent) => Ok(false),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            Err("Go route control transport is invalid".into())
+        }
+        Ok(value) if value == "tcp" => {
+            if cfg!(feature = "go-route-tcp-control-probe") {
+                Ok(true)
+            } else {
+                Err("TCP Go route control is unavailable in this build".into())
+            }
+        }
+        Ok(_) => Err("Go route control transport is invalid".into()),
+    }
+}
+
+#[cfg(unix)]
+fn generate_control_bearer() -> Result<Arc<str>, String> {
+    let mut raw = [0_u8; CONTROL_TOKEN_BYTES];
+    getrandom::getrandom(&mut raw)
+        .map_err(|_| "control authentication token could not be generated".to_string())?;
+    let bearer = URL_SAFE_NO_PAD.encode(raw);
+    if bearer.len() != CONTROL_TOKEN_ENCODED_BYTES {
+        return Err("control authentication token could not be generated".into());
+    }
+    Ok(Arc::from(bearer))
+}
+
+#[cfg(unix)]
+fn write_control_token_prelude(writer: &mut impl Write, bearer: &str) -> Result<(), String> {
+    if bearer.len() != CONTROL_TOKEN_ENCODED_BYTES {
+        return Err("control authentication token is invalid".into());
+    }
+    writer
+        .write_all(&(CONTROL_TOKEN_ENCODED_BYTES as u32).to_be_bytes())
+        .and_then(|_| writer.write_all(bearer.as_bytes()))
+        .map_err(|_| "control authentication token write failed".to_string())
 }
 
 #[cfg(unix)]
@@ -1954,13 +2176,42 @@ fn write_runtime_config_with_timeout(
 }
 
 #[cfg(unix)]
+fn write_startup_input_with_timeout(
+    writer: Arc<Mutex<ChildStdin>>,
+    bearer: Option<Arc<str>>,
+    config: Vec<u8>,
+    timeout: Duration,
+) -> Result<Vec<u8>, String> {
+    let (sent, received) = std::sync::mpsc::sync_channel(1);
+    std::thread::Builder::new()
+        .name("agenthub-go-startup-write".into())
+        .spawn(move || {
+            let result = {
+                let mut writer = writer
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if let Some(bearer) = bearer.as_deref() {
+                    write_control_token_prelude(&mut *writer, bearer)?;
+                }
+                write_runtime_config_frame(&mut *writer, &config)
+            };
+            let _ = sent.send(result.map(|()| config));
+            Ok::<(), String>(())
+        })
+        .map_err(|_| "startup input writer could not start".to_string())?;
+    received
+        .recv_timeout(timeout)
+        .map_err(|_| "startup input write timed out".to_string())?
+}
+
+#[cfg(unix)]
 fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
 struct HandshakeMeta {
     home: PathBuf,
-    socket: PathBuf,
+    endpoint: ControlEndpoint,
     owner_term: i64,
     instance_epoch: String,
     port: u16,
@@ -1970,15 +2221,17 @@ struct HandshakeMeta {
 #[cfg(unix)]
 fn handshake_start(
     home: &Path,
-    socket: &Path,
+    endpoint: &ControlEndpoint,
     fallback_port: u16,
     expected_config_hash: &str,
     expected_package_version: &str,
 ) -> Result<HandshakeMeta, String> {
-    wait_for_socket(socket, Duration::from_secs(8))?;
+    if let ControlEndpoint::Unix(socket) = endpoint {
+        wait_for_socket(socket, Duration::from_secs(8))?;
+    }
     let home_s = home.display().to_string();
     let hs = post_control(
-        socket,
+        endpoint,
         &json!({
             "type": "Handshake",
             "request_id": request_id("hs"),
@@ -2014,7 +2267,7 @@ fn handshake_start(
         .ok_or_else(|| "handshake missing instance_epoch".to_string())?
         .to_string();
     let acq = post_control(
-        socket,
+        endpoint,
         &json!({
             "type": "AcquireOrRenewOwner",
             "request_id": request_id("acq"),
@@ -2030,7 +2283,7 @@ fn handshake_start(
         .and_then(Value::as_i64)
         .ok_or_else(|| "acquire missing owner_term".to_string())?;
     let start = post_control(
-        socket,
+        endpoint,
         &json!({
             "type": "Start",
             "request_id": request_id("start"),
@@ -2043,7 +2296,7 @@ fn handshake_start(
     )?;
     let start_payload = require_ok(&start)?;
     let st = post_control(
-        socket,
+        endpoint,
         &json!({
             "type": "Status",
             "request_id": request_id("st"),
@@ -2079,7 +2332,7 @@ fn handshake_start(
     }
     Ok(HandshakeMeta {
         home: home.to_path_buf(),
-        socket: socket.to_path_buf(),
+        endpoint: endpoint.clone(),
         owner_term,
         instance_epoch,
         port,
@@ -2495,6 +2748,148 @@ fn spawn_logged(cmd: &mut Command, log_path: &Path) -> Result<Child, String> {
 }
 
 #[cfg(unix)]
+fn spawn_tcp_control_logged(
+    cmd: &mut Command,
+    log_path: &Path,
+) -> Result<
+    (
+        Child,
+        std::sync::mpsc::Receiver<Result<SocketAddrV4, String>>,
+    ),
+    String,
+> {
+    let stderr_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+        .map_err(|err| err.to_string())?;
+    let mut child = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::from(stderr_file))
+        .spawn()
+        .map_err(|err| err.to_string())?;
+    let Some(stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("adapterd stdout unavailable".into());
+    };
+    let log_path = log_path.to_path_buf();
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    if std::thread::Builder::new()
+        .name("agenthub-go-control-stdout".into())
+        .spawn(move || drain_tcp_control_stdout(stdout, &log_path, sender))
+        .is_err()
+    {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("adapterd stdout reader could not start".into());
+    }
+    Ok((child, receiver))
+}
+
+#[cfg(unix)]
+fn drain_tcp_control_stdout(
+    mut stdout: std::process::ChildStdout,
+    log_path: &Path,
+    sender: std::sync::mpsc::SyncSender<Result<SocketAddrV4, String>>,
+) {
+    let mut log = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+        .ok();
+    let mut log_bytes = 0_usize;
+    let mut line = Vec::with_capacity(256);
+    let mut line_too_long = false;
+    let mut result_sent = false;
+    let mut chunk = [0_u8; 1024];
+
+    loop {
+        let read = match stdout.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(read) => read,
+            Err(_) => {
+                if !result_sent {
+                    let _ =
+                        sender.send(Err("TCP control listener output could not be read".into()));
+                    result_sent = true;
+                }
+                break;
+            }
+        };
+        if let Some(file) = log.as_mut() {
+            let remaining = MAX_CONTROL_STDOUT_LOG_BYTES.saturating_sub(log_bytes);
+            let write_len = remaining.min(read);
+            if write_len > 0 && file.write_all(&chunk[..write_len]).is_ok() {
+                log_bytes += write_len;
+            }
+        }
+        for &byte in &chunk[..read] {
+            if byte == b'\n' {
+                if !result_sent {
+                    let parsed = if line_too_long {
+                        Err("TCP control listener output line was too long".into())
+                    } else {
+                        parse_tcp_control_listener_line(&line)
+                    };
+                    match parsed {
+                        Ok(None) => {}
+                        Ok(Some(address)) => {
+                            let _ = sender.send(Ok(address));
+                            result_sent = true;
+                        }
+                        Err(error) => {
+                            let _ = sender.send(Err(error));
+                            result_sent = true;
+                        }
+                    }
+                }
+                line.clear();
+                line_too_long = false;
+            } else if line.len() < MAX_CONTROL_STDOUT_LINE_BYTES {
+                line.push(byte);
+            } else {
+                line_too_long = true;
+            }
+        }
+    }
+    if !result_sent {
+        let parsed = if line_too_long {
+            Err("TCP control listener output line was too long".into())
+        } else {
+            parse_tcp_control_listener_line(&line)
+        };
+        let result = match parsed {
+            Ok(Some(address)) => Ok(address),
+            Ok(None) => Err("TCP control listener was not reported".into()),
+            Err(error) => Err(error),
+        };
+        let _ = sender.send(result);
+    }
+}
+
+#[cfg(unix)]
+fn parse_tcp_control_listener_line(line: &[u8]) -> Result<Option<SocketAddrV4>, String> {
+    let line = line.strip_suffix(b"\r").unwrap_or(line);
+    let Ok(line) = std::str::from_utf8(line) else {
+        return Err("TCP control listener output was invalid".into());
+    };
+    if !line.starts_with("agenthub-adapterd control listener:") {
+        return Ok(None);
+    }
+    let Some(address) = line.strip_prefix(TCP_CONTROL_STDOUT_PREFIX) else {
+        return Err("TCP control listener output was invalid".into());
+    };
+    let parsed = address
+        .parse::<SocketAddrV4>()
+        .map_err(|_| "TCP control listener output was invalid".to_string())?;
+    if parsed.ip() != &Ipv4Addr::LOCALHOST || parsed.port() == 0 || parsed.to_string() != address {
+        return Err("TCP control listener output was invalid".into());
+    }
+    Ok(Some(parsed))
+}
+
+#[cfg(unix)]
 fn wait_for_socket(path: &Path, timeout: Duration) -> Result<(), String> {
     let started = Instant::now();
     while started.elapsed() < timeout {
@@ -2507,16 +2902,26 @@ fn wait_for_socket(path: &Path, timeout: Duration) -> Result<(), String> {
 }
 
 #[cfg(unix)]
-fn post_control(socket: &Path, body: &Value) -> Result<Value, String> {
-    post_control_with_timeout(socket, body, Duration::from_secs(8))
+fn post_control(endpoint: &ControlEndpoint, body: &Value) -> Result<Value, String> {
+    post_control_with_timeout(endpoint, body, Duration::from_secs(8))
 }
 
 #[cfg(unix)]
 fn post_control_with_timeout(
-    socket: &Path,
+    endpoint: &ControlEndpoint,
     body: &Value,
     timeout: Duration,
 ) -> Result<Value, String> {
+    match endpoint {
+        ControlEndpoint::Unix(socket) => post_unix_control(socket, body, timeout),
+        ControlEndpoint::Tcp { address, bearer } => {
+            post_tcp_control(*address, bearer, body, timeout)
+        }
+    }
+}
+
+#[cfg(unix)]
+fn post_unix_control(socket: &Path, body: &Value, timeout: Duration) -> Result<Value, String> {
     use std::os::unix::net::UnixStream;
     let raw = serde_json::to_vec(body).map_err(|err| err.to_string())?;
     let started = Instant::now();
@@ -2557,6 +2962,92 @@ fn post_control_with_timeout(
     parse_http_json(&buf)
 }
 
+#[cfg(unix)]
+fn post_tcp_control(
+    address: SocketAddrV4,
+    bearer: &str,
+    body: &Value,
+    timeout: Duration,
+) -> Result<Value, String> {
+    let raw = serde_json::to_vec(body).map_err(|err| err.to_string())?;
+    let started = Instant::now();
+    let mut stream = TcpStream::connect_timeout(&SocketAddr::V4(address), timeout)
+        .map_err(|_| ERROR_CONTROL_UNAVAILABLE.to_string())?;
+    let remaining = timeout
+        .checked_sub(started.elapsed())
+        .filter(|remaining| !remaining.is_zero())
+        .unwrap_or(Duration::from_millis(1));
+    stream
+        .set_read_timeout(Some(remaining))
+        .map_err(|_| ERROR_CONTROL_UNAVAILABLE.to_string())?;
+    stream
+        .set_write_timeout(Some(remaining))
+        .map_err(|_| ERROR_CONTROL_UNAVAILABLE.to_string())?;
+    let header = format!(
+        "POST /control HTTP/1.1\r\nHost: {}\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        address,
+        bearer,
+        raw.len()
+    );
+    stream
+        .write_all(header.as_bytes())
+        .and_then(|_| stream.write_all(&raw))
+        .and_then(|_| stream.flush())
+        .map_err(|_| ERROR_CONTROL_UNAVAILABLE.to_string())?;
+
+    let mut response = Vec::with_capacity(4096);
+    let mut chunk = [0_u8; 4096];
+    loop {
+        let remaining = timeout
+            .checked_sub(started.elapsed())
+            .filter(|remaining| !remaining.is_zero())
+            .ok_or_else(|| ERROR_CONTROL_UNAVAILABLE.to_string())?;
+        stream
+            .set_read_timeout(Some(remaining))
+            .map_err(|_| ERROR_CONTROL_UNAVAILABLE.to_string())?;
+        let read = stream
+            .read(&mut chunk)
+            .map_err(|_| ERROR_CONTROL_UNAVAILABLE.to_string())?;
+        if read == 0 {
+            break;
+        }
+        if response.len().saturating_add(read) > MAX_CONTROL_RESPONSE_BYTES {
+            return Err(ERROR_CONTROL_UNAVAILABLE.into());
+        }
+        response.extend_from_slice(&chunk[..read]);
+        if find_http_header_end(&response).is_none()
+            && response.len() > MAX_CONTROL_RESPONSE_HEADER_BYTES
+        {
+            return Err(ERROR_CONTROL_UNAVAILABLE.into());
+        }
+    }
+    let header_end =
+        find_http_header_end(&response).ok_or_else(|| ERROR_CONTROL_UNAVAILABLE.to_string())?;
+    if header_end > MAX_CONTROL_RESPONSE_HEADER_BYTES {
+        return Err(ERROR_CONTROL_UNAVAILABLE.into());
+    }
+    let status_line_end = response
+        .windows(2)
+        .position(|window| window == b"\r\n")
+        .ok_or_else(|| ERROR_CONTROL_UNAVAILABLE.to_string())?;
+    let status_line = std::str::from_utf8(&response[..status_line_end])
+        .map_err(|_| ERROR_CONTROL_UNAVAILABLE.to_string())?;
+    let mut status_parts = status_line.split_ascii_whitespace();
+    let version = status_parts.next();
+    let status = status_parts.next();
+    if !matches!(version, Some("HTTP/1.0" | "HTTP/1.1")) || !matches!(status, Some("200" | "400")) {
+        return Err(ERROR_CONTROL_UNAVAILABLE.into());
+    }
+    parse_http_json(&response)
+}
+
+fn find_http_header_end(bytes: &[u8]) -> Option<usize> {
+    bytes
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|index| index + 4)
+}
+
 fn parse_http_json(buf: &[u8]) -> Result<Value, String> {
     let text = String::from_utf8_lossy(buf);
     let idx = text
@@ -2590,7 +3081,7 @@ fn request_id(kind: &str) -> String {
 #[cfg(unix)]
 fn session_status(session: &ControlSession) -> Result<Value, String> {
     let reply = post_control(
-        &session.socket,
+        &session.endpoint,
         &json!({
             "type": "Status",
             "request_id": request_id("status"),
@@ -2620,7 +3111,7 @@ fn required_reload_ack_matches(
 #[cfg(unix)]
 fn renew_owner_and_status(session: &ControlSession) -> Result<Value, String> {
     let renewal = post_control(
-        &session.socket,
+        &session.endpoint,
         &json!({
             "type": "AcquireOrRenewOwner",
             "request_id": request_id("renew"),
@@ -2650,7 +3141,7 @@ impl From<&Session> for ControlSession {
     fn from(session: &Session) -> Self {
         Self {
             home: session.home.clone(),
-            socket: session.socket.clone(),
+            endpoint: session.endpoint.clone(),
             owner_term: session.owner_term,
             instance_epoch: session.instance_epoch.clone(),
         }

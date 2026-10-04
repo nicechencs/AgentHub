@@ -190,7 +190,7 @@ fi
 
 (cd "${ROOT}/go/agenthub-adapterd" && go build -trimpath -buildvcs=false -o "${ADAPTERD_BIN}" .) >"${GO_BUILD_LOG}" 2>&1
 (cd "${ROOT}" && node scripts/build-go-sidecar.mjs) >>"${GO_BUILD_LOG}" 2>&1
-(cd "${ROOT}" && cargo build -p agenthub-gui --example go_route_bind_e2e_probe --features go-route-bind-probe --locked) >"${BUILD_LOG}" 2>&1
+(cd "${ROOT}" && cargo build -p agenthub-gui --example go_route_bind_e2e_probe --features go-route-bind-probe,go-route-tcp-control-probe --locked) >"${BUILD_LOG}" 2>&1
 BIN="${ROOT}/target/debug/examples/go_route_bind_e2e_probe"
 [[ -x "${BIN}" && -x "${ADAPTERD_BIN}" ]] || { echo "FAIL: probe binaries missing" >&2; exit 1; }
 
@@ -198,6 +198,7 @@ SOURCE_FINGERPRINT="$(
   {
     git -C "${ROOT}" rev-parse HEAD
     sha256sum \
+      "${ROOT}/Cargo.lock" \
       "${ROOT}/src-tauri/Cargo.toml" \
       "${ROOT}/src-tauri/src/lib.rs" \
       "${ROOT}/src-tauri/src/go_route_bind_probe.rs" \
@@ -206,6 +207,7 @@ SOURCE_FINGERPRINT="$(
       "${ROOT}/src-tauri/src/go_route_isolated.rs" \
       "${ROOT}/src-tauri/examples/go_route_bind_e2e_probe.rs" \
       "${ROOT}/scripts/route-runtime-probe/bind-go-e2e-isolated.sh"
+    sha256sum "${ROOT}/go/agenthub-adapterd/go.mod"
     find "${ROOT}/go/agenthub-adapterd" -maxdepth 1 -type f -name '*.go' -print0 \
       | sort -z \
       | xargs -0 sha256sum
@@ -219,6 +221,7 @@ setsid env \
   AGENTHUB_PROBE_REAL_HOME="${REAL_HOME}" \
   AGENTHUB_PROBE_SOURCE_FINGERPRINT="${SOURCE_FINGERPRINT}" \
   AGENTHUB_ADAPTERD_BIN="${ADAPTERD_BIN}" \
+  AGENTHUB_GO_ROUTE_CONTROL_TRANSPORT="tcp" \
   HOME="${HOME_DIR}" \
   AGENTHUB_HOME="${AGENTHUB_DIR}" \
   CODEX_HOME="${CODEX_DIR}" \
@@ -249,9 +252,9 @@ cmp -s "${TOOLING_BEFORE}" "${TOOLING_AFTER}" || {
   exit 1
 }
 
-python3 - "${RUN_LOG}" "${EVIDENCE}" "${PRODUCT_PORT}" <<'PY'
-import json, sys
-run_log, evidence_path, product_port = sys.argv[1], sys.argv[2], int(sys.argv[3])
+python3 - "${RUN_LOG}" "${EVIDENCE}" "${PRODUCT_PORT}" "${ADAPTERD_BIN}" <<'PY'
+import hashlib, json, sys
+run_log, evidence_path, product_port, adapterd_bin = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
 with open(run_log, encoding="utf-8") as handle:
     rows = [line.strip() for line in handle if line.strip().startswith("{")]
 assert rows, "probe emitted no JSON evidence"
@@ -260,6 +263,11 @@ assert evidence["schema"] == "go-route-bind-e2e-probe.v1", evidence
 assert evidence["status"] == "ok", evidence
 assert evidence["plan_route"] == "local_bridge", evidence
 assert evidence["rule_id"] == "openai-api-to-codex-v1", evidence
+assert evidence["control_transport"] == "tcp", evidence
+assert evidence["startup_control_secret_scan"] is True, evidence
+assert evidence["tcp_semantic_rejection_preserved"] is True, evidence
+assert evidence["control_port_released"] is True, evidence
+assert evidence["control_port"] not in (evidence["go_port"], evidence["rust_listener_port"], product_port), evidence
 assert not evidence["first_bind_active"] and evidence["generated_provider_switched_current"], evidence
 assert evidence["persisted_pool_enrolled"] and evidence["persisted_pool_member_matches_source"], evidence
 assert evidence["persisted_pool_ingress_key_matches_request"], evidence
@@ -279,8 +287,10 @@ assert evidence["go_state_after_unbind"] == "ready" and evidence["go_port_stable
 assert evidence["go_member_count_before_unbind"] >= 1 and evidence["go_healthy_member_count_before_unbind"] >= 1, evidence
 assert evidence["rust_listener_port"] != product_port and evidence["go_port"] != product_port, evidence
 evidence["real_tooling_homes_unchanged"] = True
+with open(adapterd_bin, "rb") as handle:
+    evidence["go_binary_sha256"] = hashlib.sha256(handle.read()).hexdigest()
 for key, value in evidence.items():
-    if key.endswith("fingerprint") or key.startswith("go_hash"):
+    if key.endswith("fingerprint") or key.startswith("go_hash") or key == "go_binary_sha256":
         assert isinstance(value, str) and len(value) == 64, (key, value)
 with open(evidence_path, "w", encoding="utf-8") as handle:
     json.dump(evidence, handle, indent=2, sort_keys=True)
