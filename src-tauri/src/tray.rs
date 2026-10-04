@@ -154,14 +154,18 @@ fn request_coordinated_shutdown<R: Runtime>(app: &AppHandle<R>, action: Coordina
     state.request_exit();
     match action {
         CoordinatedShutdownAction::Exit => {
-            let _ = state
-                .exit_coordinator()
-                .request_exit(app.clone(), state.bridge_host());
+            let _ = state.exit_coordinator().request_exit(
+                app.clone(),
+                state.bridge_host(),
+                state.go_route_isolated(),
+            );
         }
         CoordinatedShutdownAction::Restart => {
-            let _ = state
-                .exit_coordinator()
-                .request_restart(app.clone(), state.bridge_host());
+            let _ = state.exit_coordinator().request_restart(
+                app.clone(),
+                state.bridge_host(),
+                state.go_route_isolated(),
+            );
         }
     }
 }

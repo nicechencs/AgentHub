@@ -14,6 +14,8 @@ use agenthub_core::bridge::BridgeRuntimeHost;
 use tauri::{AppHandle, Runtime};
 use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 
+use crate::go_route_isolated::GoRouteIsolatedHost;
+
 /// Prevents a host shutdown from racing an in-flight bridge lifecycle saga.
 ///
 /// Bridge work enters through a shared permit.  Once shutdown starts we close
@@ -185,8 +187,14 @@ impl ExitCoordinator {
         &self,
         app: AppHandle<R>,
         host: Arc<BridgeRuntimeHost>,
+        go_route_isolated: Arc<GoRouteIsolatedHost>,
     ) -> bool {
-        self.request_shutdown(app, host, CoordinatedShutdownAction::Exit)
+        self.request_shutdown(
+            app,
+            host,
+            go_route_isolated,
+            CoordinatedShutdownAction::Exit,
+        )
     }
 
     /// Same exclusive bridge drain as a normal exit, but request a Tauri
@@ -196,14 +204,21 @@ impl ExitCoordinator {
         &self,
         app: AppHandle<R>,
         host: Arc<BridgeRuntimeHost>,
+        go_route_isolated: Arc<GoRouteIsolatedHost>,
     ) -> bool {
-        self.request_shutdown(app, host, CoordinatedShutdownAction::Restart)
+        self.request_shutdown(
+            app,
+            host,
+            go_route_isolated,
+            CoordinatedShutdownAction::Restart,
+        )
     }
 
     fn request_shutdown<R: Runtime>(
         &self,
         app: AppHandle<R>,
         host: Arc<BridgeRuntimeHost>,
+        go_route_isolated: Arc<GoRouteIsolatedHost>,
         action: CoordinatedShutdownAction,
     ) -> bool {
         let ExitBegin::Started(preparation) = self.begin_shutdown(&host) else {
@@ -229,13 +244,26 @@ impl ExitCoordinator {
             // ceiling — a stuck saga left the process undead with no feedback.
             const EXIT_DRAIN_WATCHDOG: std::time::Duration = std::time::Duration::from_secs(12);
             let drain = async {
-                let _exclusive_permit = lifecycle_barrier.wait_for_sagas().await;
-                if let Err(error) = host.shutdown().await {
+                let go_shutdown =
+                    tauri::async_runtime::spawn_blocking(move || go_route_isolated.stop());
+                let bridge_shutdown = async {
+                    let _exclusive_permit = lifecycle_barrier.wait_for_sagas().await;
+                    if let Err(error) = host.shutdown().await {
+                        tracing::warn!(
+                            target: "gui",
+                            op = "exit",
+                            error = %error,
+                            "bridge shutdown failed while exiting"
+                        );
+                    }
+                };
+                let (go_result, ()) = tokio::join!(go_shutdown, bridge_shutdown);
+                if let Err(error) = go_result {
                     tracing::warn!(
                         target: "gui",
                         op = "exit",
                         error = %error,
-                        "bridge shutdown failed while exiting"
+                        "isolated Go route shutdown failed while exiting"
                     );
                 }
             };

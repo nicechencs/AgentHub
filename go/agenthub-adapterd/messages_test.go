@@ -176,3 +176,38 @@ func TestMessagesMethodNotAllowed(t *testing.T) {
 		t.Fatalf("body %s", got)
 	}
 }
+
+func TestHealthRequiresSyntheticKey(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(mockMessages))
+	t.Cleanup(upstream.Close)
+	rt := testRuntime(t)
+	_, _, port := activateProbe(t, rt, upstream.URL, testIngressKey)
+	url := "http://127.0.0.1:" + strconv.Itoa(port) + "/health"
+
+	unauthorized, err := http.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unauthorized.Body.Close()
+	if unauthorized.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without key, got %d", unauthorized.StatusCode)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+testIngressKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 with key, got %d: %s", resp.StatusCode, body)
+	}
+	if !bytes.Contains(body, []byte(`"listen_ready":true`)) {
+		t.Fatalf("unexpected health body: %s", body)
+	}
+}

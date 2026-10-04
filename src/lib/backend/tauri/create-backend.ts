@@ -1,6 +1,7 @@
 import type { Backend, BackendFeatures, CreateBackend } from '@/lib/backend/contracts';
 import { createTauriAccountPort } from './account';
 import { createTauriAdapterPort } from './adapter';
+import { createTauriGoRouteIsolatedPort } from './go-route-isolated';
 import { createTauriAgentPort } from './agent';
 import { createTauriTicketPort } from './ticket';
 import { createTauriBackupPort } from './backup';
@@ -33,6 +34,7 @@ export const createBackend: CreateBackend = () => {
     features,
     account: createTauriAccountPort(),
     adapter: createTauriAdapterPort(),
+    goRouteIsolated: createTauriGoRouteIsolatedPort(),
     ticket: createTauriTicketPort(),
     catalog: createTauriCatalogPort(),
     config: createTauriConfigPort(),

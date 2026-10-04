@@ -11,6 +11,7 @@ use agenthub_core::AgentHub;
 use crate::adapter_bridge_controller::AdapterSagaCoordinator;
 use crate::adapter_control_host::DesktopAdapterControl;
 use crate::exit_coordinator::{ExitCoordinator, LifecycleShutdownBarrier};
+use crate::go_route_isolated::GoRouteIsolatedHost;
 use crate::window_policy::{self, parse_bool_setting};
 
 /// Shared GUI state: one AgentHub opened at process start.
@@ -35,6 +36,8 @@ pub struct AppState {
     local_gateway_restarting: Arc<AtomicBool>,
     /// Folder from `--open-chat` / file-manager, consumed once by the GUI.
     pending_open_chat_cwd: Mutex<Option<String>>,
+    /// Isolated Go Messages supervisor. Scratch-only; not the default gateway.
+    go_route_isolated: Arc<GoRouteIsolatedHost>,
 }
 
 impl AppState {
@@ -89,6 +92,7 @@ impl AppState {
             close_to_tray: AtomicBool::new(close_to_tray),
             local_gateway_restarting: Arc::new(AtomicBool::new(false)),
             pending_open_chat_cwd: Mutex::new(None),
+            go_route_isolated: GoRouteIsolatedHost::new(),
         }
     }
 
@@ -139,6 +143,10 @@ impl AppState {
     /// Process-local flag for the yellow local-forwarding restart banner.
     pub(crate) fn local_gateway_restarting(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.local_gateway_restarting)
+    }
+
+    pub(crate) fn go_route_isolated(&self) -> Arc<GoRouteIsolatedHost> {
+        Arc::clone(&self.go_route_isolated)
     }
 
     /// Claim the one outstanding bridge-impact confirmation dialog.

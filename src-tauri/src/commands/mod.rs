@@ -8,6 +8,7 @@ pub mod backup;
 pub mod chat;
 pub mod configuration;
 pub mod doctor;
+pub mod go_route_isolated;
 pub mod install;
 pub mod lifecycle;
 pub mod mcp;

@@ -42,6 +42,7 @@ type Runtime struct {
 	lastError   *LastError
 
 	probe *ProbeFixture
+	pool  *Pool
 
 	idempotency map[string]idempotentEntry
 
@@ -189,6 +190,8 @@ func (rt *Runtime) HandleControl(raw []byte) Reply {
 		reply = rt.handleAcquire(env)
 	case typeStatus:
 		reply = rt.handleStatus(env)
+	case typeStart:
+		reply = rt.handleStart(env)
 	case typeActivateProbeListen:
 		reply = rt.handleActivateProbe(env)
 	case typeStop:
@@ -413,12 +416,15 @@ func (rt *Runtime) handleStatus(env Envelope) Reply {
 	}
 	body := marshalPayload(status)
 	rt.mu.Lock()
-	secret := ""
-	if rt.probe != nil {
-		secret = rt.probe.IngressKey
+	secrets := make([]string, 0, 4)
+	if rt.probe != nil && rt.probe.IngressKey != "" {
+		secrets = append(secrets, rt.probe.IngressKey)
+	}
+	if rt.pool != nil {
+		secrets = append(secrets, rt.pool.Secrets()...)
 	}
 	rt.mu.Unlock()
-	if statusContainsSecret(body, secret) {
+	if statusContainsAnySecret(body, secrets) {
 		return rt.fail(env.Type, env.RequestID, errSecretOnControl, "status refused because it would include a secret", false)
 	}
 	rt.mu.Lock()
@@ -450,59 +456,119 @@ func (rt *Runtime) statusSnapshot() (StatusSuccess, error) {
 		p := port
 		portPtr = &p
 	}
+	var schedule string
+	var memberCount, healthyCount int
+	if rt.pool != nil {
+		snap := rt.pool.Snapshot(time.Now())
+		schedule = snap.SchedulePolicy
+		memberCount = snap.MemberCount
+		healthyCount = snap.HealthyMemberCount
+	}
 	return StatusSuccess{
-		InstanceID:      rt.instanceID,
-		InstanceEpoch:   rt.instanceEpoch,
-		OwnerTerm:       term,
-		ActiveRevision:  nil,
-		ActiveHash:      nil,
-		Prepared:        []byte("null"),
-		Lifecycle:       rt.lifecycle,
-		ListenReady:     rt.listenReady,
-		Port:            portPtr,
-		InFlightCount:   rt.inFlight,
-		OwnerLeaseValid: rt.ownerTerm > 0 && time.Now().Before(rt.ownerLeaseUntil),
-		LastError:       rt.lastError,
+		InstanceID:         rt.instanceID,
+		InstanceEpoch:      rt.instanceEpoch,
+		OwnerTerm:          term,
+		ActiveRevision:     nil,
+		ActiveHash:         nil,
+		Prepared:           []byte("null"),
+		Lifecycle:          rt.lifecycle,
+		ListenReady:        rt.listenReady,
+		Port:               portPtr,
+		InFlightCount:      rt.inFlight,
+		OwnerLeaseValid:    rt.ownerTerm > 0 && time.Now().Before(rt.ownerLeaseUntil),
+		LastError:          rt.lastError,
+		SchedulePolicy:     schedule,
+		MemberCount:        memberCount,
+		HealthyMemberCount: healthyCount,
 	}, nil
 }
 
-func (rt *Runtime) handleActivateProbe(env Envelope) Reply {
+func (rt *Runtime) requireOwner(env Envelope) *Reply {
 	if fail := rt.requireHandshake(env); fail != nil {
-		return *fail
+		return fail
 	}
 	rt.mu.Lock()
+	defer rt.mu.Unlock()
 	if rt.ownerTerm == 0 || env.OwnerTerm == nil || *env.OwnerTerm != rt.ownerTerm {
-		rt.mu.Unlock()
-		return rt.fail(env.Type, env.RequestID, errNotOwner, "ActivateProbeListen requires the current owner_term", false)
+		fail := rt.failUnlocked(env.Type, env.RequestID, errNotOwner, env.Type+" requires the current owner_term", false)
+		return &fail
 	}
 	if env.OwnerID != rt.ownerID {
-		rt.mu.Unlock()
-		return rt.fail(env.Type, env.RequestID, errNotOwner, "owner_id does not match", false)
+		fail := rt.failUnlocked(env.Type, env.RequestID, errNotOwner, "owner_id does not match", false)
+		return &fail
 	}
 	if time.Now().After(rt.ownerLeaseUntil) {
-		rt.mu.Unlock()
-		return rt.fail(env.Type, env.RequestID, errNotOwner, "owner lease has expired", false)
+		fail := rt.failUnlocked(env.Type, env.RequestID, errNotOwner, "owner lease has expired", false)
+		return &fail
 	}
+	return nil
+}
+
+func (rt *Runtime) handleStart(env Envelope) Reply {
+	return rt.startFromProbeFixture(env, "isolated Start; not default gateway")
+}
+
+func (rt *Runtime) handleActivateProbe(env Envelope) Reply {
+	return rt.startFromProbeFixture(env, "probe-only activate; not product Start")
+}
+
+func (rt *Runtime) applyOptionalStartPort(raw json.RawMessage) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	var payload StartPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return fmt.Errorf("Start payload is not valid JSON")
+	}
+	if payload.ListenPort == nil {
+		return nil
+	}
+	port := *payload.ListenPort
+	if port == productDefaultPort {
+		return fmt.Errorf("refusing product default listen port %d", productDefaultPort)
+	}
+	if port < 0 || port > 65535 {
+		return fmt.Errorf("invalid listen port %d", port)
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.listenReady {
+		return nil
+	}
+	rt.listenPort = port
+	return nil
+}
+
+func (rt *Runtime) startFromProbeFixture(env Envelope, note string) Reply {
+	if fail := rt.requireOwner(env); fail != nil {
+		return *fail
+	}
+	if env.Type == typeStart {
+		if err := rt.applyOptionalStartPort(env.Payload); err != nil {
+			return rt.fail(env.Type, env.RequestID, errInvalidRequest, err.Error(), false)
+		}
+	}
+	rt.mu.Lock()
 	if rt.listenReady {
 		port := rt.actualPort
 		epoch := rt.instanceEpoch
 		rt.mu.Unlock()
 		return Reply{
 			OK:            true,
-			Type:          typeActivateProbeListen,
+			Type:          env.Type,
 			RequestID:     env.RequestID,
 			InstanceEpoch: epoch,
 			Payload: marshalPayload(map[string]any{
 				"listen_ready": true,
 				"port":         port,
-				"note":         "probe-only activate; not product CommitDesired",
+				"note":         note,
 			}),
 		}
 	}
 	rt.mu.Unlock()
 
 	if !isScratchHome(rt.home) {
-		return rt.fail(env.Type, env.RequestID, errProbeOnlyRejected, "ActivateProbeListen is scratch-only", false)
+		return rt.fail(env.Type, env.RequestID, errProbeOnlyRejected, env.Type+" is scratch-only", false)
 	}
 	fixturePath := defaultProbeFixture(rt.home)
 	raw, err := os.ReadFile(fixturePath)
@@ -513,37 +579,51 @@ func (rt *Runtime) handleActivateProbe(env Envelope) Reply {
 	if err := json.Unmarshal(raw, &fixture); err != nil {
 		return rt.fail(env.Type, env.RequestID, errConfigMismatch, "probe fixture is not valid JSON", false)
 	}
-	if fixture.IngressKey == "" || fixture.UpstreamBaseURL == "" {
+	if fixture.IngressKey == "" || (strings.TrimSpace(fixture.UpstreamBaseURL) == "" && len(fixture.Members) == 0) {
 		return rt.fail(env.Type, env.RequestID, errConfigMismatch, "probe fixture is incomplete", false)
 	}
-	if err := loopbackURL(fixture.UpstreamBaseURL); err != nil {
-		return rt.fail(env.Type, env.RequestID, errScopeMismatch, "probe upstream must be loopback", false)
+	if strings.TrimSpace(fixture.UpstreamBaseURL) != "" {
+		if err := loopbackURL(fixture.UpstreamBaseURL); err != nil {
+			return rt.fail(env.Type, env.RequestID, errScopeMismatch, "probe upstream must be loopback", false)
+		}
 	}
 
 	if err := rt.startMessagesLocked(fixture); err != nil {
-		return rt.fail(env.Type, env.RequestID, errPortInUse, "messages listener failed to bind", false)
+		switch {
+		case err == errIncompletePool || err == errInvalidPolicy:
+			return rt.fail(env.Type, env.RequestID, errConfigMismatch, "probe fixture is incomplete", false)
+		case strings.Contains(err.Error(), "loopback"):
+			return rt.fail(env.Type, env.RequestID, errScopeMismatch, "probe upstream must be loopback", false)
+		default:
+			return rt.fail(env.Type, env.RequestID, errPortInUse, "messages listener failed to bind", false)
+		}
 	}
 	rt.mu.Lock()
 	port := rt.actualPort
 	epoch := rt.instanceEpoch
 	rt.mu.Unlock()
-	rt.logf("probe messages listening on 127.0.0.1:%d (not product CommitDesired)", port)
+	rt.logf("messages listening on 127.0.0.1:%d (%s)", port, note)
 	return Reply{
 		OK:            true,
-		Type:          typeActivateProbeListen,
+		Type:          env.Type,
 		RequestID:     env.RequestID,
 		InstanceEpoch: epoch,
 		Payload: marshalPayload(map[string]any{
 			"listen_ready": true,
 			"port":         port,
-			"note":         "probe-only activate; not product CommitDesired",
+			"note":         note,
 		}),
 	}
 }
 
 func (rt *Runtime) startMessagesLocked(fixture ProbeFixture) error {
+	pool, err := NewPoolFromFixture(fixture)
+	if err != nil {
+		return err
+	}
 	rt.mu.Lock()
 	rt.probe = &fixture
+	rt.pool = pool
 	host := rt.listenHost
 	port := rt.listenPort
 	rt.mu.Unlock()
@@ -645,6 +725,12 @@ func (rt *Runtime) ingressKey() string {
 		return ""
 	}
 	return rt.probe.IngressKey
+}
+
+func (rt *Runtime) currentPool() *Pool {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return rt.pool
 }
 
 func (rt *Runtime) upstreamBase() string {

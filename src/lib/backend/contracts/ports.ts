@@ -1,5 +1,6 @@
 import type { AgentCatalogPort } from './agent-catalog';
 import type { AdapterPort } from './adapter';
+import type { GoRouteIsolatedPort } from './go-route-isolated';
 import type { AccountPort } from './account-port';
 import type { AgentPort } from './agent-port';
 import type { BackupPort } from './backup-port';
@@ -55,6 +56,7 @@ export interface Backend {
   features: BackendFeatures;
   account: AccountPort;
   adapter: AdapterPort;
+  goRouteIsolated: GoRouteIsolatedPort;
   ticket: TicketPort;
   agent: AgentPort;
   catalog: AgentCatalogPort;

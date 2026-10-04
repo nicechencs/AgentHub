@@ -6,15 +6,21 @@ are unchanged. There is no plugin store.
 
 This slice only proves, in an isolated scratch directory:
 
-- control `Handshake`, `Status`, and `AcquireOrRenewOwner` (`acquire` / `renew`)
+- control `Handshake`, `Status`, `AcquireOrRenewOwner` (`acquire` / `renew`), `Start`, and `Stop`
 - process up / down
 - `POST /v1/messages` with a **synthetic** entry key, JSON and SSE, forwarded
   to a controlled loopback upstream mock
+- connection-pool scheduling: `priority_failover` / `round_robin`, member
+  health and cooldown, model union, client cancel; no member switch after
+  output has started
 
-`ActivateProbeListen` is a **probe-only** control message. It is not product
-`CommitDesired`, does not write real agent config, and only starts Messages
-listening from `$AGENTHUB_HOME/config/probe.json` when `AGENTHUB_HOME` is a
-scratch directory.
+`Start` is the product control name for this isolated slice. It does not write
+real agent config, refuses the product default port `43121` and real
+`~/.agenthub`, and only starts Messages listening from
+`$AGENTHUB_HOME/config/probe.json` when `AGENTHUB_HOME` is a scratch directory.
+
+`ActivateProbeListen` remains a probe-only shortcut with the same listen start.
+It is not the default gateway.
 
 ## Build
 
@@ -31,11 +37,12 @@ From the repository root (creates an absolute scratch tree under `/tmp`, never
 
 ```bash
 scripts/route-runtime-probe/messages-isolated.sh
+scripts/route-runtime-probe/pool-isolated.sh
 ```
 
-The script lists every data/config/log path before start, checks they stay
-under scratch, then verifies handshake, status, process up, one Messages JSON
-request (and SSE), and process down.
+The scripts list every data/config/log path before start, check they stay
+under scratch, then verify handshake, status, process up, Messages JSON/SSE,
+pool scheduling, cancel, Stop, and process down.
 
 ## Run the daemon yourself
 
@@ -50,7 +57,7 @@ Control channel: Unix domain socket at `$AGENTHUB_HOME/run/adapterd.sock`
 ```bash
 export AGENTHUB_HOME=/tmp/agenthub-route-runtime-probe/manual/home
 mkdir -p "$AGENTHUB_HOME"/{config,run,logs}
-# write config/probe.json (synthetic key + loopback upstream) before ActivateProbeListen
+# write config/probe.json (synthetic key + loopback upstream) before Start
 ./bin/agenthub-adapterd run --home "$AGENTHUB_HOME" --listen-port 18765
 ```
 

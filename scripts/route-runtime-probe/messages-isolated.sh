@@ -243,13 +243,14 @@ ACQ_REPLY="$(post_control "${ACQ_BODY}")"
 echo "${ACQ_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok"), d; print("acquire ok term="+str(d["payload"]["owner_term"]))'
 TERM="$(printf '%s' "${ACQ_REPLY}" | python_get payload.owner_term)"
 
-echo "== ActivateProbeListen (probe-only; not CommitDesired) =="
+echo "== Start (isolated; not default gateway) =="
+echo "${HS_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); caps=d.get("payload",{}).get("capabilities") or []; assert "control.start" in caps, caps; print("handshake capability control.start ok")'
 ACT_BODY="$(python3 - "${HOME_DIR}" "${EPOCH}" "${TERM}" <<'PY'
 import json, sys
 home, epoch, term = sys.argv[1], sys.argv[2], int(sys.argv[3])
 print(json.dumps({
-    "type": "ActivateProbeListen",
-    "request_id": "probe-act-1",
+    "type": "Start",
+    "request_id": "probe-start-1",
     "instance_epoch": epoch,
     "owner_id": "probe-owner",
     "owner_term": term,
@@ -259,7 +260,7 @@ print(json.dumps({
 PY
 )"
 ACT_REPLY="$(post_control "${ACT_BODY}")"
-echo "${ACT_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok"), d; print("activate probe listen ok (not product CommitDesired)")'
+echo "${ACT_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok"), d; print("start ok (isolated; not default gateway)")'
 
 ST2_BODY="$(python3 - "${HOME_DIR}" "${EPOCH}" "${TERM}" <<'PY'
 import json, sys
@@ -282,6 +283,18 @@ if printf '%s' "${ST2_REPLY}" | grep -F -q "${SYNTHETIC_KEY}"; then
   exit 1
 fi
 
+echo "== Health auth =="
+HEALTH_UNAUTHORIZED_CODE="$(curl -sS -o "${SCRATCH}/health-unauthorized.json" -w '%{http_code}' \
+  "http://127.0.0.1:${MESSAGES_PORT}/health")"
+if [[ "${HEALTH_UNAUTHORIZED_CODE}" != "401" ]]; then
+  echo "FAIL: health without entry key returned ${HEALTH_UNAUTHORIZED_CODE}" >&2
+  exit 1
+fi
+HEALTH_JSON="$(curl -sS \
+  -H "Authorization: Bearer ${SYNTHETIC_KEY}" \
+  "http://127.0.0.1:${MESSAGES_PORT}/health")"
+echo "${HEALTH_JSON}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("listen_ready") is True, d; print("health auth ok")'
+
 echo "== Messages JSON (synthetic key last4=${KEY_TAIL}) =="
 MSG_JSON="$(curl -sS -D "${SCRATCH}/messages.headers" \
   -H "Authorization: Bearer ${SYNTHETIC_KEY}" \
@@ -303,8 +316,26 @@ if ! printf '%s' "${MSG_SSE}" | grep -q 'isolated-messages-ok'; then
 fi
 echo "messages sse ok"
 
+echo "== Stop =="
+STOP_BODY="$(python3 - "${HOME_DIR}" "${EPOCH}" "${TERM}" <<'PY'
+import json, sys
+home, epoch, term = sys.argv[1], sys.argv[2], int(sys.argv[3])
+print(json.dumps({
+    "type": "Stop",
+    "request_id": "probe-stop-1",
+    "instance_epoch": epoch,
+    "owner_id": "probe-owner",
+    "owner_term": term,
+    "app_data_dir": home,
+    "payload": {},
+}))
+PY
+)"
+STOP_REPLY="$(post_control "${STOP_BODY}")"
+echo "${STOP_REPLY}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok"), d; print("stop ok")'
+
 echo "== process down =="
-kill "${ADAPTERD_PID}"
+kill "${ADAPTERD_PID}" 2>/dev/null || true
 for i in $(seq 1 50); do
   if ! kill -0 "${ADAPTERD_PID}" 2>/dev/null; then
     break
@@ -348,13 +379,14 @@ evidence = {
     "owner_term": int(term),
     "handshake": "ok",
     "status": "ok",
+    "health_auth": "ok",
     "process_up": True,
     "messages_json": "isolated-messages-ok",
     "messages_sse": "isolated-messages-ok",
     "process_down": True,
     "live_gateway_unchanged": True,
     "real_home_untouched": True,
-    "note": "isolated synthetic-key Messages slice; ActivateProbeListen is not product CommitDesired",
+    "note": "isolated synthetic-key Messages slice; Start is not the default gateway",
 }
 with open(path, "w", encoding="utf-8") as fh:
     json.dump(evidence, fh, indent=2)

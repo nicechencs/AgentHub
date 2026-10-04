@@ -7,6 +7,7 @@ mod chat_shortcuts;
 mod commands;
 mod exit_coordinator;
 mod file_manager;
+mod go_route_isolated;
 mod shell_open_chat;
 mod skill_watch;
 mod state;
@@ -160,6 +161,9 @@ pub fn run() {
             commands::adapter::start_local_gateway,
             commands::adapter::stop_local_gateway,
             commands::adapter::get_local_gateway_status,
+            commands::go_route_isolated::start_go_route_isolated,
+            commands::go_route_isolated::stop_go_route_isolated,
+            commands::go_route_isolated::get_go_route_isolated_status,
             commands::adapter::query_route_traces,
             commands::adapter::delete_route_traces,
             commands::adapter::set_adapter_bridge_auto_start,
@@ -373,9 +377,11 @@ pub fn run() {
                             api.prevent_exit();
                             if !state.exit_coordinator().shutdown_in_progress() {
                                 state.request_exit();
-                                let _ = state
-                                    .exit_coordinator()
-                                    .request_exit(app_handle.clone(), state.bridge_host());
+                                let _ = state.exit_coordinator().request_exit(
+                                    app_handle.clone(),
+                                    state.bridge_host(),
+                                    state.go_route_isolated(),
+                                );
                             }
                         }
                     }

@@ -18,6 +18,7 @@ const (
 	typeHandshake           = "Handshake"
 	typeAcquireOrRenewOwner = "AcquireOrRenewOwner"
 	typeStatus              = "Status"
+	typeStart               = "Start"
 	typeActivateProbeListen = "ActivateProbeListen"
 	typeStop                = "Stop"
 
@@ -50,6 +51,7 @@ var handshakeCapabilities = []string{
 	"control.handshake",
 	"control.status",
 	"control.acquire_owner",
+	"control.start",
 	"control.activate_probe_listen",
 }
 
@@ -113,18 +115,21 @@ type AcquireSuccess struct {
 }
 
 type StatusSuccess struct {
-	InstanceID      string          `json:"instance_id"`
-	InstanceEpoch   string          `json:"instance_epoch"`
-	OwnerTerm       *int64          `json:"owner_term"`
-	ActiveRevision  *string         `json:"active_revision"`
-	ActiveHash      *string         `json:"active_hash"`
-	Prepared        json.RawMessage `json:"prepared"`
-	Lifecycle       string          `json:"lifecycle"`
-	ListenReady     bool            `json:"listen_ready"`
-	Port            *int            `json:"port"`
-	InFlightCount   int             `json:"in_flight_count"`
-	OwnerLeaseValid bool            `json:"owner_lease_valid"`
-	LastError       *LastError      `json:"last_error"`
+	InstanceID         string          `json:"instance_id"`
+	InstanceEpoch      string          `json:"instance_epoch"`
+	OwnerTerm          *int64          `json:"owner_term"`
+	ActiveRevision     *string         `json:"active_revision"`
+	ActiveHash         *string         `json:"active_hash"`
+	Prepared           json.RawMessage `json:"prepared"`
+	Lifecycle          string          `json:"lifecycle"`
+	ListenReady        bool            `json:"listen_ready"`
+	Port               *int            `json:"port"`
+	InFlightCount      int             `json:"in_flight_count"`
+	OwnerLeaseValid    bool            `json:"owner_lease_valid"`
+	LastError          *LastError      `json:"last_error"`
+	SchedulePolicy     string          `json:"schedule_policy,omitempty"`
+	MemberCount        int             `json:"member_count,omitempty"`
+	HealthyMemberCount int             `json:"healthy_member_count,omitempty"`
 }
 
 type LastError struct {
@@ -134,9 +139,27 @@ type LastError struct {
 }
 
 type ProbeFixture struct {
-	IngressKey      string `json:"ingress_key"`
-	UpstreamBaseURL string `json:"upstream_base_url"`
-	FixtureModel    string `json:"fixture_model"`
+	IngressKey      string        `json:"ingress_key"`
+	UpstreamBaseURL string        `json:"upstream_base_url,omitempty"`
+	FixtureModel    string        `json:"fixture_model"`
+	SchedulePolicy  string        `json:"schedule_policy,omitempty"`
+	Members         []ProbeMember `json:"members,omitempty"`
+}
+
+type ProbeMember struct {
+	ID                string   `json:"id"`
+	UpstreamBaseURL   string   `json:"upstream_base_url"`
+	UpstreamKey       string   `json:"upstream_key,omitempty"`
+	Priority          int64    `json:"priority"`
+	Position          int64    `json:"position"`
+	Models            []string `json:"models,omitempty"`
+	QuotaRemainingPct *float64 `json:"quota_remaining_pct,omitempty"`
+}
+
+// StartPayload is the product Start input for this isolated slice.
+// Secrets stay in probe.json; control JSON must not carry them.
+type StartPayload struct {
+	ListenPort *int `json:"listen_port,omitempty"`
 }
 
 func payloadHash(raw json.RawMessage) string {
@@ -161,6 +184,7 @@ func controlContainsForbiddenFields(raw []byte) bool {
 		`"ingress_key"`,
 		`"local_token"`,
 		`"api_key"`,
+		`"upstream_key"`,
 		`"authorization"`,
 		`"refresh_token"`,
 		`"x-api-key"`,
@@ -174,8 +198,15 @@ func controlContainsForbiddenFields(raw []byte) bool {
 }
 
 func statusContainsSecret(statusJSON []byte, secret string) bool {
-	if secret == "" {
-		return false
+	return statusContainsAnySecret(statusJSON, []string{secret})
+}
+
+func statusContainsAnySecret(statusJSON []byte, secrets []string) bool {
+	body := string(statusJSON)
+	for _, secret := range secrets {
+		if secret != "" && strings.Contains(body, secret) {
+			return true
+		}
 	}
-	return strings.Contains(string(statusJSON), secret)
+	return false
 }

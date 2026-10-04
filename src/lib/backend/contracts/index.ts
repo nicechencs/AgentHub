@@ -28,6 +28,7 @@ export * from './mcp-types';
 export * from './plugin-types';
 export * from './adapter';
 export * from './adapter-wire';
+export * from './go-route-isolated';
 export * from './ticket';
 export * from './agent-connection';
 export * from './doctor-map';
