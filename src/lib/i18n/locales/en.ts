@@ -1479,7 +1479,7 @@ export const en = {
       entryStopFailed: "Could not stop the local forwarding",
       entrySwitch: "Local forwarding switch",
       goIsolatedTitle: "Go route",
-      goIsolatedHint: "Temporary directory and a non-default port. This is not the local forwarding switch.",
+      goIsolatedHint: "Development-only control using a temporary directory and non-default port.",
       goIsolatedStart: "Start",
       goIsolatedStop: "Stop",
       goIsolatedStarting: "Starting",

@@ -20,6 +20,8 @@ const CONFIG_FORMAT_VERSION: &str = "route-config.v0-isolated";
 const PACKAGE_VERSION: &str = "0.0.0-isolated";
 const SYNTHETIC_KEY: &str = "ahb_gui_isolated_synthetic_not_a_real_login";
 const FIXTURE_MODEL: &str = "claude-probe-fixture";
+const ISOLATED_LEASE_BUDGET_MS: i64 = 24 * 60 * 60 * 1_000;
+const START_STOP_WAIT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -101,8 +103,14 @@ impl GoRouteIsolatedHost {
                 inner.status.listen_ready = false;
             }
             match start_session() {
-                Ok(session) => {
+                Ok(mut session) => {
                     let mut inner = self.lock();
+                    if inner.status.state != "starting" {
+                        let status = inner.status.clone();
+                        drop(inner);
+                        terminate_session(&mut session);
+                        return status;
+                    }
                     let status = GoRouteIsolatedStatus {
                         state: "ready".into(),
                         listen_ready: true,
@@ -138,31 +146,30 @@ impl GoRouteIsolatedHost {
         }
         #[cfg(unix)]
         {
-            let mut inner = self.lock();
-            let Some(mut session) = inner.session.take() else {
-                inner.status = stopped_status();
-                return inner.status.clone();
-            };
-            drop(inner);
-            let _ = post_control(
-                &session.socket,
-                &json!({
-                    "type": "Stop",
-                    "request_id": request_id("stop"),
-                    "instance_epoch": session.instance_epoch,
-                    "owner_id": OWNER_ID,
-                    "owner_term": session.owner_term,
-                    "app_data_dir": session.home.display().to_string(),
-                    "payload": {},
-                }),
-            );
-            let _ = session.adapterd.kill();
-            let _ = session.adapterd.wait();
-            let _ = session.mock.kill();
-            let _ = session.mock.wait();
-            let mut inner = self.lock();
-            inner.status = stopped_status();
-            inner.status.clone()
+            let wait_started = Instant::now();
+            loop {
+                let mut inner = self.lock();
+                refresh_locked(&mut inner);
+                if let Some(mut session) = inner.session.take() {
+                    drop(inner);
+                    stop_session(&mut session);
+                    let mut inner = self.lock();
+                    inner.status = stopped_status();
+                    return inner.status.clone();
+                }
+                if inner.status.state != "starting" {
+                    inner.status = stopped_status();
+                    return inner.status.clone();
+                }
+                if wait_started.elapsed() >= START_STOP_WAIT {
+                    inner.status.state = "failed".into();
+                    inner.status.last_error =
+                        Some("Timed out waiting for Go route startup to stop".into());
+                    return inner.status.clone();
+                }
+                drop(inner);
+                std::thread::sleep(Duration::from_millis(25));
+            }
         }
     }
 
@@ -189,16 +196,48 @@ fn refresh_locked(inner: &mut Inner) {
     let Some(session) = inner.session.as_mut() else {
         return;
     };
-    let dead = match session.adapterd.try_wait() {
+    let adapterd_dead = match session.adapterd.try_wait() {
         Ok(Some(_)) => true,
         Ok(None) => false,
         Err(_) => true,
     };
-    if dead && inner.status.state == "ready" {
+    let mock_dead = match session.mock.try_wait() {
+        Ok(Some(_)) => true,
+        Ok(None) => false,
+        Err(_) => true,
+    };
+    if adapterd_dead || mock_dead {
+        let mut session = inner.session.take().expect("session checked above");
+        terminate_session(&mut session);
         inner.status.state = "failed".into();
         inner.status.listen_ready = false;
-        inner.status.last_error = Some("Go route process exited".into());
+        inner.status.last_error = Some("Go route test process exited".into());
     }
+}
+
+#[cfg(unix)]
+fn stop_session(session: &mut Session) {
+    let _ = post_control(
+        &session.socket,
+        &json!({
+            "type": "Stop",
+            "request_id": request_id("stop"),
+            "instance_epoch": session.instance_epoch,
+            "owner_id": OWNER_ID,
+            "owner_term": session.owner_term,
+            "app_data_dir": session.home.display().to_string(),
+            "payload": {},
+        }),
+    );
+    terminate_session(session);
+}
+
+#[cfg(unix)]
+fn terminate_session(session: &mut Session) {
+    let _ = session.adapterd.kill();
+    let _ = session.adapterd.wait();
+    let _ = session.mock.kill();
+    let _ = session.mock.wait();
 }
 
 #[cfg(unix)]
@@ -311,7 +350,7 @@ fn handshake_start(
             "instance_epoch": instance_epoch,
             "owner_id": OWNER_ID,
             "app_data_dir": home_s,
-            "payload": { "mode": "acquire", "lease_budget_ms": 60_000 },
+            "payload": { "mode": "acquire", "lease_budget_ms": ISOLATED_LEASE_BUDGET_MS },
         }),
     )?;
     let acq_payload = require_ok(&acq)?;

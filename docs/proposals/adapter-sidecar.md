@@ -16,7 +16,7 @@ updated: 2026-10-04
 - 登录、连接、路线选择、数据库和 Agent 配置写入仍由 core 管理。
 - `go/agenthub-adapterd` 已有隔离 Messages 切片：`Handshake`、`Start`、`Status`、`Stop`、`AcquireOrRenewOwner`、探测专用 `ActivateProbeListen`，以及合成 Key 的 Messages JSON/SSE。
 - 隔离连接池已接上：`priority_failover` / `round_robin`、成员健康与冷却、模型并集、客户端取消；已开始输出后不换成员。探测见 `scripts/route-runtime-probe/pool-isolated.sh`。
-- 应用侧已有隔离监督器（`start_go_route_isolated` / `stop_go_route_isolated` / `get_go_route_isolated_status`）和看板「Go 路由」条，使用测试连接池、临时目录和非默认端口；不是默认本机转发。
+- 应用侧已有隔离监督器（`start_go_route_isolated` / `stop_go_route_isolated` / `get_go_route_isolated_status`）和开发态看板「Go 路由」条，使用测试连接池、临时目录和非默认端口；不是默认本机转发。
 - `scripts/route-runtime-probe/messages-isolated.sh` 只使用临时目录、临时端口和受控 loopback 上游，不是默认网关。
 
 现行功能仍以[本机路由 API](../reference/local-route-api.md)、[路由兼容性](../reference/route-compatibility.md)和 [STATUS](../STATUS.md)为准。

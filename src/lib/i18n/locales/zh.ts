@@ -1458,7 +1458,7 @@ export const zh = {
       entryStopFailed: "无法停止本机转发",
       entrySwitch: "本机转发开关",
       goIsolatedTitle: "Go 路由",
-      goIsolatedHint: "临时目录和非默认端口，不接默认本机转发",
+      goIsolatedHint: "仅供开发验证，使用临时目录和非默认端口",
       goIsolatedStart: "启动",
       goIsolatedStop: "停止",
       goIsolatedStarting: "启动中",

@@ -468,7 +468,7 @@ export default function RoutesBoardPage() {
         descriptionTip={t('routes.board.descriptionTip')}
       />
 
-      <GoIsolatedStrip />
+      {import.meta.env.DEV ? <GoIsolatedStrip /> : null}
 
       {profileState === 'error' ? (
         <ErrorState

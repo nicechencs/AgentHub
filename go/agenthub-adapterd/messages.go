@@ -264,6 +264,16 @@ func (rt *Runtime) handleHealth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !rt.ownerServing() {
+		writeMessagesError(w, http.StatusServiceUnavailable, "bridge_stopping", "Messages listener is not serving.", "invalid_request_error")
+		return
+	}
+	got := bearerToken(r.Header.Get("Authorization"))
+	want := rt.ingressKey()
+	if want == "" || got != want {
+		writeMessagesError(w, http.StatusUnauthorized, "invalid_api_key", "Invalid local bearer token.", "invalid_request_error")
+		return
+	}
 	rt.mu.Lock()
 	listenReady := rt.listenReady
 	pool := rt.pool

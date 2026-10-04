@@ -283,6 +283,18 @@ if printf '%s' "${ST2_REPLY}" | grep -F -q "${SYNTHETIC_KEY}"; then
   exit 1
 fi
 
+echo "== Health auth =="
+HEALTH_UNAUTHORIZED_CODE="$(curl -sS -o "${SCRATCH}/health-unauthorized.json" -w '%{http_code}' \
+  "http://127.0.0.1:${MESSAGES_PORT}/health")"
+if [[ "${HEALTH_UNAUTHORIZED_CODE}" != "401" ]]; then
+  echo "FAIL: health without entry key returned ${HEALTH_UNAUTHORIZED_CODE}" >&2
+  exit 1
+fi
+HEALTH_JSON="$(curl -sS \
+  -H "Authorization: Bearer ${SYNTHETIC_KEY}" \
+  "http://127.0.0.1:${MESSAGES_PORT}/health")"
+echo "${HEALTH_JSON}" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("listen_ready") is True, d; print("health auth ok")'
+
 echo "== Messages JSON (synthetic key last4=${KEY_TAIL}) =="
 MSG_JSON="$(curl -sS -D "${SCRATCH}/messages.headers" \
   -H "Authorization: Bearer ${SYNTHETIC_KEY}" \
@@ -367,6 +379,7 @@ evidence = {
     "owner_term": int(term),
     "handshake": "ok",
     "status": "ok",
+    "health_auth": "ok",
     "process_up": True,
     "messages_json": "isolated-messages-ok",
     "messages_sse": "isolated-messages-ok",

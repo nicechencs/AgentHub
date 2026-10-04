@@ -377,9 +377,11 @@ pub fn run() {
                             api.prevent_exit();
                             if !state.exit_coordinator().shutdown_in_progress() {
                                 state.request_exit();
-                                let _ = state
-                                    .exit_coordinator()
-                                    .request_exit(app_handle.clone(), state.bridge_host());
+                                let _ = state.exit_coordinator().request_exit(
+                                    app_handle.clone(),
+                                    state.bridge_host(),
+                                    state.go_route_isolated(),
+                                );
                             }
                         }
                     }
