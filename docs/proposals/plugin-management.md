@@ -21,6 +21,7 @@ updated: 2026-10-04
 | 已落地 | Claude / Codex / Grok 启用/停用，写前备份；Pi 没有包级启停 | `services/plugin_apply.rs`（`enable_plugin` / `disable_plugin`） |
 | 已落地 | 四家安装/卸载：预览 → 确认 → 官方 CLI → 刷新；只有 Grok 要显式信任；Pi 卸载使用 inventory 保存的完整来源 | `plugin_apply.rs`（`preview_plugin_install`、`install_plugin`、`uninstall_plugin`） |
 | 已落地 | Claude / Codex / Grok 刷新市场；Claude / Grok 更新用户范围的单包；Pi 全量更新符合条件的扩展，完整 npm 语义版本钉死的包由 Pi 跳过 | `plugin_apply.rs`（`refresh_plugin_marketplace`、`update_plugin`、`update_pi_plugins`） |
+| 已落地 | 桌面命令层用四家离线 CLI 做完整写入生命周期探针，校验调用参数、live-write 锁、重新盘点及 CLI 失败后的配置还原；页面回调测试覆盖重复提交和成功/失败状态 | `scripts/plugin-probe/four-vendor-desktop-isolated.sh`；`src-tauri/src/plugin_write_probe.rs`；`src/pages/plugins/index.test.tsx` |
 | 关闭 | Cursor、Kimi、WorkBuddy、ZCode、DSH、Kiro | 标 Unsupported，不伪造商店 |
 
 各家是否支持以 [Agent 插件表面](../reference/agent-plugin-surfaces.md#厂商插件系统plugin--extension-包) 为准。

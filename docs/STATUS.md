@@ -118,7 +118,7 @@ updated: 2026-10-04
 
 - **Skills**：分用户技能、项目技能和市场。用户技能在共享目录 `~/.agents/skills/`，可启用到各工具；项目技能读写该项目的 `.agents/skills/`（也列出 `.claude/skills` 等已有目录）。安装支持本地目录、zip、git 地址（需含 `SKILL.md`），只写入目标库、不自动启用。切换前自动备份。
 - **MCP**：可扫描本机 MCP；对 Claude / Codex / Grok / Cursor / WorkBuddy 支持目录模板 → 探测 → 写入 / 启用（无 OAuth），`Capability::Mcp` 为 Partial，其余 Planned。Codex 关闭即删条目，Grok 关闭写 `enabled = false`。见 [MCP inventory](reference/mcp-inventory.md)。
-- **插件**（`/plugins`）：列出 Claude / Codex / Grok / Pi 的包，四者都可用各自官方命令安装和卸载。Claude / Codex / Grok 可启用/停用并刷新市场；只有 Grok 安装需显式信任。单包更新仍只支持 Claude / Grok 的用户范围包；Codex 只做市场整体升级，Pi 只做符合条件的全量扩展更新。Pi 安装保留完整 npm、git 或本地目录来源；本地目录必须是绝对路径，`~/…` 由后端展开。卸载时把原来源交回 `pi remove`；Pi 没有市场列表或包级启停。不查线上最新版本；没有 `Capability::Plugins`。见 [插件、MCP 与技能](concepts/plugins-and-mcp.md)。
+- **插件**（`/plugins`）：列出 Claude / Codex / Grok / Pi 的包，四者都可用各自官方命令安装和卸载。Claude / Codex / Grok 可启用/停用并刷新市场；只有 Grok 安装需显式信任。单包更新仍只支持 Claude / Grok 的用户范围包；Codex 只做市场整体升级，Pi 只做符合条件的全量扩展更新。Pi 安装保留完整 npm、git 或本地目录来源；本地目录必须是绝对路径，`~/…` 由后端展开。卸载时把原来源交回 `pi remove`；Pi 没有市场列表或包级启停。不查线上最新版本；没有 `Capability::Plugins`。桌面命令层已有四家离线真实进程探针，覆盖预览、确认、安装、重新盘点、适用的启停/更新/市场刷新、失败后配置还原和卸载；页面层另有重复提交与成功/失败状态测试。见 [插件、MCP 与技能](concepts/plugins-and-mcp.md)。
 
 ## 各 Agent 的已知细节
 

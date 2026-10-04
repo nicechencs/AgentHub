@@ -1,0 +1,5 @@
+{
+  "name": "agenthub-grok-probe",
+  "version": "0.0.1",
+  "description": "Offline Grok fixture for AgentHub plugin lifecycle probes"
+}
