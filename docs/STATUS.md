@@ -143,7 +143,7 @@ updated: 2026-10-04
 - **Codex Computer Use**：Linux 不可用，官方只在 macOS / Windows 桌面端提供。不做假接线，不宣称支持。
 - **本机同口授权池**：已默认开启。每个目标 Agent 一个默认池，共用本机入口和令牌；默认 `priority_failover`，可改 `round_robin`；官方直连不自动入池。能力矩阵写 `multi_account=false` 时，已入索引的 `v2_pool` 仍允许多成员，这是已授权行为。配额类冷却按 Retry-After 或重置提示，否则配额约 15 分钟、额度约 30 分钟（上限 1 小时）。混合供应商复合路由和 Codex↔Grok 双向 Responses 仍是实验开关、默认关闭。保存的本机入口和格式必须和当前端点一致，否则启动失败，不会悄悄直通。见 [本机 Routes API](reference/local-route-api.md)，设计稿见 [归档](archive/unified-loopback-pool.md)。
 - **路由决策**：`AdapterRouteService::plan()` 是唯一决策者；`adapter-capability-contract.json` 是它的只读快照，Rust 测试保证二者一致。浏览器 mock 只查表，未命中一律 unsupported。见 [Adapter 路线内核](architecture/adapter-route-kernel.md)。
-- **未实施**：live/default `agenthub-adapterd` sidecar（隔离目录下的 Messages 切片已有 `Handshake` / `Start` / `Status` / `Stop`、连接池调度，以及同协议 `POST /v1/responses`、`POST /v1/chat/completions` 与别名 `POST /chat/completions`，见 `go/agenthub-adapterd`、`scripts/route-runtime-probe/messages-isolated.sh`、`pool-isolated.sh`、`protocols-isolated.sh` 与开发态看板「Go 路由」条；临时目录和非默认端口，不是现行网关）；托盘低内存后台模式；插件包更新与 Codex/Pi 插件安装（见 [插件管理](proposals/plugin-management.md)）；其余 Agent 的 MCP 与 OAuth Connector。
+- **未实施**：live/default `agenthub-adapterd` sidecar（隔离运行已能由 core 把保存结果中的 loopback 路由生成内存配置，经 stdin 交给 Go；支持多入口的 Messages、Responses、Chat Completions、连接池调度、状态、退出排空和有限次数恢复，见 `go/agenthub-adapterd`、四个 `scripts/route-runtime-probe/*-isolated.sh` 与开发态看板「Go 路由」条；仍使用临时目录和非默认端口，未写真实 Agent 配置，未接官方登录刷新和非 loopback 上游，不是现行网关）；托盘低内存后台模式；插件包更新与 Codex/Pi 插件安装（见 [插件管理](proposals/plugin-management.md)）；其余 Agent 的 MCP 与 OAuth Connector。
 - **构建**：不用 sccache，不拆 `agenthub-core`；CI 用 `Swatinem/rust-cache`；Windows worktree 不得共享 `target/`。
 - **范围外**：凭据落盘加密、国产 OAuth 适配、OAuth 转 API。见 [产品边界](decisions/product-boundaries.md)。
 

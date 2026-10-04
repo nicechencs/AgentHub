@@ -14,6 +14,12 @@ function stopped(): GoRouteIsolatedStatus {
     port: null,
     lastError: null,
     home: null,
+    lifecycle: 'stopped',
+    inFlightCount: 0,
+    memberCount: 0,
+    healthyMemberCount: 0,
+    recovering: false,
+    restartCount: 0,
   };
 }
 
@@ -36,6 +42,12 @@ export function createMockGoRouteIsolatedPort(): GoRouteIsolatedPort {
         port: null,
         lastError: null,
         home: MOCK_HOME,
+        lifecycle: 'starting',
+        inFlightCount: 0,
+        memberCount: 0,
+        healthyMemberCount: 0,
+        recovering: false,
+        restartCount: status.restartCount,
       };
       await delay(80);
       if (status.state !== 'starting') return snapshot(status);
@@ -45,6 +57,12 @@ export function createMockGoRouteIsolatedPort(): GoRouteIsolatedPort {
         port: MOCK_PORT,
         lastError: null,
         home: MOCK_HOME,
+        lifecycle: 'serving',
+        inFlightCount: 0,
+        memberCount: 1,
+        healthyMemberCount: 1,
+        recovering: false,
+        restartCount: status.restartCount,
       };
       return snapshot(status);
     },

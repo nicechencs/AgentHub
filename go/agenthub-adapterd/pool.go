@@ -26,6 +26,7 @@ type PoolMember struct {
 	ID                string
 	UpstreamBaseURL   string
 	UpstreamKey       string
+	UpstreamAuth      string
 	Priority          int64
 	Position          int64
 	Models            []string
@@ -136,6 +137,7 @@ func NewPoolFromFixture(fixture ProbeFixture) (*Pool, error) {
 			ID:                id,
 			UpstreamBaseURL:   strings.TrimRight(base, "/"),
 			UpstreamKey:       item.UpstreamKey,
+			UpstreamAuth:      normalizedUpstreamAuth(item.UpstreamAuth),
 			Priority:          item.Priority,
 			Position:          item.Position,
 			Models:            models,
@@ -150,6 +152,13 @@ func NewPoolFromFixture(fixture ProbeFixture) (*Pool, error) {
 		members:      members,
 		rrCursors:    map[string]int{},
 	}, nil
+}
+
+func normalizedUpstreamAuth(raw string) string {
+	if strings.TrimSpace(raw) == authAPIKey {
+		return authAPIKey
+	}
+	return authBearer
 }
 
 var (

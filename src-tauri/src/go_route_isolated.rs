@@ -1,4 +1,4 @@
-//! Isolated Go Messages supervisor for slice 1 app control.
+//! Isolated Go route supervisor for saved test routes.
 //!
 //! Scratch home only. Refuses product port 43121 and real ~/.agenthub.
 //! Does not start BridgeRuntimeHost or write login / connection / Agent config.
@@ -10,18 +10,27 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+#[cfg(debug_assertions)]
+use std::sync::Weak;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use agenthub_core::AgentHub;
 
 const PRODUCT_DEFAULT_PORT: u16 = 43121;
 const OWNER_ID: &str = "agenthub-gui";
 const PROTOCOL_VERSION: &str = "route-runtime.v0-isolated";
 const CONFIG_FORMAT_VERSION: &str = "route-config.v0-isolated";
 const PACKAGE_VERSION: &str = "0.0.0-isolated";
-const SYNTHETIC_KEY: &str = "ahb_gui_isolated_synthetic_not_a_real_login";
-const FIXTURE_MODEL: &str = "claude-probe-fixture";
 const ISOLATED_LEASE_BUDGET_MS: i64 = 24 * 60 * 60 * 1_000;
+const OWNER_RENEW_INTERVAL: Duration = Duration::from_secs(30);
 const START_STOP_WAIT: Duration = Duration::from_secs(10);
+const GRACEFUL_STOP_WAIT: Duration = Duration::from_secs(9);
+const MAX_RECOVERY_BUDGET: u32 = 3;
+const STABLE_RUN_RESET: Duration = Duration::from_secs(30);
+const ERROR_ISOLATED_UNAVAILABLE: &str = "Go route is unavailable in this build";
+const ERROR_START_FAILED: &str = "Go route could not start";
+const ERROR_CONTROL_UNAVAILABLE: &str = "Go route status is unavailable";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,15 +40,27 @@ pub struct GoRouteIsolatedStatus {
     pub port: Option<u16>,
     pub last_error: Option<String>,
     pub home: Option<String>,
+    pub lifecycle: Option<String>,
+    pub in_flight_count: u64,
+    pub member_count: u64,
+    pub healthy_member_count: u64,
+    pub recovering: bool,
+    pub restart_count: u32,
 }
 
 pub struct GoRouteIsolatedHost {
+    hub: Option<Arc<AgentHub>>,
     inner: Mutex<Inner>,
 }
 
 struct Inner {
     status: GoRouteIsolatedStatus,
     session: Option<Session>,
+    desired: bool,
+    stopping: bool,
+    recovery_budget_used: u32,
+    stable_since: Option<Instant>,
+    next_restart_at: Option<Instant>,
 }
 
 struct Session {
@@ -48,8 +69,17 @@ struct Session {
     owner_term: i64,
     instance_epoch: String,
     port: u16,
+    next_owner_renewal: Instant,
     adapterd: Child,
-    mock: Child,
+}
+
+#[cfg(unix)]
+#[derive(Clone)]
+struct ControlSession {
+    home: PathBuf,
+    socket: PathBuf,
+    owner_term: i64,
+    instance_epoch: String,
 }
 
 fn stopped_status() -> GoRouteIsolatedStatus {
@@ -59,93 +89,214 @@ fn stopped_status() -> GoRouteIsolatedStatus {
         port: None,
         last_error: None,
         home: None,
+        lifecycle: Some("stopped".into()),
+        in_flight_count: 0,
+        member_count: 0,
+        healthy_member_count: 0,
+        recovering: false,
+        restart_count: 0,
+    }
+}
+
+fn unavailable_status() -> GoRouteIsolatedStatus {
+    GoRouteIsolatedStatus {
+        state: "failed".into(),
+        listen_ready: false,
+        port: None,
+        last_error: Some(ERROR_ISOLATED_UNAVAILABLE.into()),
+        home: None,
+        lifecycle: Some("unavailable".into()),
+        in_flight_count: 0,
+        member_count: 0,
+        healthy_member_count: 0,
+        recovering: false,
+        restart_count: 0,
     }
 }
 
 impl GoRouteIsolatedHost {
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self {
+    pub fn new(hub: Option<Arc<AgentHub>>) -> Arc<Self> {
+        let host = Arc::new(Self {
+            hub,
             inner: Mutex::new(Inner {
                 status: stopped_status(),
                 session: None,
+                desired: false,
+                stopping: false,
+                recovery_budget_used: 0,
+                stable_since: None,
+                next_restart_at: None,
             }),
-        })
+        });
+        #[cfg(debug_assertions)]
+        Self::spawn_monitor(Arc::downgrade(&host));
+        host
     }
 
     pub fn status(&self) -> GoRouteIsolatedStatus {
-        #[cfg(not(unix))]
+        #[cfg(not(debug_assertions))]
+        {
+            return unavailable_status();
+        }
+        #[cfg(all(debug_assertions, not(unix)))]
         {
             return unix_only_failed();
         }
-        #[cfg(unix)]
+        #[cfg(all(debug_assertions, unix))]
         {
+            let control = {
+                let mut inner = self.lock();
+                refresh_locked(&mut inner);
+                inner.session.as_ref().map(ControlSession::from)
+            };
+            let Some(control) = control else {
+                return self.lock().status.clone();
+            };
+            let result = session_status(&control);
             let mut inner = self.lock();
             refresh_locked(&mut inner);
+            let same_session = inner
+                .session
+                .as_ref()
+                .map(|session| session.instance_epoch.as_str())
+                == Some(control.instance_epoch.as_str());
+            if same_session {
+                match result {
+                    Ok(status) if owner_lease_valid(&status) => {
+                        inner.status = status_with_supervisor(status, &inner.status);
+                    }
+                    Ok(_) | Err(_) => {
+                        let mut session = inner.session.take();
+                        mark_runtime_unavailable(&mut inner);
+                        drop(inner);
+                        if let Some(session) = session.as_mut() {
+                            terminate_session(session);
+                        }
+                        return self.lock().status.clone();
+                    }
+                }
+            }
             inner.status.clone()
         }
     }
 
     pub fn start(&self) -> GoRouteIsolatedStatus {
-        #[cfg(not(unix))]
+        #[cfg(not(debug_assertions))]
+        {
+            return unavailable_status();
+        }
+        #[cfg(all(debug_assertions, not(unix)))]
         {
             return unix_only_failed();
         }
-        #[cfg(unix)]
+        #[cfg(all(debug_assertions, unix))]
         {
             {
                 let mut inner = self.lock();
                 refresh_locked(&mut inner);
-                if inner.status.state == "starting" || inner.status.state == "ready" {
+                inner.desired = true;
+                inner.stopping = false;
+                inner.recovery_budget_used = 0;
+                inner.stable_since = None;
+                inner.next_restart_at = None;
+                if inner.status.state == "starting" || inner.session.is_some() {
                     return inner.status.clone();
                 }
                 inner.status.state = "starting".into();
                 inner.status.last_error = None;
                 inner.status.listen_ready = false;
             }
-            match start_session() {
-                Ok(mut session) => {
+            self.finish_start(false)
+        }
+    }
+
+    #[cfg(all(debug_assertions, unix))]
+    fn finish_start(&self, recovering: bool) -> GoRouteIsolatedStatus {
+        let result = self
+            .hub
+            .as_ref()
+            .ok_or_else(|| ERROR_ISOLATED_UNAVAILABLE.to_string())
+            .and_then(|hub| start_session(hub));
+        match result {
+            Ok(mut session) => {
+                let mut inner = self.lock();
+                if inner.status.state != "starting" || !inner.desired || inner.stopping {
+                    drop(inner);
+                    terminate_session(&mut session);
                     let mut inner = self.lock();
-                    if inner.status.state != "starting" {
-                        let status = inner.status.clone();
-                        drop(inner);
-                        terminate_session(&mut session);
-                        return status;
+                    if !inner.desired {
+                        let restart_count = inner.status.restart_count;
+                        inner.status = stopped_status();
+                        inner.status.restart_count = restart_count;
                     }
-                    let status = GoRouteIsolatedStatus {
-                        state: "ready".into(),
-                        listen_ready: true,
-                        port: Some(session.port),
-                        last_error: None,
-                        home: Some(session.home.display().to_string()),
-                    };
-                    inner.session = Some(session);
-                    inner.status = status.clone();
-                    status
+                    return inner.status.clone();
                 }
-                Err(err) => {
-                    let mut inner = self.lock();
-                    inner.session = None;
-                    let status = GoRouteIsolatedStatus {
-                        state: "failed".into(),
-                        listen_ready: false,
-                        port: None,
-                        last_error: Some(redact_secret(&err)),
-                        home: inner.status.home.clone(),
-                    };
-                    inner.status = status.clone();
-                    status
-                }
+                let status = GoRouteIsolatedStatus {
+                    state: "ready".into(),
+                    listen_ready: true,
+                    port: Some(session.port),
+                    last_error: None,
+                    home: Some(session.home.display().to_string()),
+                    lifecycle: Some("serving".into()),
+                    in_flight_count: 0,
+                    member_count: 0,
+                    healthy_member_count: 0,
+                    recovering: false,
+                    restart_count: inner.status.restart_count + u32::from(recovering),
+                };
+                inner.session = Some(session);
+                inner.stable_since = Some(Instant::now());
+                inner.next_restart_at = None;
+                inner.status = status.clone();
+                status
+            }
+            Err(_) => {
+                let mut inner = self.lock();
+                inner.session = None;
+                inner.recovery_budget_used = inner.recovery_budget_used.saturating_add(1);
+                inner.stable_since = None;
+                inner.next_restart_at =
+                    Some(Instant::now() + restart_backoff(inner.recovery_budget_used));
+                let status = GoRouteIsolatedStatus {
+                    state: "failed".into(),
+                    listen_ready: false,
+                    port: None,
+                    last_error: Some(ERROR_START_FAILED.into()),
+                    home: inner.status.home.clone(),
+                    lifecycle: Some("failed".into()),
+                    in_flight_count: 0,
+                    member_count: 0,
+                    healthy_member_count: 0,
+                    recovering: inner.desired
+                        && !inner.stopping
+                        && inner.recovery_budget_used < MAX_RECOVERY_BUDGET,
+                    restart_count: inner.status.restart_count,
+                };
+                inner.status = status.clone();
+                status
             }
         }
     }
 
     pub fn stop(&self) -> GoRouteIsolatedStatus {
-        #[cfg(not(unix))]
+        #[cfg(not(debug_assertions))]
+        {
+            return unavailable_status();
+        }
+        #[cfg(all(debug_assertions, not(unix)))]
         {
             return unix_only_failed();
         }
-        #[cfg(unix)]
+        #[cfg(all(debug_assertions, unix))]
         {
+            {
+                let mut inner = self.lock();
+                inner.desired = false;
+                inner.stopping = true;
+                inner.next_restart_at = None;
+                inner.stable_since = None;
+                inner.status.recovering = false;
+            }
             let wait_started = Instant::now();
             loop {
                 let mut inner = self.lock();
@@ -154,11 +305,17 @@ impl GoRouteIsolatedHost {
                     drop(inner);
                     stop_session(&mut session);
                     let mut inner = self.lock();
+                    let restart_count = inner.status.restart_count;
                     inner.status = stopped_status();
+                    inner.status.restart_count = restart_count;
+                    inner.stopping = false;
                     return inner.status.clone();
                 }
                 if inner.status.state != "starting" {
+                    let restart_count = inner.status.restart_count;
                     inner.status = stopped_status();
+                    inner.status.restart_count = restart_count;
+                    inner.stopping = false;
                     return inner.status.clone();
                 }
                 if wait_started.elapsed() >= START_STOP_WAIT {
@@ -178,6 +335,91 @@ impl GoRouteIsolatedHost {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
+
+    #[cfg(debug_assertions)]
+    fn spawn_monitor(host: Weak<Self>) {
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_millis(500));
+            let Some(host) = host.upgrade() else { return };
+            #[cfg(unix)]
+            {
+                let renewal = {
+                    let mut inner = host.lock();
+                    refresh_locked(&mut inner);
+                    reset_stable_recovery_budget(&mut inner);
+                    let now = Instant::now();
+                    inner.session.as_mut().and_then(|session| {
+                        if now >= session.next_owner_renewal {
+                            session.next_owner_renewal = now + OWNER_RENEW_INTERVAL;
+                            Some(ControlSession::from(&*session))
+                        } else {
+                            None
+                        }
+                    })
+                };
+                if let Some(control) = renewal {
+                    host.finish_owner_renewal(control);
+                    continue;
+                }
+                let should_restart = {
+                    let mut inner = host.lock();
+                    refresh_locked(&mut inner);
+                    reset_stable_recovery_budget(&mut inner);
+                    let retry_due = inner
+                        .next_restart_at
+                        .map(|deadline| Instant::now() >= deadline)
+                        .unwrap_or(true);
+                    let should = inner.desired
+                        && !inner.stopping
+                        && inner.session.is_none()
+                        && inner.status.state != "starting"
+                        && inner.recovery_budget_used < MAX_RECOVERY_BUDGET
+                        && retry_due;
+                    if should {
+                        inner.status.state = "starting".into();
+                        inner.status.recovering = true;
+                    } else if inner.recovery_budget_used >= MAX_RECOVERY_BUDGET {
+                        inner.status.recovering = false;
+                    }
+                    should
+                };
+                if should_restart {
+                    let _ = host.finish_start(true);
+                }
+            }
+        });
+    }
+
+    #[cfg(all(debug_assertions, unix))]
+    fn finish_owner_renewal(&self, control: ControlSession) {
+        let result = renew_owner_and_status(&control);
+        let mut inner = self.lock();
+        refresh_locked(&mut inner);
+        let same_session = inner
+            .session
+            .as_ref()
+            .map(|session| session.instance_epoch.as_str())
+            == Some(control.instance_epoch.as_str());
+        if !same_session {
+            return;
+        }
+        match result {
+            Ok(status) if owner_lease_valid(&status) => {
+                if let Some(session) = inner.session.as_mut() {
+                    session.next_owner_renewal = Instant::now() + OWNER_RENEW_INTERVAL;
+                }
+                inner.status = status_with_supervisor(status, &inner.status);
+            }
+            Ok(_) | Err(_) => {
+                let mut session = inner.session.take();
+                mark_runtime_unavailable(&mut inner);
+                drop(inner);
+                if let Some(session) = session.as_mut() {
+                    terminate_session(session);
+                }
+            }
+        }
+    }
 }
 
 #[cfg(not(unix))]
@@ -188,6 +430,12 @@ fn unix_only_failed() -> GoRouteIsolatedStatus {
         port: None,
         last_error: Some("unix control only".into()),
         home: None,
+        lifecycle: Some("failed".into()),
+        in_flight_count: 0,
+        member_count: 0,
+        healthy_member_count: 0,
+        recovering: false,
+        restart_count: 0,
     }
 }
 
@@ -201,23 +449,50 @@ fn refresh_locked(inner: &mut Inner) {
         Ok(None) => false,
         Err(_) => true,
     };
-    let mock_dead = match session.mock.try_wait() {
-        Ok(Some(_)) => true,
-        Ok(None) => false,
-        Err(_) => true,
-    };
-    if adapterd_dead || mock_dead {
+    if adapterd_dead {
         let mut session = inner.session.take().expect("session checked above");
         terminate_session(&mut session);
         inner.status.state = "failed".into();
         inner.status.listen_ready = false;
-        inner.status.last_error = Some("Go route test process exited".into());
+        inner.status.lifecycle = Some("failed".into());
+        inner.status.last_error = Some("Go route process exited".into());
+        inner.recovery_budget_used = inner.recovery_budget_used.saturating_add(1);
+        inner.stable_since = None;
+        inner.status.recovering =
+            inner.desired && !inner.stopping && inner.recovery_budget_used < MAX_RECOVERY_BUDGET;
+        inner.next_restart_at = Some(Instant::now() + restart_backoff(inner.recovery_budget_used));
+        return;
+    }
+}
+
+#[cfg(all(debug_assertions, unix))]
+fn mark_runtime_unavailable(inner: &mut Inner) {
+    inner.recovery_budget_used = inner.recovery_budget_used.saturating_add(1);
+    inner.stable_since = None;
+    inner.status.state = "failed".into();
+    inner.status.listen_ready = false;
+    inner.status.lifecycle = Some("unavailable".into());
+    inner.status.last_error = Some(ERROR_CONTROL_UNAVAILABLE.into());
+    inner.status.recovering =
+        inner.desired && !inner.stopping && inner.recovery_budget_used < MAX_RECOVERY_BUDGET;
+    inner.next_restart_at = Some(Instant::now() + restart_backoff(inner.recovery_budget_used));
+}
+
+#[cfg(all(debug_assertions, unix))]
+fn reset_stable_recovery_budget(inner: &mut Inner) {
+    let stable = inner
+        .stable_since
+        .is_some_and(|started| started.elapsed() >= STABLE_RUN_RESET);
+    if stable {
+        inner.recovery_budget_used = 0;
+        inner.stable_since = None;
     }
 }
 
 #[cfg(unix)]
 fn stop_session(session: &mut Session) {
-    let _ = post_control(
+    let started = Instant::now();
+    let _ = post_control_with_timeout(
         &session.socket,
         &json!({
             "type": "Stop",
@@ -228,7 +503,15 @@ fn stop_session(session: &mut Session) {
             "app_data_dir": session.home.display().to_string(),
             "payload": {},
         }),
+        Duration::from_secs(3),
     );
+    while started.elapsed() < GRACEFUL_STOP_WAIT {
+        match session.adapterd.try_wait() {
+            Ok(Some(_)) => return,
+            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+            Err(_) => break,
+        }
+    }
     terminate_session(session);
 }
 
@@ -236,12 +519,10 @@ fn stop_session(session: &mut Session) {
 fn terminate_session(session: &mut Session) {
     let _ = session.adapterd.kill();
     let _ = session.adapterd.wait();
-    let _ = session.mock.kill();
-    let _ = session.mock.wait();
 }
 
 #[cfg(unix)]
-fn start_session() -> Result<Session, String> {
+fn start_session(hub: &AgentHub) -> Result<Session, String> {
     let home = create_scratch_home()?;
     if is_forbidden_user_home(&home) {
         return Err("refusing real user AGENTHUB_HOME".into());
@@ -251,38 +532,42 @@ fn start_session() -> Result<Session, String> {
     }
 
     let messages_port = pick_loopback_port()?;
-    let upstream_port = pick_loopback_port()?;
-    write_probe_fixture(&home, upstream_port)?;
+    let pools = hub
+        .route_pools()
+        .list_gateway_listener_pools()
+        .map_err(|error| error.to_string())?;
+    let runtime_config = hub
+        .adapter_bridge()
+        .build_go_route_isolated_config(&pools)
+        .map_err(|error| error.to_string())?;
 
     let scratch_root = home.parent().unwrap_or(home.as_path());
     let bin = resolve_adapterd_bin(scratch_root)?;
-    let mock_log = home.join("logs/mock-upstream.log");
     let adapterd_log = home.join("logs/adapterd.stdout.log");
-    let mut mock = spawn_logged(
-        Command::new(&bin)
-            .arg("mock-upstream")
-            .arg("--listen")
-            .arg(format!("127.0.0.1:{upstream_port}")),
-        &mock_log,
-    )
-    .map_err(|err| format!("mock-upstream spawn failed: {err}"))?;
-    let mut adapterd = match spawn_logged(
+    let mut adapterd = spawn_logged(
         Command::new(&bin)
             .arg("run")
             .arg("--home")
             .arg(&home)
             .arg("--listen-port")
             .arg(messages_port.to_string())
+            .arg("--runtime-config-stdin")
+            .stdin(Stdio::piped())
             .env("AGENTHUB_HOME", &home),
         &adapterd_log,
-    ) {
-        Ok(child) => child,
-        Err(err) => {
-            let _ = mock.kill();
-            let _ = mock.wait();
-            return Err(format!("adapterd spawn failed: {err}"));
+    )
+    .map_err(|err| format!("adapterd spawn failed: {err}"))?;
+    if let Some(mut stdin) = adapterd.stdin.take() {
+        if let Err(error) = stdin.write_all(&runtime_config) {
+            let _ = adapterd.kill();
+            let _ = adapterd.wait();
+            return Err(format!("adapterd runtime config write failed: {error}"));
         }
-    };
+    } else {
+        let _ = adapterd.kill();
+        let _ = adapterd.wait();
+        return Err("adapterd stdin unavailable".into());
+    }
 
     let socket = home.join("run/adapterd.sock");
     let started = match handshake_start(&home, &socket, messages_port) {
@@ -292,14 +577,12 @@ fn start_session() -> Result<Session, String> {
             owner_term: session.owner_term,
             instance_epoch: session.instance_epoch,
             port: session.port,
+            next_owner_renewal: Instant::now() + OWNER_RENEW_INTERVAL,
             adapterd,
-            mock,
         },
         Err(err) => {
             let _ = adapterd.kill();
             let _ = adapterd.wait();
-            let _ = mock.kill();
-            let _ = mock.wait();
             return Err(err);
         }
     };
@@ -384,8 +667,10 @@ fn handshake_start(
         }),
     )?;
     let status_payload = require_ok(&st)?;
-    if status_payload.get("listen_ready").and_then(Value::as_bool) != Some(true) {
-        return Err("Start did not become listen_ready".into());
+    if status_payload.get("listen_ready").and_then(Value::as_bool) != Some(true)
+        || !owner_lease_valid(status_payload)
+    {
+        return Err(ERROR_START_FAILED.into());
     }
     let port = status_payload
         .get("port")
@@ -454,27 +739,6 @@ fn is_forbidden_user_home(path: &Path) -> bool {
     let real = fs::canonicalize(&real).unwrap_or(real);
     let resolved = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     resolved == real || resolved.starts_with(&real)
-}
-
-fn write_probe_fixture(home: &Path, upstream_port: u16) -> Result<(), String> {
-    let path = home.join("config/probe.json");
-    let body = json!({
-        "ingress_key": SYNTHETIC_KEY,
-        "upstream_base_url": format!("http://127.0.0.1:{upstream_port}"),
-        "fixture_model": FIXTURE_MODEL,
-    });
-    fs::write(
-        &path,
-        serde_json::to_vec_pretty(&body).map_err(|err| err.to_string())?,
-    )
-    .map_err(|err| err.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
-            .map_err(|err| err.to_string())?;
-    }
-    Ok(())
 }
 
 fn resolve_adapterd_bin(scratch_root: &Path) -> Result<PathBuf, String> {
@@ -559,6 +823,15 @@ fn wait_for_socket(path: &Path, timeout: Duration) -> Result<(), String> {
 
 #[cfg(unix)]
 fn post_control(socket: &Path, body: &Value) -> Result<Value, String> {
+    post_control_with_timeout(socket, body, Duration::from_secs(8))
+}
+
+#[cfg(unix)]
+fn post_control_with_timeout(
+    socket: &Path,
+    body: &Value,
+    timeout: Duration,
+) -> Result<Value, String> {
     use std::os::unix::net::UnixStream;
     let raw = serde_json::to_vec(body).map_err(|err| err.to_string())?;
     let started = Instant::now();
@@ -566,18 +839,22 @@ fn post_control(socket: &Path, body: &Value) -> Result<Value, String> {
         match UnixStream::connect(socket) {
             Ok(stream) => break stream,
             Err(err) => {
-                if started.elapsed() > Duration::from_secs(5) {
+                if started.elapsed() >= timeout {
                     return Err(err.to_string());
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
         }
     };
+    let remaining = timeout
+        .checked_sub(started.elapsed())
+        .filter(|remaining| !remaining.is_zero())
+        .unwrap_or(Duration::from_millis(1));
     stream
-        .set_read_timeout(Some(Duration::from_secs(8)))
+        .set_read_timeout(Some(remaining))
         .map_err(|err| err.to_string())?;
     stream
-        .set_write_timeout(Some(Duration::from_secs(8)))
+        .set_write_timeout(Some(remaining))
         .map_err(|err| err.to_string())?;
     let header = format!(
         "POST /control HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -611,11 +888,7 @@ fn require_ok(reply: &Value) -> Result<&Value, String> {
     if reply.get("ok").and_then(Value::as_bool) == Some(true) {
         Ok(reply.get("payload").unwrap_or(&Value::Null))
     } else {
-        let message = reply
-            .pointer("/error/message")
-            .and_then(Value::as_str)
-            .unwrap_or("control request failed");
-        Err(redact_secret(message))
+        Err(ERROR_CONTROL_UNAVAILABLE.into())
     }
 }
 
@@ -627,6 +900,105 @@ fn request_id(kind: &str) -> String {
     format!("gui-{kind}-{nanos}")
 }
 
-fn redact_secret(raw: &str) -> String {
-    raw.replace(SYNTHETIC_KEY, "[redacted]")
+#[cfg(unix)]
+fn session_status(session: &ControlSession) -> Result<Value, String> {
+    let reply = post_control(
+        &session.socket,
+        &json!({
+            "type": "Status",
+            "request_id": request_id("status"),
+            "instance_epoch": session.instance_epoch,
+            "owner_id": OWNER_ID,
+            "owner_term": session.owner_term,
+            "app_data_dir": session.home.display().to_string(),
+            "payload": {},
+        }),
+    )?;
+    Ok(require_ok(&reply)?.clone())
+}
+
+#[cfg(all(debug_assertions, unix))]
+fn renew_owner_and_status(session: &ControlSession) -> Result<Value, String> {
+    let renewal = post_control(
+        &session.socket,
+        &json!({
+            "type": "AcquireOrRenewOwner",
+            "request_id": request_id("renew"),
+            "instance_epoch": session.instance_epoch,
+            "owner_id": OWNER_ID,
+            "owner_term": session.owner_term,
+            "app_data_dir": session.home.display().to_string(),
+            "payload": {
+                "mode": "renew",
+                "lease_budget_ms": ISOLATED_LEASE_BUDGET_MS,
+            },
+        }),
+    )?;
+    let payload = require_ok(&renewal)?;
+    if payload.get("owner_term").and_then(Value::as_i64) != Some(session.owner_term) {
+        return Err(ERROR_CONTROL_UNAVAILABLE.into());
+    }
+    session_status(session)
+}
+
+fn owner_lease_valid(payload: &Value) -> bool {
+    payload.get("owner_lease_valid").and_then(Value::as_bool) == Some(true)
+}
+
+#[cfg(unix)]
+impl From<&Session> for ControlSession {
+    fn from(session: &Session) -> Self {
+        Self {
+            home: session.home.clone(),
+            socket: session.socket.clone(),
+            owner_term: session.owner_term,
+            instance_epoch: session.instance_epoch.clone(),
+        }
+    }
+}
+
+fn status_with_supervisor(
+    payload: Value,
+    previous: &GoRouteIsolatedStatus,
+) -> GoRouteIsolatedStatus {
+    let listen_ready = payload
+        .get("listen_ready")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    GoRouteIsolatedStatus {
+        state: if listen_ready { "ready" } else { "failed" }.into(),
+        listen_ready,
+        port: payload
+            .get("port")
+            .and_then(Value::as_u64)
+            .map(|value| value as u16),
+        last_error: (payload
+            .get("last_error")
+            .is_some_and(|value| !value.is_null())
+            || !listen_ready)
+            .then(|| ERROR_CONTROL_UNAVAILABLE.into()),
+        home: previous.home.clone(),
+        lifecycle: payload
+            .get("lifecycle")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        in_flight_count: payload
+            .get("in_flight_count")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        member_count: payload
+            .get("member_count")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        healthy_member_count: payload
+            .get("healthy_member_count")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        recovering: previous.recovering,
+        restart_count: previous.restart_count,
+    }
+}
+
+fn restart_backoff(attempt: u32) -> Duration {
+    Duration::from_secs(1_u64 << attempt.saturating_sub(1).min(3))
 }

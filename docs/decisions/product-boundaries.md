@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: product, design, frontend, and core contributors
 source-of-truth: root AGENTS.md, current planner contracts, and connection/account services
-updated: 2026-10-03
+updated: 2026-10-04
 ---
 
 # 产品边界与术语决策
@@ -63,7 +63,7 @@ Claude / Codex / Grok 的官方登录是否可接到其他工具，仍由已登�
 
 ## 未来方向如何标记
 
-`agenthub-adapterd` 只用于替换 `local_bridge` 的运行进程。隔离目录下的 Messages 探测切片已有，但不是现行网关；当前 listener、saga 和退出 drain 仍在 Tauri `AppState` 进程内。在产品接线落地前，不能把探测通道写成现行产品能力，也不能让 Go 负责写表。见 [Adapters and bridges](../concepts/adapters-and-bridges.md)。
+`agenthub-adapterd` 只用于替换 `local_bridge` 的运行进程。隔离目录下已有多协议运行和从保存结果生成内存配置的开发态接线，但不是现行网关；默认 listener、saga 和退出 drain 仍在 Tauri `AppState` 进程内。在默认网关切换完成前，不能把隔离通道写成现行产品能力，也不能让 Go 负责写表。见 [Adapters and bridges](../concepts/adapters-and-bridges.md)。
 
 本机同口授权池是当前默认能力：每个目标 Agent/surface 一个默认池，客户端只认固定 loopback 口和本机令牌；池内按模型与健康选成员。每个 Agent 同时仍只有一条 active binding；官方 `native_endpoint` / `config_sync` 不自动入池。混合供应商复合路由仍默认关闭，未声明等价关系时不得跨供应商转发。设计记录见 [本机同口授权池（归档）](../archive/unified-loopback-pool.md)。
 

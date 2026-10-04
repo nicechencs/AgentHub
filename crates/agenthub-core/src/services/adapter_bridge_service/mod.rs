@@ -475,6 +475,7 @@ const LIVE_BRIDGE_RULES: &[CodexBridgeRule] = &[
 ];
 
 mod finalize;
+mod go_route_config;
 mod persist_saga;
 pub(super) mod prepare;
 mod removal;

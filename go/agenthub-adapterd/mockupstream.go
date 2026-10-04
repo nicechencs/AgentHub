@@ -9,20 +9,25 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
 const fixtureAssistantText = "isolated-messages-ok"
 
 const (
-	memberHi     = "sk-member-hi-synthetic"
-	memberLo     = "sk-member-lo-synthetic"
-	memberA      = "sk-member-a-synthetic"
-	memberB      = "sk-member-b-synthetic"
-	memberQuota  = "sk-member-quota-synthetic"
-	memberDown   = "sk-member-down-synthetic"
-	memberSlow   = "sk-member-slow-synthetic"
-	memberCommit = "sk-member-commit-synthetic"
+	memberHi              = "sk-member-hi-synthetic"
+	memberLo              = "sk-member-lo-synthetic"
+	memberA               = "sk-member-a-synthetic"
+	memberB               = "sk-member-b-synthetic"
+	memberQuota           = "sk-member-quota-synthetic"
+	memberDown            = "sk-member-down-synthetic"
+	memberSlow            = "sk-member-slow-synthetic"
+	memberDrain           = "sk-member-drain-synthetic"
+	memberCommit          = "sk-member-commit-synthetic"
+	memberHeaderMessages  = "sk-member-header-messages-synthetic"
+	memberHeaderResponses = "sk-member-header-responses-synthetic"
+	memberHeaderChat      = "sk-member-header-chat-synthetic"
 )
 
 func runMockUpstream(listen string) error {
@@ -59,7 +64,11 @@ func mockMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 8<<20))
 	stream, model := parseMockReq(body)
-	token := bearerToken(r.Header.Get("Authorization"))
+	token := mockUpstreamToken(r)
+	if !mockHeaderContractValid(r, token) {
+		http.Error(w, "invalid upstream auth headers", http.StatusBadRequest)
+		return
+	}
 
 	switch token {
 	case "":
@@ -79,8 +88,12 @@ func mockMessages(w http.ResponseWriter, r *http.Request) {
 		writeDownError(w)
 	case memberSlow:
 		writeSlowSuccess(w, r, stream, model)
+	case memberDrain:
+		writeDrainSuccess(w, r, stream, model)
 	case memberCommit:
 		writeCommitThenClose(w, model)
+	case memberHeaderMessages:
+		writeFixtureSuccess(w, stream, model, "isolated-header-messages-ok")
 	default:
 		writeUnknownMember(w)
 	}
@@ -94,7 +107,11 @@ func mockResponses(w http.ResponseWriter, r *http.Request) {
 	}
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 8<<20))
 	stream, model, tools := parseResponsesReq(body)
-	token := bearerToken(r.Header.Get("Authorization"))
+	token := mockUpstreamToken(r)
+	if !mockHeaderContractValid(r, token) {
+		http.Error(w, "invalid upstream auth headers", http.StatusBadRequest)
+		return
+	}
 
 	switch token {
 	case memberQuota:
@@ -113,6 +130,8 @@ func mockResponses(w http.ResponseWriter, r *http.Request) {
 		writeResponsesMember(w, stream, model, tools, "isolated-responses-a")
 	case memberB:
 		writeResponsesMember(w, stream, model, tools, "isolated-responses-b")
+	case memberHeaderResponses:
+		writeResponsesMember(w, stream, model, tools, "isolated-header-responses-ok")
 	default:
 		// Missing Authorization stays a Messages-only success. Responses requires a known member bearer.
 		writeUnknownMember(w)
@@ -311,7 +330,11 @@ func mockChat(w http.ResponseWriter, r *http.Request) {
 	}
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 8<<20))
 	stream, model, tools := parseResponsesReq(body)
-	token := bearerToken(r.Header.Get("Authorization"))
+	token := mockUpstreamToken(r)
+	if !mockHeaderContractValid(r, token) {
+		http.Error(w, "invalid upstream auth headers", http.StatusBadRequest)
+		return
+	}
 	switch token {
 	case memberQuota:
 		writeQuotaError(w)
@@ -329,8 +352,30 @@ func mockChat(w http.ResponseWriter, r *http.Request) {
 		writeChatMember(w, stream, model, tools, "isolated-chat-a")
 	case memberB:
 		writeChatMember(w, stream, model, tools, "isolated-chat-b")
+	case memberHeaderChat:
+		writeChatMember(w, stream, model, tools, "isolated-header-chat-ok")
 	default:
 		writeUnknownMember(w)
+	}
+}
+
+func mockUpstreamToken(r *http.Request) string {
+	if token := bearerToken(r.Header.Get("Authorization")); token != "" {
+		return token
+	}
+	return strings.TrimSpace(r.Header.Get("X-API-Key"))
+}
+
+func mockHeaderContractValid(r *http.Request, token string) bool {
+	authorization := strings.TrimSpace(r.Header.Get("Authorization"))
+	apiKey := strings.TrimSpace(r.Header.Get("X-API-Key"))
+	switch token {
+	case memberHeaderMessages:
+		return authorization == "" && apiKey == token && r.Header.Get("Anthropic-Version") == "2023-06-01"
+	case memberHeaderResponses, memberHeaderChat:
+		return bearerToken(authorization) == token && apiKey == ""
+	default:
+		return true
 	}
 }
 
@@ -567,6 +612,17 @@ func writeSlowSuccess(w http.ResponseWriter, r *http.Request, stream bool, model
 		return
 	case <-timer.C:
 		writeFixtureSuccess(w, stream, model, "isolated-member-slow")
+	}
+}
+
+func writeDrainSuccess(w http.ResponseWriter, r *http.Request, stream bool, model string) {
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-r.Context().Done():
+		return
+	case <-timer.C:
+		writeFixtureSuccess(w, stream, model, "isolated-messages-drained")
 	}
 }
 

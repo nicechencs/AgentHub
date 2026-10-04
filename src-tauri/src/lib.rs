@@ -86,6 +86,13 @@ pub fn run() {
                     app.handle().clone(),
                 );
             }
+            // The Go route remains an explicit development/isolated path. It
+            // never replaces the Rust gateway restore above or uses its port.
+            #[cfg(debug_assertions)]
+            if std::env::var("AGENTHUB_GO_ROUTE_ISOLATED_AUTO_START").as_deref() == Ok("1") {
+                let host = app.state::<AppState>().go_route_isolated();
+                tauri::async_runtime::spawn_blocking(move || host.start());
+            }
             Ok(())
         })
         .on_menu_event(|app, event| {

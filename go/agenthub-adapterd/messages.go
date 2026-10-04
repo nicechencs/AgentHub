@@ -23,20 +23,20 @@ func (rt *Runtime) messagesMux() http.Handler {
 }
 
 func (rt *Runtime) handleMessages(w http.ResponseWriter, r *http.Request) {
-	rt.forwardSameProtocol(w, r, "/v1/messages", "This endpoint only accepts POST /v1/messages. 本机该路径只接受 POST /v1/messages.")
+	rt.forwardSameProtocol(w, r, surfaceMessages, "/v1/messages", "This endpoint only accepts POST /v1/messages. 本机该路径只接受 POST /v1/messages.")
 }
 
 func (rt *Runtime) handleResponses(w http.ResponseWriter, r *http.Request) {
-	rt.forwardSameProtocol(w, r, "/v1/responses", "This endpoint only accepts POST /v1/responses. 本机该路径只接受 POST /v1/responses。")
+	rt.forwardSameProtocol(w, r, surfaceResponses, "/v1/responses", "This endpoint only accepts POST /v1/responses. 本机该路径只接受 POST /v1/responses。")
 }
 
 func (rt *Runtime) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	msg := "This endpoint only accepts POST " + path + ". 本机该路径只接受 POST " + path + "。"
-	rt.forwardSameProtocol(w, r, "/v1/chat/completions", msg)
+	rt.forwardSameProtocol(w, r, surfaceChatCompletions, "/v1/chat/completions", msg)
 }
 
-func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, upstreamPath, methodMessage string) {
+func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, surface, upstreamPath, methodMessage string) {
 	if r.RemoteAddr != "" && !isLoopbackRemote(r.RemoteAddr) {
 		http.Error(w, "loopback only", http.StatusForbidden)
 		return
@@ -51,8 +51,8 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, u
 		return
 	}
 	got := bearerToken(r.Header.Get("Authorization"))
-	want := rt.ingressKey()
-	if want == "" || got != want {
+	edge := rt.edgeForRequest(got, surface)
+	if got == "" || edge == nil {
 		writeMessagesError(w, http.StatusUnauthorized, "invalid_api_key", "Invalid local bearer token.", "invalid_request_error")
 		return
 	}
@@ -68,7 +68,7 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, u
 	}
 	_ = json.Unmarshal(body, &meta)
 
-	pool := rt.currentPool()
+	pool := edge.Pool
 	if pool == nil {
 		writeMessagesError(w, http.StatusServiceUnavailable, "pool_exhausted", "No eligible pool member remains.", "api_error")
 		return
@@ -107,7 +107,7 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, u
 			return
 		}
 
-		resp, err := doMemberMessages(r.Context(), client, member, upstreamPath, body, meta.Stream)
+		resp, err := doMemberMessages(r.Context(), client, member, surface, upstreamPath, body, meta.Stream)
 		if err != nil {
 			if r.Context().Err() != nil {
 				return
@@ -220,8 +220,8 @@ func dispatchMemberStream(
 	return dispatchDone
 }
 
-func doMemberMessages(ctx context.Context, client *http.Client, member *PoolMember, upstreamPath string, body []byte, stream bool) (*http.Response, error) {
-	upstream := member.UpstreamBaseURL + upstreamPath
+func doMemberMessages(ctx context.Context, client *http.Client, member *PoolMember, surface, upstreamPath string, body []byte, stream bool) (*http.Response, error) {
+	upstream := joinUpstreamPath(member.UpstreamBaseURL, upstreamPath)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstream, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -230,10 +230,23 @@ func doMemberMessages(ctx context.Context, client *http.Client, member *PoolMemb
 	if stream {
 		req.Header.Set("Accept", "text/event-stream")
 	}
-	if member.UpstreamKey != "" {
+	if member.UpstreamKey != "" && member.UpstreamAuth == authAPIKey {
+		req.Header.Set("X-API-Key", member.UpstreamKey)
+		if surface == surfaceMessages {
+			req.Header.Set("Anthropic-Version", "2023-06-01")
+		}
+	} else if member.UpstreamKey != "" {
 		req.Header.Set("Authorization", "Bearer "+member.UpstreamKey)
 	}
 	return client.Do(req)
+}
+
+func joinUpstreamPath(base, endpoint string) string {
+	base = strings.TrimRight(base, "/")
+	if strings.HasSuffix(base, "/v1") && strings.HasPrefix(endpoint, "/v1/") {
+		return base + strings.TrimPrefix(endpoint, "/v1")
+	}
+	return base + "/" + strings.TrimLeft(endpoint, "/")
 }
 
 func (rt *Runtime) handleModels(w http.ResponseWriter, r *http.Request) {
@@ -251,14 +264,14 @@ func (rt *Runtime) handleModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	got := bearerToken(r.Header.Get("Authorization"))
-	want := rt.ingressKey()
-	if want == "" || got != want {
+	edge := rt.edgeForIngress(got)
+	if got == "" || edge == nil {
 		writeMessagesError(w, http.StatusUnauthorized, "invalid_api_key", "Invalid local bearer token.", "invalid_request_error")
 		return
 	}
 	ids := []string{}
-	if pool := rt.currentPool(); pool != nil {
-		ids = pool.ModelIDs()
+	if edge.Pool != nil {
+		ids = edge.Pool.ModelIDs()
 	}
 	data := make([]map[string]string, 0, len(ids))
 	for _, id := range ids {
@@ -286,19 +299,18 @@ func (rt *Runtime) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	got := bearerToken(r.Header.Get("Authorization"))
-	want := rt.ingressKey()
-	if want == "" || got != want {
+	edge := rt.edgeForIngress(got)
+	if got == "" || edge == nil {
 		writeMessagesError(w, http.StatusUnauthorized, "invalid_api_key", "Invalid local bearer token.", "invalid_request_error")
 		return
 	}
 	rt.mu.Lock()
 	listenReady := rt.listenReady
-	pool := rt.pool
 	rt.mu.Unlock()
 	memberCount := 0
 	healthyCount := 0
-	if pool != nil {
-		snap := pool.Snapshot(time.Now())
+	if edge.Pool != nil {
+		snap := edge.Pool.Snapshot(time.Now())
 		memberCount = snap.MemberCount
 		healthyCount = snap.HealthyMemberCount
 	}

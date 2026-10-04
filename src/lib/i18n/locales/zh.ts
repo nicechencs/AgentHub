@@ -1465,6 +1465,7 @@ export const zh = {
       goIsolatedReady: "运行中",
       goIsolatedStopped: "已停止",
       goIsolatedFailed: "失败",
+      goIsolatedRuntime: "请求中 {inFlight} · 可用登录 {healthy}/{members} · 恢复 {restarts} 次",
       statusSection: "用户端点",
       fleetLogins: "{count} 个入口 Key",
       endpointLogins: "入口 Key {count}",

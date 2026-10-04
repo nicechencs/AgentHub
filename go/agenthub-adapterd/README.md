@@ -1,10 +1,10 @@
-# agenthub-adapterd (isolated Messages slice)
+# agenthub-adapterd (isolated route runtime)
 
 This directory is an independent Go program. It is **not** the live/default
 local gateway. The in-process Rust forwarder is unchanged. Vendor plugin pages
 are unchanged. There is no plugin store.
 
-This slice only proves, in an isolated scratch directory:
+These slices prove, in an isolated scratch directory:
 
 - control `Handshake`, `Status`, `AcquireOrRenewOwner` (`acquire` / `renew`), `Start`, and `Stop`
 - process up / down
@@ -19,8 +19,14 @@ This slice only proves, in an isolated scratch directory:
 
 `Start` is the product control name for this isolated slice. It does not write
 real agent config, refuses the product default port `43121` and real
-`~/.agenthub`, and only starts Messages listening from
-`$AGENTHUB_HOME/config/probe.json` when `AGENTHUB_HOME` is a scratch directory.
+`~/.agenthub`. The application supervisor resolves eligible saved loopback
+routes through core, sends the complete runtime configuration once over the
+child process's stdin, and closes stdin. The configuration is retained only in
+memory. It can contain multiple Messages, Responses, and Chat Completions
+entries selected by their entry key and surface.
+
+The older `$AGENTHUB_HOME/config/probe.json` input remains only for the
+standalone probes and `ActivateProbeListen`; application start does not use it.
 
 `ActivateProbeListen` remains a probe-only shortcut with the same listen start.
 It is not the default gateway.
@@ -42,11 +48,15 @@ From the repository root (creates an absolute scratch tree under `/tmp`, never
 scripts/route-runtime-probe/messages-isolated.sh
 scripts/route-runtime-probe/pool-isolated.sh
 scripts/route-runtime-probe/protocols-isolated.sh
+scripts/route-runtime-probe/existing-flow-isolated.sh
 ```
 
 The scripts list every data/config/log path before start, check they stay
 under scratch, then verify handshake, status, process up, Messages JSON/SSE,
-pool scheduling, Responses and Chat Completions, cancel, Stop, and process down.
+pool scheduling, Responses and Chat Completions, entry isolation, both upstream
+authentication modes, cancel, graceful drain, Stop, and process down. The
+existing-flow probe passes its runtime configuration through stdin rather than
+writing API keys to disk.
 
 ## Run the daemon yourself
 
@@ -61,13 +71,17 @@ Control channel: Unix domain socket at `$AGENTHUB_HOME/run/adapterd.sock`
 ```bash
 export AGENTHUB_HOME=/tmp/agenthub-route-runtime-probe/manual/home
 mkdir -p "$AGENTHUB_HOME"/{config,run,logs}
-# write config/probe.json (synthetic key + loopback upstream) before Start
+# write config/probe.json (synthetic key + loopback upstream) before probe Start
 ./bin/agenthub-adapterd run --home "$AGENTHUB_HOME" --listen-port 18765
 ```
 
 Status replies must not include the entry key or upstream credentials.
+Application-managed runs add `--runtime-config-stdin` and provide the strict
+`route-config.v0-isolated` document on stdin. This interface remains internal
+to the isolated supervisor and is not a public configuration format.
 
 ## Out of scope
 
-Responses, Chat Completions, official login, live gateway cutover, real
-`~/.agenthub` reads/writes, plugin SDK/ABI, and stages E/F.
+Official-login refresh, non-loopback upstreams, live/default gateway cutover,
+real `~/.agenthub` reads/writes, real Agent configuration writes and recovery,
+Windows control transport, plugin SDK/ABI, and stages E/F.

@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: core, Tauri, CLI, and runtime contributors
 source-of-truth: crates/agenthub-core, src-tauri, and current adapter control/bridge code
-updated: 2026-09-29
+updated: 2026-10-04
 ---
 
 # Core 与 Runtime
@@ -78,7 +78,7 @@ Tauri AppState
 
 当前监听跑在 Tauri 进程内，只听 loopback。授权池、本机令牌和 Codex / Grok 共用 Responses 入口等行为见 [Connections、Routes 与绑定](../concepts/connections-and-routing.md#登录列表与-routes)。`native_endpoint` / `config_sync` 不依赖本机转发，也不会自动入池。
 
-把监听拆到独立 sidecar 进程（`agenthub-adapterd`）只是[提案](../proposals/adapter-sidecar.md)，不是当前部署。
+把监听拆到独立 sidecar 进程（`agenthub-adapterd`）仍是[提案](../proposals/adapter-sidecar.md)，不是当前部署。开发态已有隔离监督器：core 可从保存结果生成 loopback 路由配置，经 stdin 启动非默认端口上的 Go 进程，并展示状态、排空退出和有限恢复；它不写真实 Agent 配置，也不替代上述进程内监听。
 
 ## Agent 目录与能力
 

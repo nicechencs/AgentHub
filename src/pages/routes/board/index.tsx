@@ -30,6 +30,7 @@ import { agentDisplayName } from '@/config/agents';
 import { getLocalGatewayStatus, listLocalTokens } from '@/lib/api/adapter';
 import {
   getGoRouteIsolatedStatus,
+  shouldApplyGoRouteResult,
   startGoRouteIsolated,
   stopGoRouteIsolated,
   type GoRouteIsolatedState,
@@ -89,6 +90,12 @@ const GO_ISOLATED_STOPPED: GoRouteIsolatedStatus = {
   port: null,
   lastError: null,
   home: null,
+  lifecycle: 'stopped',
+  inFlightCount: 0,
+  memberCount: 0,
+  healthyMemberCount: 0,
+  recovering: false,
+  restartCount: 0,
 };
 
 function goIsolatedStatusLabel(state: GoRouteIsolatedState, t: TranslateFn): string {
@@ -107,18 +114,18 @@ function goIsolatedBadgeVariant(
   return 'default';
 }
 
-function failedGoIsolatedStatus(error: unknown, home: string | null): GoRouteIsolatedStatus {
-  const lastError = error instanceof Error
-    ? error.message
-    : typeof error === 'string'
-      ? error
-      : null;
+function failedGoIsolatedStatus(current: GoRouteIsolatedStatus): GoRouteIsolatedStatus {
   return {
+    ...current,
     state: 'failed',
     listenReady: false,
     port: null,
-    lastError,
-    home,
+    lastError: null,
+    lifecycle: 'unavailable',
+    inFlightCount: 0,
+    memberCount: 0,
+    healthyMemberCount: 0,
+    recovering: false,
   };
 }
 
@@ -127,25 +134,55 @@ function GoIsolatedStrip() {
   const [status, setStatus] = useState<GoRouteIsolatedStatus>(GO_ISOLATED_STOPPED);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const generationRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
-    void getGoRouteIsolatedStatus()
-      .then((next) => {
-        if (!cancelled) setStatus(next);
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        if (error instanceof BackendUnavailableError) return;
-        setStatus(failedGoIsolatedStatus(error, null));
-      });
+    let refreshing = false;
+    const refresh = () => {
+      if (refreshing || busyRef.current) return;
+      refreshing = true;
+      const requestGeneration = generationRef.current;
+      void getGoRouteIsolatedStatus()
+        .then((next) => {
+          if (shouldApplyGoRouteResult(
+            requestGeneration,
+            generationRef.current,
+            cancelled || busyRef.current,
+          )) {
+            setStatus(next);
+          }
+        })
+        .catch((error: unknown) => {
+          if (
+            !shouldApplyGoRouteResult(
+              requestGeneration,
+              generationRef.current,
+              cancelled || busyRef.current,
+            )
+          ) {
+            return;
+          }
+          if (error instanceof BackendUnavailableError) return;
+          setStatus(failedGoIsolatedStatus);
+        })
+        .finally(() => {
+          refreshing = false;
+        });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 1_000);
     return () => {
       cancelled = true;
+      generationRef.current += 1;
+      window.clearInterval(timer);
     };
   }, []);
 
   const run = useCallback(async (action: 'start' | 'stop') => {
     if (busyRef.current || status.state === 'starting') return;
+    const actionGeneration = generationRef.current + 1;
+    generationRef.current = actionGeneration;
     busyRef.current = true;
     setBusy(true);
     if (action === 'start') {
@@ -159,12 +196,18 @@ function GoIsolatedStrip() {
       const next = action === 'start'
         ? await startGoRouteIsolated()
         : await stopGoRouteIsolated();
-      setStatus(next);
-    } catch (error) {
-      setStatus((current) => failedGoIsolatedStatus(error, current.home));
+      if (shouldApplyGoRouteResult(actionGeneration, generationRef.current, false)) {
+        setStatus(next);
+      }
+    } catch {
+      if (shouldApplyGoRouteResult(actionGeneration, generationRef.current, false)) {
+        setStatus(failedGoIsolatedStatus);
+      }
     } finally {
-      busyRef.current = false;
-      setBusy(false);
+      if (actionGeneration === generationRef.current) {
+        busyRef.current = false;
+        setBusy(false);
+      }
     }
   }, [status.state]);
 
@@ -181,6 +224,16 @@ function GoIsolatedStrip() {
             </Badge>
           </div>
           <p className="mt-1 text-xs text-secondary">{t('routes.board.goIsolatedHint')}</p>
+          {status.state !== 'stopped' ? (
+            <p className="mt-1 text-xs text-secondary">
+              {t('routes.board.goIsolatedRuntime', {
+                inFlight: status.inFlightCount,
+                healthy: status.healthyMemberCount,
+                members: status.memberCount,
+                restarts: status.restartCount,
+              })}
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <Button

@@ -17,7 +17,8 @@ import (
 )
 
 type Runtime struct {
-	mu sync.Mutex
+	mu          sync.Mutex
+	lifecycleMu sync.Mutex
 
 	home          string
 	listenHost    string
@@ -43,6 +44,7 @@ type Runtime struct {
 
 	probe *ProbeFixture
 	pool  *Pool
+	edges []*RuntimeEdge
 
 	idempotency map[string]idempotentEntry
 
@@ -126,6 +128,23 @@ func (rt *Runtime) Home() string          { return rt.home }
 func (rt *Runtime) ControlSocket() string { return rt.controlSocket }
 func (rt *Runtime) PIDFile() string       { return rt.pidFile }
 func (rt *Runtime) LogFile() string       { return rt.logFile }
+
+func (rt *Runtime) SetRuntimeConfig(config *RuntimeConfig) error {
+	if err := validateRuntimeConfig(config); err != nil {
+		return err
+	}
+	edges, err := runtimeEdges(config)
+	if err != nil {
+		return err
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.listenReady {
+		return fmt.Errorf("runtime config cannot change while serving")
+	}
+	rt.edges = edges
+	return nil
+}
 
 func (rt *Runtime) WritePID() error {
 	pid := fmt.Sprintf("%d\n", os.Getpid())
@@ -423,6 +442,10 @@ func (rt *Runtime) handleStatus(env Envelope) Reply {
 	if rt.pool != nil {
 		secrets = append(secrets, rt.pool.Secrets()...)
 	}
+	for _, edge := range rt.edges {
+		secrets = append(secrets, edge.IngressKey)
+		secrets = append(secrets, edge.Pool.Secrets()...)
+	}
 	rt.mu.Unlock()
 	if statusContainsAnySecret(body, secrets) {
 		return rt.fail(env.Type, env.RequestID, errSecretOnControl, "status refused because it would include a secret", false)
@@ -458,7 +481,18 @@ func (rt *Runtime) statusSnapshot() (StatusSuccess, error) {
 	}
 	var schedule string
 	var memberCount, healthyCount int
-	if rt.pool != nil {
+	if len(rt.edges) > 0 {
+		for _, edge := range rt.edges {
+			snap := edge.Pool.Snapshot(time.Now())
+			memberCount += snap.MemberCount
+			healthyCount += snap.HealthyMemberCount
+			if schedule == "" {
+				schedule = snap.SchedulePolicy
+			} else if schedule != snap.SchedulePolicy {
+				schedule = "mixed"
+			}
+		}
+	} else if rt.pool != nil {
 		snap := rt.pool.Snapshot(time.Now())
 		schedule = snap.SchedulePolicy
 		memberCount = snap.MemberCount
@@ -505,11 +539,68 @@ func (rt *Runtime) requireOwner(env Envelope) *Reply {
 }
 
 func (rt *Runtime) handleStart(env Envelope) Reply {
+	rt.lifecycleMu.Lock()
+	defer rt.lifecycleMu.Unlock()
+
+	rt.mu.Lock()
+	hasRuntimeConfig := len(rt.edges) > 0
+	rt.mu.Unlock()
+	if hasRuntimeConfig {
+		return rt.startFromRuntimeConfig(env)
+	}
 	return rt.startFromProbeFixture(env, "isolated Start; not default gateway")
 }
 
 func (rt *Runtime) handleActivateProbe(env Envelope) Reply {
+	rt.lifecycleMu.Lock()
+	defer rt.lifecycleMu.Unlock()
+
 	return rt.startFromProbeFixture(env, "probe-only activate; not product Start")
+}
+
+func (rt *Runtime) startFromRuntimeConfig(env Envelope) Reply {
+	if fail := rt.requireOwner(env); fail != nil {
+		return *fail
+	}
+	if fail := rt.rejectStartWhileStopping(env); fail != nil {
+		return *fail
+	}
+	if err := rt.applyOptionalStartPort(env.Payload); err != nil {
+		return rt.fail(env.Type, env.RequestID, errInvalidRequest, err.Error(), false)
+	}
+	rt.mu.Lock()
+	if rt.listenReady {
+		port := rt.actualPort
+		epoch := rt.instanceEpoch
+		rt.mu.Unlock()
+		return Reply{
+			OK:            true,
+			Type:          env.Type,
+			RequestID:     env.RequestID,
+			InstanceEpoch: epoch,
+			Payload:       marshalPayload(map[string]any{"listen_ready": true, "port": port}),
+		}
+	}
+	edges := append([]*RuntimeEdge(nil), rt.edges...)
+	rt.mu.Unlock()
+	if len(edges) == 0 {
+		return rt.fail(env.Type, env.RequestID, errConfigMismatch, "runtime config is missing", false)
+	}
+	if err := rt.startRuntimeEdgesLocked(edges); err != nil {
+		return rt.fail(env.Type, env.RequestID, errPortInUse, "route listener failed to bind", false)
+	}
+	rt.mu.Lock()
+	port := rt.actualPort
+	epoch := rt.instanceEpoch
+	rt.mu.Unlock()
+	rt.logf("route listener ready on 127.0.0.1:%d edges=%d", port, len(edges))
+	return Reply{
+		OK:            true,
+		Type:          env.Type,
+		RequestID:     env.RequestID,
+		InstanceEpoch: epoch,
+		Payload:       marshalPayload(map[string]any{"listen_ready": true, "port": port}),
+	}
 }
 
 func (rt *Runtime) applyOptionalStartPort(raw json.RawMessage) error {
@@ -541,6 +632,9 @@ func (rt *Runtime) applyOptionalStartPort(raw json.RawMessage) error {
 
 func (rt *Runtime) startFromProbeFixture(env Envelope, note string) Reply {
 	if fail := rt.requireOwner(env); fail != nil {
+		return *fail
+	}
+	if fail := rt.rejectStartWhileStopping(env); fail != nil {
 		return *fail
 	}
 	if env.Type == typeStart {
@@ -616,6 +710,16 @@ func (rt *Runtime) startFromProbeFixture(env Envelope, note string) Reply {
 	}
 }
 
+func (rt *Runtime) rejectStartWhileStopping(env Envelope) *Reply {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.lifecycle != lifecycleDraining && rt.lifecycle != lifecycleStopped {
+		return nil
+	}
+	fail := rt.failUnlocked(env.Type, env.RequestID, errLifecycleConflict, "route runtime is stopping", false)
+	return &fail
+}
+
 func (rt *Runtime) startMessagesLocked(fixture ProbeFixture) error {
 	pool, err := NewPoolFromFixture(fixture)
 	if err != nil {
@@ -624,6 +728,22 @@ func (rt *Runtime) startMessagesLocked(fixture ProbeFixture) error {
 	rt.mu.Lock()
 	rt.probe = &fixture
 	rt.pool = pool
+	rt.edges = nil
+	rt.mu.Unlock()
+	return rt.startHTTPServer()
+}
+
+func (rt *Runtime) startRuntimeEdgesLocked(edges []*RuntimeEdge) error {
+	rt.mu.Lock()
+	rt.probe = nil
+	rt.pool = nil
+	rt.edges = edges
+	rt.mu.Unlock()
+	return rt.startHTTPServer()
+}
+
+func (rt *Runtime) startHTTPServer() error {
+	rt.mu.Lock()
 	host := rt.listenHost
 	port := rt.listenPort
 	rt.mu.Unlock()
@@ -651,13 +771,37 @@ func (rt *Runtime) startMessagesLocked(fixture ProbeFixture) error {
 	rt.mu.Unlock()
 	go func() {
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
-			rt.logf("messages server stopped: %v", err)
+			rt.recordServeFailure()
 		}
 	}()
 	return nil
 }
 
+func (rt *Runtime) recordServeFailure() {
+	rt.mu.Lock()
+	if rt.lifecycle == lifecycleDraining || rt.lifecycle == lifecycleStopped {
+		rt.mu.Unlock()
+		return
+	}
+	rt.listenReady = false
+	rt.lifecycle = lifecycleNotServing
+	rt.lastError = &LastError{
+		Code:       errListenerFailed,
+		Message:    "route listener stopped unexpectedly",
+		ObservedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	cancel := rt.cancel
+	rt.mu.Unlock()
+	rt.logf("route listener stopped unexpectedly")
+	if cancel != nil {
+		cancel()
+	}
+}
+
 func (rt *Runtime) handleStop(env Envelope) Reply {
+	rt.lifecycleMu.Lock()
+	defer rt.lifecycleMu.Unlock()
+
 	if fail := rt.requireHandshake(env); fail != nil {
 		return *fail
 	}
@@ -669,14 +813,27 @@ func (rt *Runtime) handleStop(env Envelope) Reply {
 		}
 	}
 	epoch := rt.instanceEpoch
+	if rt.lifecycle == lifecycleDraining || rt.lifecycle == lifecycleStopped {
+		lifecycle := rt.lifecycle
+		rt.mu.Unlock()
+		return Reply{
+			OK:            true,
+			Type:          typeStop,
+			RequestID:     env.RequestID,
+			InstanceEpoch: epoch,
+			Payload:       marshalPayload(map[string]any{"lifecycle": lifecycle}),
+		}
+	}
 	cancel := rt.cancel
-	rt.lifecycle = lifecycleStopped
+	rt.lifecycle = lifecycleDraining
 	rt.listenReady = false
 	rt.mu.Unlock()
 	rt.logf("stop requested; shutting down")
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		_ = rt.Shutdown(context.Background())
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 8*time.Second)
+		_ = rt.Shutdown(shutdownCtx)
+		shutdownCancel()
 		if cancel != nil {
 			cancel()
 		}
@@ -686,7 +843,7 @@ func (rt *Runtime) handleStop(env Envelope) Reply {
 		Type:          typeStop,
 		RequestID:     env.RequestID,
 		InstanceEpoch: epoch,
-		Payload:       marshalPayload(map[string]any{"lifecycle": lifecycleStopped}),
+		Payload:       marshalPayload(map[string]any{"lifecycle": lifecycleDraining}),
 	}
 }
 
@@ -695,17 +852,21 @@ func (rt *Runtime) Shutdown(ctx context.Context) error {
 	srv := rt.messagesSrv
 	ln := rt.messagesLn
 	rt.listenReady = false
-	if rt.lifecycle != lifecycleStopped {
-		rt.lifecycle = lifecycleStopped
-	}
 	rt.mu.Unlock()
+	var shutdownErr error
 	if srv != nil {
-		_ = srv.Shutdown(ctx)
+		shutdownErr = srv.Shutdown(ctx)
+		if shutdownErr != nil {
+			_ = srv.Close()
+		}
 	}
 	if ln != nil {
 		_ = ln.Close()
 	}
-	return nil
+	rt.mu.Lock()
+	rt.lifecycle = lifecycleStopped
+	rt.mu.Unlock()
+	return shutdownErr
 }
 
 func (rt *Runtime) ownerServing() bool {
@@ -715,7 +876,35 @@ func (rt *Runtime) ownerServing() bool {
 		rt.lifecycle == lifecycleServing &&
 		rt.ownerTerm > 0 &&
 		time.Now().Before(rt.ownerLeaseUntil) &&
-		rt.probe != nil
+		(rt.probe != nil || len(rt.edges) > 0)
+}
+
+func (rt *Runtime) edgeForRequest(ingressKey, surface string) *RuntimeEdge {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	for _, edge := range rt.edges {
+		if edge.IngressKey == ingressKey && edge.Surface == surface {
+			return edge
+		}
+	}
+	if rt.probe != nil && rt.probe.IngressKey == ingressKey {
+		return &RuntimeEdge{ID: "probe", IngressKey: ingressKey, Surface: surface, Pool: rt.pool}
+	}
+	return nil
+}
+
+func (rt *Runtime) edgeForIngress(ingressKey string) *RuntimeEdge {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	for _, edge := range rt.edges {
+		if edge.IngressKey == ingressKey {
+			return edge
+		}
+	}
+	if rt.probe != nil && rt.probe.IngressKey == ingressKey {
+		return &RuntimeEdge{ID: "probe", IngressKey: ingressKey, Pool: rt.pool}
+	}
+	return nil
 }
 
 func (rt *Runtime) ingressKey() string {

@@ -14,11 +14,11 @@ updated: 2026-10-04
 
 - 默认本机路由仍由 Tauri 进程内的 `BridgeRuntimeHost` 提供。
 - 登录、连接、路线选择、数据库和 Agent 配置写入仍由 core 管理。
-- `go/agenthub-adapterd` 已有隔离 Messages 切片：`Handshake`、`Start`、`Status`、`Stop`、`AcquireOrRenewOwner`、探测专用 `ActivateProbeListen`，以及合成 Key 的 Messages JSON/SSE。
+- `go/agenthub-adapterd` 已有隔离运行切片：`Handshake`、`Start`、`Status`、`Stop`、`AcquireOrRenewOwner`、探测专用 `ActivateProbeListen`，以及合成 Key 的 Messages JSON/SSE。
 - 隔离连接池已接上：`priority_failover` / `round_robin`、成员健康与冷却、模型并集、客户端取消；已开始输出后不换成员。探测见 `scripts/route-runtime-probe/pool-isolated.sh`。
 - 隔离同协议转发已接上 `POST /v1/responses`，以及 `POST /v1/chat/completions` 和别名 `POST /chat/completions`（JSON、SSE、工具调用、取消、上游错误）。不根据请求正文猜测 Codex 或 Grok 格式。探测见 `scripts/route-runtime-probe/protocols-isolated.sh`。
-- 应用侧已有隔离监督器（`start_go_route_isolated` / `stop_go_route_isolated` / `get_go_route_isolated_status`）和开发态看板「Go 路由」条，使用测试连接池、临时目录和非默认端口；不是默认本机转发。
-- `scripts/route-runtime-probe/messages-isolated.sh` 只使用临时目录、临时端口和受控 loopback 上游，不是默认网关。
+- core 已能从保存结果中筛选可用的 loopback 路由，生成只在内存中使用的 Go 配置；应用侧隔离监督器通过子进程 stdin 交付配置，提供真实状态、退出排空和有限次数崩溃恢复。它仍使用临时目录和非默认端口，不是默认本机转发。
+- 四个 `scripts/route-runtime-probe/*-isolated.sh` 只使用临时目录、临时端口、合成 Key 和受控 loopback 上游；`existing-flow-isolated.sh` 另行检查多入口隔离、两种上游认证、排空和敏感信息扫描。
 
 现行功能仍以[本机路由 API](../reference/local-route-api.md)、[路由兼容性](../reference/route-compatibility.md)和 [STATUS](../STATUS.md)为准。
 
@@ -129,6 +129,7 @@ Go 覆盖当前开放协议并完成目标平台的打包、启动、退出和�
 
 - Go 单元测试和协议契约检查。
 - 使用合成 Key、合成请求和受控 loopback 上游的黑盒脚本。
+- 接入保存结果时，用 `existing-flow-isolated.sh` 检查 stdin 配置、多入口隔离、两种上游认证和退出排空。
 - 真实进程的启动、停止、端口占用、取消和崩溃日志。
 - 扫描状态、错误和日志，确认不包含 Key、登录信息或请求正文。
 - backend contract 或界面 DTO 变化时运行相关 Vitest、contract test 和 typecheck。
@@ -148,9 +149,9 @@ Go 覆盖当前开放协议并完成目标平台的打包、启动、退出和�
 
 ## 下一步
 
-切片 1「应用控制 Go Messages」、切片 2「补齐连接池运行」和切片 3「Responses 与 Chat Completions 同协议转发」已在隔离目录接通。默认本机转发仍是进程内 `BridgeRuntimeHost`。
+切片 1「应用控制 Go Messages」、切片 2「补齐连接池运行」和切片 3「Responses 与 Chat Completions 同协议转发」已在隔离目录接通。切片 4 已完成一部分：保存结果生成运行配置、多入口 stdin 交付、现有状态展示、退出排空和有限次数崩溃恢复均已接通。
 
-建议下一次只做切片 4「接入现有路由流程」：用现有保存结果生成 Go 运行配置，先在测试 Agent 和非默认端口上验证。完成并检查那一条后，再决定下一条，不提前实现默认网关切换。
+切片 4 仍需在测试 Agent 上验证真实配置写入与失败恢复，并按已有路线逐项接入官方登录刷新；非 loopback 上游和 Windows 控制通道也尚未验证。完成这些检查前不进入切片 5，默认本机转发仍是进程内 `BridgeRuntimeHost`。
 
 ## 相关页面
 

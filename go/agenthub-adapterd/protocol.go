@@ -24,6 +24,7 @@ const (
 
 	lifecycleEmpty      = "empty"
 	lifecycleServing    = "serving"
+	lifecycleDraining   = "draining"
 	lifecycleNotServing = "not_serving"
 	lifecycleStopped    = "stopped"
 
@@ -39,6 +40,8 @@ const (
 	errSecretOnControl   = "route.runtime.secret_on_control"
 	errInvalidRequest    = "route.runtime.invalid_request"
 	errPortInUse         = "route.runtime.port_in_use"
+	errListenerFailed    = "route.runtime.listener_failed"
+	errLifecycleConflict = "route.runtime.lifecycle_conflict"
 	errProbeOnlyRejected = "route.runtime.probe_only_rejected"
 
 	productDefaultPort = 43121
@@ -150,6 +153,7 @@ type ProbeMember struct {
 	ID                string   `json:"id"`
 	UpstreamBaseURL   string   `json:"upstream_base_url"`
 	UpstreamKey       string   `json:"upstream_key,omitempty"`
+	UpstreamAuth      string   `json:"upstream_auth,omitempty"`
 	Priority          int64    `json:"priority"`
 	Position          int64    `json:"position"`
 	Models            []string `json:"models,omitempty"`

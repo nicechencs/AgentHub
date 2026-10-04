@@ -6,6 +6,7 @@ export type {
   GoRouteIsolatedState,
   GoRouteIsolatedStatus,
 } from '@/lib/backend/contracts/go-route-isolated';
+export { shouldApplyGoRouteResult } from '@/lib/backend/contracts/go-route-isolated';
 
 export async function startGoRouteIsolated(): Promise<GoRouteIsolatedStatus> {
   return getBackend().goRouteIsolated.start();

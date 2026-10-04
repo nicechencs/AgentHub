@@ -1,4 +1,4 @@
-//! Isolated Go Messages start/status/stop. Not the default local gateway.
+//! Isolated Go route start/status/stop. Not the default local gateway.
 
 use tauri::State;
 
@@ -10,25 +10,61 @@ use crate::state::AppState;
 pub async fn start_go_route_isolated(
     state: State<'_, AppState>,
 ) -> Result<GoRouteIsolatedStatus, GuiError> {
-    let host = state.go_route_isolated();
-    tauri::async_runtime::spawn_blocking(move || host.start())
-        .await
-        .map_err(|err| GuiError::adapter("go.route.isolated.join", err.to_string(), None))
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = state;
+        return Err(isolated_unavailable());
+    }
+    #[cfg(debug_assertions)]
+    {
+        let host = state.go_route_isolated();
+        tauri::async_runtime::spawn_blocking(move || host.start())
+            .await
+            .map_err(|err| GuiError::adapter("go.route.isolated.join", err.to_string(), None))
+    }
 }
 
 #[tauri::command]
 pub async fn stop_go_route_isolated(
     state: State<'_, AppState>,
 ) -> Result<GoRouteIsolatedStatus, GuiError> {
-    let host = state.go_route_isolated();
-    tauri::async_runtime::spawn_blocking(move || host.stop())
-        .await
-        .map_err(|err| GuiError::adapter("go.route.isolated.join", err.to_string(), None))
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = state;
+        return Err(isolated_unavailable());
+    }
+    #[cfg(debug_assertions)]
+    {
+        let host = state.go_route_isolated();
+        tauri::async_runtime::spawn_blocking(move || host.stop())
+            .await
+            .map_err(|err| GuiError::adapter("go.route.isolated.join", err.to_string(), None))
+    }
 }
 
 #[tauri::command]
 pub async fn get_go_route_isolated_status(
     state: State<'_, AppState>,
 ) -> Result<GoRouteIsolatedStatus, GuiError> {
-    Ok(state.go_route_isolated().status())
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = state;
+        return Err(isolated_unavailable());
+    }
+    #[cfg(debug_assertions)]
+    {
+        let host = state.go_route_isolated();
+        tauri::async_runtime::spawn_blocking(move || host.status())
+            .await
+            .map_err(|err| GuiError::adapter("go.route.isolated.join", err.to_string(), None))
+    }
+}
+
+#[cfg(not(debug_assertions))]
+fn isolated_unavailable() -> GuiError {
+    GuiError::adapter(
+        "go.route.isolated.unavailable",
+        "Go route is unavailable in this build",
+        None,
+    )
 }

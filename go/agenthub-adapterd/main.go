@@ -4,11 +4,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
 )
+
+const runtimeConfigRejectedMessage = "agenthub-adapterd: runtime config rejected"
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "mock-upstream" {
@@ -30,8 +33,9 @@ func main() {
 	home := fs.String("home", os.Getenv("AGENTHUB_HOME"), "absolute scratch AGENTHUB_HOME")
 	listenPort := fs.Int("listen-port", envInt("AGENTHUB_ADAPTERD_LISTEN_PORT", 0), "loopback Messages port (0 = ephemeral; not the product default)")
 	controlSocket := fs.String("control-socket", os.Getenv("AGENTHUB_ADAPTERD_CONTROL_SOCKET"), "absolute unix control socket (default $AGENTHUB_HOME/run/adapterd.sock)")
+	runtimeConfigStdin := fs.Bool("runtime-config-stdin", false, "read one route-config.v0-isolated JSON value from stdin")
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: agenthub-adapterd run --home DIR --listen-port PORT\n")
+		fmt.Fprintf(os.Stderr, "Usage: agenthub-adapterd run --home DIR --listen-port PORT [--runtime-config-stdin]\n")
 		fmt.Fprintf(os.Stderr, "       agenthub-adapterd mock-upstream --listen 127.0.0.1:PORT\n")
 		fs.PrintDefaults()
 	}
@@ -46,10 +50,26 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	var runtimeConfig *RuntimeConfig
+	if *runtimeConfigStdin {
+		var rejection string
+		runtimeConfig, rejection = loadRuntimeConfigForRun(os.Stdin)
+		if rejection != "" {
+			fmt.Fprintln(os.Stderr, rejection)
+			os.Exit(1)
+		}
+	}
+
 	rt, err := NewRuntime(*home, *listenPort, *controlSocket, cancel)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "agenthub-adapterd: %v\n", err)
 		os.Exit(1)
+	}
+	if runtimeConfig != nil {
+		if err := rt.SetRuntimeConfig(runtimeConfig); err != nil {
+			fmt.Fprintln(os.Stderr, "agenthub-adapterd: runtime config rejected")
+			os.Exit(1)
+		}
 	}
 	if err := rt.WritePID(); err != nil {
 		fmt.Fprintf(os.Stderr, "agenthub-adapterd: pid file: %v\n", err)
@@ -67,6 +87,14 @@ func main() {
 		os.Exit(1)
 	}
 	_ = rt.Shutdown(context.Background())
+}
+
+func loadRuntimeConfigForRun(r io.Reader) (*RuntimeConfig, string) {
+	config, err := LoadRuntimeConfig(r)
+	if err != nil {
+		return nil, runtimeConfigRejectedMessage
+	}
+	return config, ""
 }
 
 func envInt(name string, fallback int) int {

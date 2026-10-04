@@ -36,7 +36,7 @@ pub struct AppState {
     local_gateway_restarting: Arc<AtomicBool>,
     /// Folder from `--open-chat` / file-manager, consumed once by the GUI.
     pending_open_chat_cwd: Mutex<Option<String>>,
-    /// Isolated Go Messages supervisor. Scratch-only; not the default gateway.
+    /// Isolated Go route supervisor. Scratch-only; not the default gateway.
     go_route_isolated: Arc<GoRouteIsolatedHost>,
 }
 
@@ -70,6 +70,10 @@ impl AppState {
     /// Build state around an already-opened hub (tests / alternate entry points).
     pub(crate) fn from_hub(hub: Result<Arc<AgentHub>, String>) -> Self {
         let close_to_tray = load_close_to_tray(&hub);
+        #[cfg(debug_assertions)]
+        let go_route_hub = hub.as_ref().ok().map(Arc::clone);
+        #[cfg(not(debug_assertions))]
+        let go_route_hub = None;
         let bridge_host = BridgeRuntimeHost::new();
         // Install the durable gateway usage spool once, before any edge can
         // start. An unresolved dir keeps capture disabled (never fails startup).
@@ -92,7 +96,7 @@ impl AppState {
             close_to_tray: AtomicBool::new(close_to_tray),
             local_gateway_restarting: Arc::new(AtomicBool::new(false)),
             pending_open_chat_cwd: Mutex::new(None),
-            go_route_isolated: GoRouteIsolatedHost::new(),
+            go_route_isolated: GoRouteIsolatedHost::new(go_route_hub),
         }
     }
 
