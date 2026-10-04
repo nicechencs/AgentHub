@@ -13,6 +13,9 @@ import (
 func (rt *Runtime) messagesMux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/messages", rt.handleMessages)
+	mux.HandleFunc("/v1/responses", rt.handleResponses)
+	mux.HandleFunc("/v1/chat/completions", rt.handleChatCompletions)
+	mux.HandleFunc("/chat/completions", rt.handleChatCompletions)
 	mux.HandleFunc("/v1/models", rt.handleModels)
 	mux.HandleFunc("/models", rt.handleModels)
 	mux.HandleFunc("/health", rt.handleHealth)
@@ -20,13 +23,27 @@ func (rt *Runtime) messagesMux() http.Handler {
 }
 
 func (rt *Runtime) handleMessages(w http.ResponseWriter, r *http.Request) {
+	rt.forwardSameProtocol(w, r, "/v1/messages", "This endpoint only accepts POST /v1/messages. 本机该路径只接受 POST /v1/messages.")
+}
+
+func (rt *Runtime) handleResponses(w http.ResponseWriter, r *http.Request) {
+	rt.forwardSameProtocol(w, r, "/v1/responses", "This endpoint only accepts POST /v1/responses. 本机该路径只接受 POST /v1/responses。")
+}
+
+func (rt *Runtime) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	msg := "This endpoint only accepts POST " + path + ". 本机该路径只接受 POST " + path + "。"
+	rt.forwardSameProtocol(w, r, "/v1/chat/completions", msg)
+}
+
+func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, upstreamPath, methodMessage string) {
 	if r.RemoteAddr != "" && !isLoopbackRemote(r.RemoteAddr) {
 		http.Error(w, "loopback only", http.StatusForbidden)
 		return
 	}
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
-		writeMessagesError(w, http.StatusMethodNotAllowed, "method_not_allowed", "This endpoint only accepts POST /v1/messages. 本机该路径只接受 POST /v1/messages.", "invalid_request_error")
+		writeMessagesError(w, http.StatusMethodNotAllowed, "method_not_allowed", methodMessage, "invalid_request_error")
 		return
 	}
 	if !rt.ownerServing() {
@@ -90,7 +107,7 @@ func (rt *Runtime) handleMessages(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		resp, err := doMemberMessages(r.Context(), client, member, body, meta.Stream)
+		resp, err := doMemberMessages(r.Context(), client, member, upstreamPath, body, meta.Stream)
 		if err != nil {
 			if r.Context().Err() != nil {
 				return
@@ -203,8 +220,8 @@ func dispatchMemberStream(
 	return dispatchDone
 }
 
-func doMemberMessages(ctx context.Context, client *http.Client, member *PoolMember, body []byte, stream bool) (*http.Response, error) {
-	upstream := member.UpstreamBaseURL + "/v1/messages"
+func doMemberMessages(ctx context.Context, client *http.Client, member *PoolMember, upstreamPath string, body []byte, stream bool) (*http.Response, error) {
+	upstream := member.UpstreamBaseURL + upstreamPath
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstream, bytes.NewReader(body))
 	if err != nil {
 		return nil, err

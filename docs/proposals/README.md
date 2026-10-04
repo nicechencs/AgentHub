@@ -26,7 +26,7 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 |---|---|---|
 | [Chat 统一体验与跨环境开发](chat-unified-experience.md) | 部分落地 | 如何共用聊天交互、逐家接入 Agent，并在换电脑或换开发 Agent 后复现和验收？用户标准见 [Chat 体验标杆](../ui/chat-experience-bar.md)。 |
 | [可选本机命令护栏](chat-tool-guard.md) | 未落地 | 占位，暂不实现。 |
-| [Go 路由替换](adapter-sidecar.md) | 应用控制与隔离连接池已落地 | 如何按 Messages、连接池、其他协议、产品接入和默认网关切换逐条交付 Go 替代实现，同时避免维护两套同类能力？不派生插件平台、复杂租约或两阶段提交。 |
+| [Go 路由替换](adapter-sidecar.md) | 隔离 Messages、连接池、Responses 与 Chat Completions 已落地 | 如何按 Messages、连接池、其他协议、产品接入和默认网关切换逐条交付 Go 替代实现，同时避免维护两套同类能力？不派生插件平台、复杂租约或两阶段提交。 |
 | [tray-background-modes.md](tray-background-modes.md) | 部分落地 | 关窗后能否释放 WebView 内存，而不改变路由归属和退出语义？关窗策略已抽到 `src-tauri/src/window_policy.rs`。 |
 | [模块化与边界收紧](modularity.md) | 部分落地 | 如何按实际问题收紧模块接口，而不把所有功能一次变成插件平台？ |
 | [接入 Kiro（kiro-cli）](agent-kiro.md) | 大部分落地 | 剩 Skills / MCP。现行以 [STATUS](../STATUS.md) 为准。 |
