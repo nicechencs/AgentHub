@@ -10,12 +10,12 @@ use crate::state::AppState;
 pub async fn start_go_route_isolated(
     state: State<'_, AppState>,
 ) -> Result<GoRouteIsolatedStatus, GuiError> {
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = state;
         return Err(isolated_unavailable());
     }
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     {
         let host = state.go_route_isolated();
         tauri::async_runtime::spawn_blocking(move || host.start())
@@ -28,12 +28,12 @@ pub async fn start_go_route_isolated(
 pub async fn stop_go_route_isolated(
     state: State<'_, AppState>,
 ) -> Result<GoRouteIsolatedStatus, GuiError> {
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = state;
         return Err(isolated_unavailable());
     }
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     {
         let host = state.go_route_isolated();
         tauri::async_runtime::spawn_blocking(move || host.stop())
@@ -46,12 +46,12 @@ pub async fn stop_go_route_isolated(
 pub async fn get_go_route_isolated_status(
     state: State<'_, AppState>,
 ) -> Result<GoRouteIsolatedStatus, GuiError> {
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = state;
         return Err(isolated_unavailable());
     }
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     {
         let host = state.go_route_isolated();
         tauri::async_runtime::spawn_blocking(move || host.status())
@@ -60,7 +60,7 @@ pub async fn get_go_route_isolated_status(
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn isolated_unavailable() -> GuiError {
     GuiError::adapter(
         "go.route.isolated.unavailable",
