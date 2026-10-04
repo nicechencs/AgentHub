@@ -19,6 +19,7 @@ const PROVIDER_ID: &str = "external-policy-provider";
 const API_KEY: &str = "sk_probe_external_policy_do_not_use";
 const ACCESS_TOKEN: &str = "oauth_probe_external_policy_access_do_not_use";
 const REFRESH_TOKEN: &str = "oauth_probe_external_policy_refresh_do_not_use";
+const CHATGPT_ACCOUNT_ID: &str = "acct_probe_external_policy_do_not_use";
 
 type ProbeResult<T> = Result<T, ProbeError>;
 
@@ -243,6 +244,21 @@ fn seed_case(hub: &AgentHub, case_id: &str) -> ProbeResult<SeededSource> {
             RouteDownstreamSurface::Responses,
         ),
         "codex_official_login" => account(
+            hub,
+            AgentId::Codex,
+            json!({
+                "format": "auth_json",
+                "account_id": CHATGPT_ACCOUNT_ID,
+                "tokens": {
+                    "access_token": ACCESS_TOKEN,
+                    "refresh_token": REFRESH_TOKEN,
+                }
+            }),
+            json!({}),
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+        ),
+        "codex_official_login_missing_account_id" => account(
             hub,
             AgentId::Codex,
             json!({

@@ -132,15 +132,18 @@ func TestExternalTargetPolicyRejectsEveryCrossTargetBinding(t *testing.T) {
 	}
 }
 
-func TestOfficialLoginExternalTargetsStayClosed(t *testing.T) {
+func TestOfficialLoginExternalTargetsUseOnlyExactFinalURL(t *testing.T) {
 	for _, target := range []string{upstreamTargetCodexChatGPTSubscription, upstreamTargetGrokXAISubscription} {
 		policy := upstreamTargetPolicies[target]
 		base := "https://" + policy.Host + policy.BasePath
-		if err := validateRuntimeUpstreamURL(base, firstPolicySurface(policy), policy.Transport, policy.Auth, target, policy.CredentialClass); err == nil {
-			t.Errorf("official-login target %s was opened", target)
+		if err := validateRuntimeUpstreamURL(base, firstPolicySurface(policy), policy.Transport, policy.Auth, target, policy.CredentialClass); err != nil {
+			t.Errorf("official-login target %s rejected: %v", target, err)
 		}
-		if _, err := buildFinalUpstreamURL(base, policy.LocalEndpoint, policy.Transport, policy.Auth, target, policy.CredentialClass); err == nil {
-			t.Errorf("official-login target %s built an external request", target)
+		final, err := buildFinalUpstreamURL(base, policy.LocalEndpoint, policy.Transport, policy.Auth, target, policy.CredentialClass)
+		if err != nil {
+			t.Errorf("official-login target %s failed to build: %v", target, err)
+		} else if want := "https://" + policy.Host + policy.FinalPath; final != want {
+			t.Errorf("official-login target %s URL=%q want=%q", target, final, want)
 		}
 	}
 }

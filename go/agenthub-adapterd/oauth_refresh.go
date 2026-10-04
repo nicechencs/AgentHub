@@ -75,6 +75,7 @@ type oauthRefreshPending struct {
 }
 
 type oauthRefreshRetry struct {
+	edge   *RuntimeEdge
 	pool   *Pool
 	member *PoolMember
 }
@@ -246,7 +247,7 @@ func (rt *Runtime) requestOAuthRefresh(ctx context.Context, edgeID string, membe
 	}
 	if current.UpstreamKey != member.UpstreamKey {
 		rt.mu.Unlock()
-		return &oauthRefreshRetry{pool: currentPool, member: current}
+		return &oauthRefreshRetry{edge: rt.edgeByIDLocked(edgeID), pool: currentPool, member: current}
 	}
 	key := oauthRefreshSingleflightKey(rt.instanceEpoch, rt.configHash, edgeID, member)
 	pending := rt.oauthPendingByKey[key]
@@ -309,7 +310,7 @@ func (rt *Runtime) requestOAuthRefresh(ctx context.Context, edgeID string, membe
 	if refreshed == nil || refreshed.UpstreamKey == "" || refreshed.UpstreamKey == pending.oldKey {
 		return nil
 	}
-	return &oauthRefreshRetry{pool: pool, member: refreshed}
+	return &oauthRefreshRetry{edge: rt.edgeByIDLocked(pending.event.EdgeID), pool: pool, member: refreshed}
 }
 
 func oauthRefreshSingleflightKey(epoch, activeHash, edgeID string, member *PoolMember) string {
@@ -367,6 +368,15 @@ func (rt *Runtime) poolAndMemberByIdentityLocked(edgeID, memberID, sourceKind, s
 		}
 	}
 	return nil, nil
+}
+
+func (rt *Runtime) edgeByIDLocked(edgeID string) *RuntimeEdge {
+	for _, edge := range rt.edges {
+		if edge.ID == edgeID {
+			return edge
+		}
+	}
+	return nil
 }
 
 func (rt *Runtime) memberByRefreshEventLocked(event *OAuthRefreshEvent) *PoolMember {

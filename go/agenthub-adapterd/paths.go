@@ -177,14 +177,14 @@ var upstreamTargetPolicies = map[string]upstreamTargetPolicy{
 		Transport: transportCodexResponses, Auth: authBearer,
 		Surfaces: map[string]struct{}{surfaceResponses: {}},
 		Host:     "chatgpt.com", BasePath: "/backend-api/codex", FinalPath: "/backend-api/codex/responses", LocalEndpoint: "/v1/responses",
-		ExternalAllowed: false,
+		ExternalAllowed: true,
 	},
 	upstreamTargetGrokXAISubscription: {
 		Target: upstreamTargetGrokXAISubscription, CredentialClass: credentialClassOfficialLogin,
 		Transport: transportGrokResponses, Auth: authBearer,
 		Surfaces: map[string]struct{}{surfaceResponses: {}},
 		Host:     "cli-chat-proxy.grok.com", BasePath: "/v1", FinalPath: "/v1/responses", LocalEndpoint: "/v1/responses",
-		ExternalAllowed: false,
+		ExternalAllowed: true,
 	},
 }
 

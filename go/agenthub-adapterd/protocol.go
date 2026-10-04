@@ -170,6 +170,7 @@ type ProbeMember struct {
 	UpstreamTransport string   `json:"-"`
 	UpstreamTarget    string   `json:"-"`
 	CredentialClass   string   `json:"-"`
+	OfficialAccountID string   `json:"-"`
 	Priority          int64    `json:"priority"`
 	Position          int64    `json:"position"`
 	Models            []string `json:"models,omitempty"`

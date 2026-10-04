@@ -255,6 +255,8 @@ func TestRuntimeUpstreamURLPolicy(t *testing.T) {
 		{"https://api.openai.com/v1", surfaceResponses, transportOpenAIChatCompletions, authBearer, upstreamTargetOpenAIAPI, credentialClassAPIKey},
 		{"https://api.openai.com/v1", surfaceChatCompletions, transportOpenAIChatCompletions, authBearer, upstreamTargetOpenAIAPI, credentialClassAPIKey},
 		{"https://api.kimi.com/coding/v1", surfaceResponses, transportOpenAIChatCompletions, authBearer, upstreamTargetKimiCodeMembership, credentialClassAPIKey},
+		{"https://chatgpt.com/backend-api/codex", surfaceResponses, transportCodexResponses, authBearer, upstreamTargetCodexChatGPTSubscription, credentialClassOfficialLogin},
+		{"https://cli-chat-proxy.grok.com/v1", surfaceResponses, transportGrokResponses, authBearer, upstreamTargetGrokXAISubscription, credentialClassOfficialLogin},
 	} {
 		if err := validateRuntimeUpstreamURL(allowed.url, allowed.surface, allowed.transport, allowed.auth, allowed.target, allowed.credentialClass); err != nil {
 			t.Errorf("allowed URL %q rejected: %v", allowed.url, err)
@@ -286,8 +288,6 @@ func TestRuntimeUpstreamURLPolicy(t *testing.T) {
 		{"https://api.kimi.com/coding/v1", surfaceResponses, transportOpenAIChatCompletions, authBearer, upstreamTargetOpenAIAPI, credentialClassAPIKey},
 		{"https://api.openai.com/v1", surfaceResponses, transportOpenAIChatCompletions, authBearer, "", ""},
 		{"https://api.openai.com/v1", surfaceResponses, transportOpenAIChatCompletions, authBearer, upstreamTargetLoopback, credentialClassLocal},
-		{"https://chatgpt.com/backend-api/codex", surfaceResponses, transportCodexResponses, authBearer, upstreamTargetCodexChatGPTSubscription, credentialClassOfficialLogin},
-		{"https://cli-chat-proxy.grok.com/v1", surfaceResponses, transportGrokResponses, authBearer, upstreamTargetGrokXAISubscription, credentialClassOfficialLogin},
 	} {
 		if err := validateRuntimeUpstreamURL(denied.url, denied.surface, denied.transport, denied.auth, denied.target, denied.credentialClass); err == nil {
 			t.Errorf("denied URL %q transport %q was accepted", denied.url, denied.transport)

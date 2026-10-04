@@ -68,6 +68,7 @@ type RuntimeMemberConfig struct {
 	UpstreamTransport string   `json:"upstream_transport"`
 	UpstreamTarget    string   `json:"upstream_target,omitempty"`
 	CredentialClass   string   `json:"credential_class,omitempty"`
+	OfficialAccountID string   `json:"official_account_id,omitempty"`
 	Priority          int64    `json:"priority"`
 	Position          int64    `json:"position"`
 	Models            []string `json:"models"`
@@ -75,12 +76,14 @@ type RuntimeMemberConfig struct {
 }
 
 type RuntimeEdge struct {
-	ID          string
-	IngressKey  string
-	IngressKeys []string
-	Surface     string
-	Dialect     string
-	Pool        *Pool
+	ID           string
+	IngressKey   string
+	IngressKeys  []string
+	Surface      string
+	Dialect      string
+	Pool         *Pool
+	GrokReplay   *grokOfficialReasoningReplay
+	GrokAffinity *grokOfficialAffinity
 }
 
 func (edge *RuntimeEdge) acceptsIngressKey(candidate string) bool {
@@ -209,6 +212,7 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 			member.UpstreamTransport = strings.TrimSpace(member.UpstreamTransport)
 			member.UpstreamTarget = strings.TrimSpace(member.UpstreamTarget)
 			member.CredentialClass = strings.TrimSpace(member.CredentialClass)
+			member.OfficialAccountID = strings.TrimSpace(member.OfficialAccountID)
 			if member.ID == "" || member.UpstreamBaseURL == "" || member.UpstreamKey == "" {
 				return fmt.Errorf("runtime edge %s member %d is incomplete", edge.ID, memberIndex)
 			}
@@ -234,6 +238,10 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 			}
 			if !transportMatchesSurface(member.UpstreamTransport, edge.Surface) {
 				return fmt.Errorf("runtime edge %s member %s transport does not match surface", edge.ID, member.ID)
+			}
+			if (member.UpstreamTarget == upstreamTargetCodexChatGPTSubscription && edge.Dialect != "codex") ||
+				(member.UpstreamTarget == upstreamTargetGrokXAISubscription && edge.Dialect != "grok") {
+				return fmt.Errorf("runtime edge %s member %s official-login dialect does not match target", edge.ID, member.ID)
 			}
 			if !refreshMatchesMember(member) {
 				return fmt.Errorf("runtime edge %s member %s refresh kind does not match source or transport", edge.ID, member.ID)
@@ -262,16 +270,44 @@ func refreshMatchesMember(member *RuntimeMemberConfig) bool {
 	}
 	switch member.RefreshKind {
 	case refreshNone:
-		return true
+		return member.OfficialAccountID == "" &&
+			member.UpstreamTarget != upstreamTargetCodexChatGPTSubscription &&
+			member.UpstreamTarget != upstreamTargetGrokXAISubscription
 	case refreshCodexOAuth:
-		return member.SourceKind == "account" && member.SourceID != "" &&
-			member.UpstreamAuth == authBearer && member.UpstreamTransport == transportCodexResponses
+		if member.SourceKind != "account" || member.SourceID == "" ||
+			member.UpstreamAuth != authBearer || member.UpstreamTransport != transportCodexResponses {
+			return false
+		}
+		if member.UpstreamTarget == "" && member.CredentialClass == "" {
+			return member.OfficialAccountID == ""
+		}
+		return member.UpstreamTarget == upstreamTargetCodexChatGPTSubscription &&
+			member.CredentialClass == credentialClassOfficialLogin && validOfficialAccountID(member.OfficialAccountID)
 	case refreshGrokOAuth:
-		return member.SourceKind == "account" && member.SourceID != "" &&
-			member.UpstreamAuth == authBearer && member.UpstreamTransport == transportGrokResponses
+		if member.SourceKind != "account" || member.SourceID == "" ||
+			member.UpstreamAuth != authBearer || member.UpstreamTransport != transportGrokResponses {
+			return false
+		}
+		if member.UpstreamTarget == "" && member.CredentialClass == "" {
+			return member.OfficialAccountID == ""
+		}
+		return member.UpstreamTarget == upstreamTargetGrokXAISubscription &&
+			member.CredentialClass == credentialClassOfficialLogin && member.OfficialAccountID == ""
 	default:
 		return false
 	}
+}
+
+func validOfficialAccountID(value string) bool {
+	if value == "" || len(value) > 1024 {
+		return false
+	}
+	for index := 0; index < len(value); index++ {
+		if value[index] < 0x21 || value[index] > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 func transportMatchesSurface(transport, surface string) bool {
@@ -319,6 +355,7 @@ func runtimeEdges(config *RuntimeConfig) ([]*RuntimeEdge, error) {
 				UpstreamTransport: member.UpstreamTransport,
 				UpstreamTarget:    member.UpstreamTarget,
 				CredentialClass:   member.CredentialClass,
+				OfficialAccountID: member.OfficialAccountID,
 				Priority:          member.Priority,
 				Position:          member.Position,
 				Models:            append([]string(nil), member.Models...),
@@ -336,12 +373,14 @@ func runtimeEdges(config *RuntimeConfig) ([]*RuntimeEdge, error) {
 			return nil, fmt.Errorf("runtime edge %s pool is invalid", edge.ID)
 		}
 		edges = append(edges, &RuntimeEdge{
-			ID:          edge.ID,
-			IngressKey:  edge.IngressKey,
-			IngressKeys: append([]string(nil), edge.IngressKeys...),
-			Surface:     edge.Surface,
-			Dialect:     edge.Dialect,
-			Pool:        pool,
+			ID:           edge.ID,
+			IngressKey:   edge.IngressKey,
+			IngressKeys:  append([]string(nil), edge.IngressKeys...),
+			Surface:      edge.Surface,
+			Dialect:      edge.Dialect,
+			Pool:         pool,
+			GrokReplay:   newGrokOfficialReasoningReplay(),
+			GrokAffinity: newGrokOfficialAffinity(),
 		})
 	}
 	return edges, nil

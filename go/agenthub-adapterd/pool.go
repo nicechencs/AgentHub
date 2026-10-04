@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -33,6 +34,7 @@ type PoolMember struct {
 	UpstreamTransport string
 	UpstreamTarget    string
 	CredentialClass   string
+	OfficialAccountID string
 	Priority          int64
 	Position          int64
 	Models            []string
@@ -174,6 +176,7 @@ func NewPoolFromFixture(fixture ProbeFixture) (*Pool, error) {
 			UpstreamTransport: transport,
 			UpstreamTarget:    strings.TrimSpace(item.UpstreamTarget),
 			CredentialClass:   strings.TrimSpace(item.CredentialClass),
+			OfficialAccountID: strings.TrimSpace(item.OfficialAccountID),
 			Priority:          item.Priority,
 			Position:          item.Position,
 			Models:            models,
@@ -248,10 +251,13 @@ func (p *Pool) Secrets() []string {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	out := make([]string, 0, len(p.members))
+	out := make([]string, 0, len(p.members)*2)
 	for _, m := range p.members {
 		if m.UpstreamKey != "" {
 			out = append(out, m.UpstreamKey)
+		}
+		if m.OfficialAccountID != "" {
+			out = append(out, m.OfficialAccountID)
 		}
 	}
 	return out
@@ -363,6 +369,21 @@ func (p *Pool) MemberByIdentity(memberID, sourceKind, sourceID, refreshKind stri
 	defer p.mu.Unlock()
 	for _, member := range p.members {
 		if member.ID == memberID && member.SourceKind == sourceKind && member.SourceID == sourceID && member.RefreshKind == refreshKind {
+			out := member.clone()
+			return &out
+		}
+	}
+	return nil
+}
+
+func (p *Pool) MemberByIDForModel(memberID, model string, now time.Time) *PoolMember {
+	if p == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, member := range p.members {
+		if member.ID == memberID && member.serves(model, now) {
 			out := member.clone()
 			return &out
 		}
@@ -501,6 +522,25 @@ func classifyHTTP(status int) string {
 	default:
 		return classRequest
 	}
+}
+
+func classifyHTTPBody(status int, body []byte) string {
+	if status == http.StatusBadRequest || status == http.StatusUnprocessableEntity {
+		return classRequest
+	}
+	lower := strings.ToLower(string(body))
+	if strings.Contains(lower, "previous_response_id") {
+		return classRequest
+	}
+	if status == http.StatusForbidden {
+		for _, marker := range []string{"model_not_found", "unknown model", "model not found", "not entitled", "does not have access to model"} {
+			if strings.Contains(lower, marker) {
+				return classEntitlement
+			}
+		}
+		return classRequest
+	}
+	return classifyHTTP(status)
 }
 
 func parseRetryAfter(raw string) time.Duration {

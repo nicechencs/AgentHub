@@ -275,6 +275,30 @@ impl AdapterSecretResolver {
         crate::bridge::session::resolve_codex_subscription_auth(&account.credentials)
     }
 
+    /// Resolve the ChatGPT account id from the saved Codex OAuth account.
+    ///
+    /// This identity is request-header metadata for the official Codex
+    /// upstream. It must come from the stored account (including its token
+    /// claims), never from a route URL or an incoming local request.
+    pub(crate) fn resolve_codex_subscription_account_id(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<String> {
+        if source_kind != AdapterSourceKind::Account {
+            return Err(invalid_reference());
+        }
+        let account = self
+            .accounts
+            .get_by_id(source_id.trim())?
+            .ok_or_else(invalid_reference)?;
+        if account.agent_id != AgentId::Codex || account.kind != crate::models::AccountKind::Oauth {
+            return Err(invalid_reference());
+        }
+        crate::services::account_quota::extract_chatgpt_account_id(&account)
+            .ok_or_else(invalid_reference)
+    }
+
     /// Resolve only the current Grok OAuth access token for the Claude bridge.
     /// Refresh is intentionally not returned or persisted; the source account
     /// must be synchronized again when its access token expires.

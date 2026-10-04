@@ -71,6 +71,8 @@ struct GoRouteIsolatedMember {
     upstream_transport: &'static str,
     upstream_target: &'static str,
     credential_class: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    official_account_id: Option<String>,
     priority: i64,
     position: i64,
     models: Vec<String>,
@@ -236,13 +238,21 @@ fn go_edge_from_spec(
         .find_map(|member| member.models.first())
         .ok_or_else(incompatible_go_config_error)?
         .clone();
+    let downstream_dialect = pool.downstream_dialect.as_str();
+    if members.iter().any(|member| match member.upstream_target {
+        UPSTREAM_TARGET_CODEX_CHATGPT_SUBSCRIPTION => downstream_dialect != "codex",
+        UPSTREAM_TARGET_GROK_XAI_SUBSCRIPTION => downstream_dialect != "grok",
+        _ => false,
+    }) {
+        return Err(incompatible_go_config_error());
+    }
 
     Ok(GoRouteIsolatedEdge {
         id: pool.id.clone(),
         ingress_key: primary,
         ingress_keys,
         surface: pool.downstream_surface.as_str(),
-        dialect: pool.downstream_dialect.as_str(),
+        dialect: downstream_dialect,
         schedule_policy: pool.schedule_policy.as_str(),
         fixture_model,
         members,
@@ -341,6 +351,7 @@ fn flat_member(
     models: Vec<String>,
     trusted_source: TrustedUpstreamSource,
 ) -> Result<GoRouteIsolatedMember> {
+    let official_account_id = official_account_id(service, member, trusted_source)?;
     if !is_allowed_upstream(
         upstream_base_url,
         surface,
@@ -368,6 +379,17 @@ fn flat_member(
         return Err(incompatible_go_config_error());
     }
     let refresh_kind = refresh_kind(service, member, upstream_transport);
+    match trusted_source.target {
+        UPSTREAM_TARGET_CODEX_CHATGPT_SUBSCRIPTION
+            if refresh_kind != REFRESH_CODEX_OAUTH || official_account_id.is_none() =>
+        {
+            return Err(incompatible_go_config_error());
+        }
+        UPSTREAM_TARGET_GROK_XAI_SUBSCRIPTION if refresh_kind != REFRESH_GROK_OAUTH => {
+            return Err(incompatible_go_config_error());
+        }
+        _ => {}
+    }
     Ok(GoRouteIsolatedMember {
         id,
         source_kind: source_kind.to_owned(),
@@ -379,11 +401,31 @@ fn flat_member(
         upstream_transport,
         upstream_target: trusted_source.target,
         credential_class: trusted_source.credential_class,
+        official_account_id,
         priority: member.priority,
         position: member.position,
         models,
         quota_remaining_pct: member.quota_remaining_pct.filter(|value| value.is_finite()),
     })
+}
+
+fn official_account_id(
+    service: &AdapterBridgeService,
+    member: &BridgeMemberSpec,
+    trusted_source: TrustedUpstreamSource,
+) -> Result<Option<String>> {
+    if trusted_source.target != UPSTREAM_TARGET_CODEX_CHATGPT_SUBSCRIPTION
+        || trusted_source.credential_class != CREDENTIAL_CLASS_OFFICIAL_LOGIN
+    {
+        return Ok(None);
+    }
+    let source_kind = AdapterSourceKind::parse(member.source_kind.trim())
+        .ok_or_else(incompatible_go_config_error)?;
+    service
+        .secrets
+        .resolve_codex_subscription_account_id(source_kind, member.source_id.trim())
+        .map(Some)
+        .map_err(|_| incompatible_go_config_error())
 }
 
 fn upstream_source(
@@ -542,9 +584,15 @@ fn is_allowed_upstream(
         UPSTREAM_TARGET_KIMI_CODE_MEMBERSHIP => {
             is_exact_https_base(raw, "api.kimi.com", "/coding/v1")
         }
-        // The URL policy stays closed until the Go runner implements the
-        // vendor-specific request contract for these official-login routes.
-        UPSTREAM_TARGET_CODEX_CHATGPT_SUBSCRIPTION | UPSTREAM_TARGET_GROK_XAI_SUBSCRIPTION => false,
+        UPSTREAM_TARGET_CODEX_CHATGPT_SUBSCRIPTION => {
+            is_exact_https_base(raw, "chatgpt.com", "/backend-api/codex")
+                || raw.trim().strip_suffix('/').is_some_and(|without_slash| {
+                    is_exact_https_base(without_slash, "chatgpt.com", "/backend-api/codex")
+                })
+        }
+        UPSTREAM_TARGET_GROK_XAI_SUBSCRIPTION => {
+            is_exact_https_base(raw, "cli-chat-proxy.grok.com", "/v1")
+        }
         _ => false,
     }
 }

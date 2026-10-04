@@ -284,6 +284,9 @@ func TestOwnerReacquireUsesMonotonicTermAndCancelsPendingRefresh(t *testing.T) {
 func TestOAuthRefreshControlBindsOwnerIdentityHashAndNonce(t *testing.T) {
 	rt, epoch, term, _ := ownedStartedOAuthRuntime(t, oauthRuntimeConfig("http://127.0.0.1:18080", oauthTestOldKey, refreshCodexOAuth), "hash-control-old")
 	member := firstOAuthMember(t, rt)
+	rt.mu.Lock()
+	oldEdge := rt.edges[0]
+	rt.mu.Unlock()
 	result := make(chan *oauthRefreshRetry, 1)
 	go func() { result <- rt.requestOAuthRefresh(context.Background(), "oauth-edge", member) }()
 
@@ -342,6 +345,9 @@ func TestOAuthRefreshControlBindsOwnerIdentityHashAndNonce(t *testing.T) {
 	case retry := <-result:
 		if retry == nil || retry.member.UpstreamKey != oauthTestNewKey {
 			t.Fatal("completion did not resolve the changed current member")
+		}
+		if retry.edge == nil || retry.edge == oldEdge || retry.edge.Pool != retry.pool {
+			t.Fatal("completion did not return the refreshed edge generation")
 		}
 	case <-time.After(time.Second):
 		t.Fatal("refresh waiter did not finish")

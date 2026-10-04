@@ -86,7 +86,7 @@ func TestPublicUpstreamAddressRejectsSpecialNetworks(t *testing.T) {
 	}
 }
 
-func TestValidatedUpstreamDialRejectsClosedAndUnknownHostsBeforeResolve(t *testing.T) {
+func TestValidatedUpstreamDialResolvesOnlyOpenedExactHosts(t *testing.T) {
 	var lookups atomic.Int32
 	resolver := resolverFunc(func(context.Context, string, string) ([]netip.Addr, error) {
 		lookups.Add(1)
@@ -107,8 +107,8 @@ func TestValidatedUpstreamDialRejectsClosedAndUnknownHostsBeforeResolve(t *testi
 			t.Errorf("address %q was accepted", address)
 		}
 	}
-	if lookups.Load() != 0 {
-		t.Fatalf("closed hosts reached resolver %d times", lookups.Load())
+	if lookups.Load() != 2 {
+		t.Fatalf("resolver lookups=%d, want the two opened official-login hosts", lookups.Load())
 	}
 }
 

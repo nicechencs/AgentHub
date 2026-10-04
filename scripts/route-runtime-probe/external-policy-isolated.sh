@@ -39,9 +39,10 @@ ALLOWED_CASES=(
   openai_chat_api_key
   kimi_api_key
   kimi_chat_api_key
+  codex_official_login
 )
 DENIED_CASES=(
-  codex_official_login
+  codex_official_login_missing_account_id
   grok_official_login
   kimi_oauth
   custom_relay
@@ -56,6 +57,7 @@ SYNTHETIC_SECRETS=(
   sk_probe_external_policy_do_not_use
   oauth_probe_external_policy_access_do_not_use
   oauth_probe_external_policy_refresh_do_not_use
+  acct_probe_external_policy_do_not_use
 )
 ACTIVE_PIDS=()
 
@@ -86,6 +88,8 @@ import sys
 root = pathlib.Path(sys.argv[1])
 paths = [
     root / "crates/agenthub-core/src/services/adapter_bridge_service/go_route_config.rs",
+    root / "crates/agenthub-core/src/services/adapter_secret_resolver/validate.rs",
+    root / "crates/agenthub-core/src/services/account_quota.rs",
     root / "crates/agenthub-core/examples/go_route_external_config_probe.rs",
     root / "go/agenthub-adapterd/go.mod",
     root / "scripts/route-runtime-probe/external-policy-isolated.sh",
@@ -141,6 +145,10 @@ assert len(config["edges"]) == 1, config
 edge = config["edges"][0]
 assert len(edge["members"]) == 1, edge
 member = edge["members"][0]
+if sys.argv[1] == "codex_official_login":
+    assert member.get("official_account_id") == "acct_probe_external_policy_do_not_use", member
+else:
+    assert "official_account_id" not in member, member
 safe = [
     sys.argv[1], member["upstream_target"], member["credential_class"],
     member["upstream_transport"], edge["surface"], member["upstream_base_url"],
@@ -167,6 +175,8 @@ run_allowed_case() {
     openai_chat_api_key) short_id=c ;;
     kimi_api_key) short_id=k ;;
     kimi_chat_api_key) short_id=m ;;
+    codex_official_login) short_id=x ;;
+    grok_official_login) short_id=g ;;
     *) echo "FAIL: unknown allowed case ${case_id}" >&2; return 1 ;;
   esac
   # Unix control sockets have a small path limit, so active process paths stay
@@ -354,12 +364,13 @@ expected = {
     "openai_chat_api_key": ["openai_api", "api_key", "openai_chat_completions", "chat_completions", "https://api.openai.com/v1"],
     "kimi_api_key": ["kimi_code_membership", "api_key", "openai_chat_completions", "responses", "https://api.kimi.com/coding/v1"],
     "kimi_chat_api_key": ["kimi_code_membership", "api_key", "openai_chat_completions", "chat_completions", "https://api.kimi.com/coding/v1"],
+    "codex_official_login": ["codex_chatgpt_subscription", "official_login", "codex_responses", "responses", "https://chatgpt.com/backend-api/codex"],
 }
 actual = {row[0]: row[1:] for row in rows}
 assert actual == expected, (actual, expected)
 denied = pathlib.Path(denied_path).read_text().splitlines()
 expected_denied = [
-    "codex_official_login", "grok_official_login", "kimi_oauth",
+    "codex_official_login_missing_account_id", "grok_official_login", "kimi_oauth",
     "custom_relay", "moonshot_api_key", "xai_api_key",
     "anthropic_evil_host", "anthropic_wrong_port", "openai_evil_host", "openai_query",
 ]
