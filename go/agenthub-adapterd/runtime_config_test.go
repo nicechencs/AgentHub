@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,6 +23,12 @@ const (
 	configUpstreamResponse = "upstream_responses_secret"
 	configUpstreamChat     = "upstream_chat_secret"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return fn(request)
+}
 
 func configuredRuntime(t *testing.T, config *RuntimeConfig) (*Runtime, string, int64, int) {
 	t.Helper()
@@ -82,24 +89,24 @@ func threeEdgeConfig(upstream string) *RuntimeConfig {
 			{
 				ID: "messages-edge", IngressKey: configIngressMessages, Surface: surfaceMessages,
 				Dialect: "claude", SchedulePolicy: policyPriorityFailover, FixtureModel: "claude-config-model",
-				Members: []RuntimeMemberConfig{{ID: "messages-member", UpstreamBaseURL: upstream, UpstreamKey: configUpstreamMessages, UpstreamAuth: authAPIKey, Models: []string{"claude-config-model"}}},
+				Members: []RuntimeMemberConfig{{ID: "messages-member", UpstreamBaseURL: upstream, UpstreamKey: configUpstreamMessages, UpstreamAuth: authAPIKey, UpstreamTransport: transportAnthropicMessages, Models: []string{"claude-config-model"}}},
 			},
 			{
 				ID: "responses-edge", IngressKey: configIngressResponses, Surface: surfaceResponses,
 				Dialect: "codex", SchedulePolicy: policyPriorityFailover, FixtureModel: "gpt-config-response",
-				Members: []RuntimeMemberConfig{{ID: "responses-member", UpstreamBaseURL: upstream, UpstreamKey: configUpstreamResponse, UpstreamAuth: authBearer, Models: []string{"gpt-config-response"}}},
+				Members: []RuntimeMemberConfig{{ID: "responses-member", UpstreamBaseURL: upstream, UpstreamKey: configUpstreamResponse, UpstreamAuth: authBearer, UpstreamTransport: transportCodexResponses, Models: []string{"gpt-config-response"}}},
 			},
 			{
 				ID: "chat-edge", IngressKey: configIngressChat, Surface: surfaceChatCompletions,
 				Dialect: "generic", SchedulePolicy: policyRoundRobin, FixtureModel: "gpt-config-chat",
-				Members: []RuntimeMemberConfig{{ID: "chat-member", UpstreamBaseURL: upstream, UpstreamKey: configUpstreamChat, UpstreamAuth: authBearer, Models: []string{"gpt-config-chat"}}},
+				Members: []RuntimeMemberConfig{{ID: "chat-member", UpstreamBaseURL: upstream, UpstreamKey: configUpstreamChat, UpstreamAuth: authBearer, UpstreamTransport: transportOpenAIChatCompletions, Models: []string{"gpt-config-chat"}}},
 			},
 		},
 	}
 }
 
 func TestLoadRuntimeConfigValidatesSchemaWithoutEchoingSecrets(t *testing.T) {
-	raw := `{"version":"route-config.v0-isolated","edges":[{"id":"edge","ingress_key":"ingress-secret","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"upstream-secret","upstream_auth":"x_api_key","priority":0,"position":0,"models":["model"]}]}]}`
+	raw := `{"version":"route-config.v0-isolated","edges":[{"id":"edge","ingress_key":"ingress-secret","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"upstream-secret","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","priority":0,"position":0,"models":["model"]}]}]}`
 	config, err := LoadRuntimeConfig(strings.NewReader(raw))
 	if err != nil {
 		t.Fatal(err)
@@ -113,6 +120,7 @@ func TestLoadRuntimeConfigValidatesSchemaWithoutEchoingSecrets(t *testing.T) {
 		strings.Replace(raw, `"surface":"messages"`, `"surface":"unknown"`, 1),
 		strings.Replace(raw, `"upstream_auth":"x_api_key"`, `"upstream_auth":"oauth"`, 1),
 		strings.Replace(raw, `"upstream_auth":"x_api_key"`, `"upstream_auth":"bearer"`, 1),
+		strings.Replace(raw, `"upstream_transport":"anthropic_messages"`, `"upstream_transport":"codex_responses"`, 1),
 		strings.Replace(raw, `http://127.0.0.1:18080`, `https://example.com`, 1),
 	} {
 		if _, err := LoadRuntimeConfig(strings.NewReader(invalid)); err == nil {
@@ -137,12 +145,160 @@ func TestRuntimeConfigRejectionMessageDoesNotEchoInput(t *testing.T) {
 }
 
 func TestRuntimeConfigDialectMustMatchSurface(t *testing.T) {
-	raw := `{"version":"route-config.v0-isolated","edges":[{"id":"edge","ingress_key":"secret","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"upstream","upstream_auth":"x_api_key","priority":0,"position":0,"models":["model"]}]}]}`
+	raw := `{"version":"route-config.v0-isolated","edges":[{"id":"edge","ingress_key":"secret","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"upstream","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","priority":0,"position":0,"models":["model"]}]}]}`
 	for _, mismatch := range []string{`"dialect":"codex"`, `"dialect":"generic"`, `"dialect":"anthropic"`} {
 		invalid := strings.Replace(raw, `"dialect":"claude"`, mismatch, 1)
 		if _, err := LoadRuntimeConfig(strings.NewReader(invalid)); err == nil {
 			t.Fatalf("accepted messages config with %s", mismatch)
 		}
+	}
+}
+
+func TestRuntimeUpstreamURLPolicy(t *testing.T) {
+	for _, allowed := range []struct {
+		url, transport string
+	}{
+		{"http://127.0.0.1:18080/v1", transportCodexResponses},
+		{"https://api.anthropic.com", transportAnthropicMessages},
+		{"https://API.ANTHROPIC.COM/", transportAnthropicMessages},
+		{"https://api.anthropic.com:443/v1", transportAnthropicMessages},
+	} {
+		if err := validateRuntimeUpstreamURL(allowed.url, allowed.transport); err != nil {
+			t.Errorf("allowed URL %q rejected: %v", allowed.url, err)
+		}
+	}
+	for _, denied := range []struct {
+		url, transport string
+	}{
+		{"http://api.anthropic.com/v1", transportAnthropicMessages},
+		{"http://user@127.0.0.1:18080/custom", transportCodexResponses},
+		{"http://127.0.0.1:18080/custom?key=value", transportCodexResponses},
+		{"http://127.0.0.1:18080/custom?", transportCodexResponses},
+		{"http://127.0.0.1:18080/custom#fragment", transportCodexResponses},
+		{"http://127.0.0.1:18080/custom#", transportCodexResponses},
+		{"https://api.anthropic.com.evil.example/v1", transportAnthropicMessages},
+		{"https://user@api.anthropic.com/v1", transportAnthropicMessages},
+		{"https://@api.anthropic.com/v1", transportAnthropicMessages},
+		{"https://api.anthropic.com/v1?key=value", transportAnthropicMessages},
+		{"https://api.anthropic.com/v1#fragment", transportAnthropicMessages},
+		{"https://api.anthropic.com:8443/v1", transportAnthropicMessages},
+		{"https://api.anthropic.com:/v1", transportAnthropicMessages},
+		{"https://api.anthropic.com/v1/", transportAnthropicMessages},
+		{"https://api.anthropic.com/%76%31", transportAnthropicMessages},
+		{"https://api.anthropic.com/v1", transportCodexResponses},
+		{"https://chatgpt.com/backend-api/codex", transportCodexResponses},
+		{"https://cli-chat-proxy.grok.com/v1", transportGrokResponses},
+	} {
+		if err := validateRuntimeUpstreamURL(denied.url, denied.transport); err == nil {
+			t.Errorf("denied URL %q transport %q was accepted", denied.url, denied.transport)
+		}
+	}
+}
+
+func TestOfficialAnthropicConfigAndHeaders(t *testing.T) {
+	raw := `{"version":"route-config.v0-isolated","edges":[{"id":"edge","ingress_key":"ingress","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"claude-model","members":[{"id":"member","upstream_base_url":"https://api.anthropic.com/v1","upstream_key":"synthetic-anthropic-key","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","priority":0,"position":0,"models":["claude-model"]}]}]}`
+	config, err := LoadRuntimeConfig(strings.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := config.Edges[0].Members[0]
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.String() != "https://api.anthropic.com/v1/messages" {
+			t.Errorf("upstream URL=%q", request.URL.String())
+		}
+		if request.Header.Get("X-API-Key") != member.UpstreamKey || request.Header.Get("Anthropic-Version") != "2023-06-01" {
+			t.Errorf("Anthropic headers=%#v", request.Header)
+		}
+		if request.Header.Get("Authorization") != "" {
+			t.Errorf("unexpected Authorization header")
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+			Request:    request,
+		}, nil
+	})}
+	response, err := doMemberMessages(context.Background(), client, &PoolMember{
+		UpstreamBaseURL:   member.UpstreamBaseURL,
+		UpstreamKey:       member.UpstreamKey,
+		UpstreamAuth:      member.UpstreamAuth,
+		UpstreamTransport: member.UpstreamTransport,
+	}, "/v1/messages", []byte(`{"model":"claude-model"}`), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+}
+
+func TestLegacyProbeAPIKeyStillAddsAnthropicVersion(t *testing.T) {
+	pool, err := NewPoolFromFixture(ProbeFixture{
+		FixtureModel: "legacy-model",
+		Members: []ProbeMember{{
+			ID:              "legacy-member",
+			UpstreamBaseURL: "http://127.0.0.1:18080/v1",
+			UpstreamKey:     "legacy-synthetic-key",
+			UpstreamAuth:    authAPIKey,
+			Models:          []string{"legacy-model"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := pool.Pick("legacy-model", nil, time.Now())
+	if member == nil || member.UpstreamTransport != transportAnthropicMessages {
+		t.Fatalf("legacy member transport was not restored: %+v", member)
+	}
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.Header.Get("X-API-Key") != "legacy-synthetic-key" || request.Header.Get("Anthropic-Version") != "2023-06-01" {
+			t.Errorf("legacy Anthropic headers=%#v", request.Header)
+		}
+		if request.Header.Get("Authorization") != "" {
+			t.Errorf("legacy request unexpectedly sent Authorization")
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+			Request:    request,
+		}, nil
+	})}
+	response, err := doMemberMessages(context.Background(), client, member, "/v1/messages", []byte(`{"model":"legacy-model"}`), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+}
+
+func TestUpstreamClientDoesNotFollowRedirects(t *testing.T) {
+	targetHit := make(chan struct{}, 1)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetHit <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(target.Close)
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Redirect(w, &http.Request{}, target.URL, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirect.Close)
+
+	response, err := doMemberMessages(context.Background(), newUpstreamHTTPClient(), &PoolMember{
+		UpstreamBaseURL:   redirect.URL,
+		UpstreamKey:       "synthetic-key",
+		UpstreamAuth:      authAPIKey,
+		UpstreamTransport: transportAnthropicMessages,
+	}, "/v1/messages", []byte(`{"model":"claude-model"}`), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusTemporaryRedirect {
+		t.Fatalf("redirect status=%d", response.StatusCode)
+	}
+	select {
+	case <-targetHit:
+		t.Fatal("upstream client followed redirect and risked resending the API key")
+	default:
 	}
 }
 

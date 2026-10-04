@@ -154,6 +154,7 @@ type ProbeMember struct {
 	UpstreamBaseURL   string   `json:"upstream_base_url"`
 	UpstreamKey       string   `json:"upstream_key,omitempty"`
 	UpstreamAuth      string   `json:"upstream_auth,omitempty"`
+	UpstreamTransport string   `json:"-"`
 	Priority          int64    `json:"priority"`
 	Position          int64    `json:"position"`
 	Models            []string `json:"models,omitempty"`

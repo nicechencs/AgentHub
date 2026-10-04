@@ -123,17 +123,40 @@ func loopbackURL(raw string) error {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return fmt.Errorf("upstream URL must be http(s)")
 	}
-	host := u.Hostname()
-	ip := net.ParseIP(host)
-	if ip == nil {
-		ips, err := net.LookupIP(host)
-		if err != nil || len(ips) == 0 {
-			return fmt.Errorf("upstream host is not loopback")
-		}
-		ip = ips[0]
+	if u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(raw, "#") {
+		return fmt.Errorf("loopback upstream URL contains disallowed components")
 	}
-	if !ip.IsLoopback() {
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return nil
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
 		return fmt.Errorf("upstream host must be loopback")
+	}
+	return nil
+}
+
+func validateRuntimeUpstreamURL(raw, transport string) error {
+	if err := loopbackURL(raw); err == nil {
+		return nil
+	}
+	if transport != transportAnthropicMessages {
+		return fmt.Errorf("external upstream transport is not allowed")
+	}
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("upstream URL: %w", err)
+	}
+	if u.Scheme != "https" ||
+		(!strings.EqualFold(u.Host, "api.anthropic.com") && !strings.EqualFold(u.Host, "api.anthropic.com:443")) {
+		return fmt.Errorf("external upstream must be official Anthropic HTTPS")
+	}
+	if u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(raw, "#") {
+		return fmt.Errorf("external upstream URL contains disallowed components")
+	}
+	if u.EscapedPath() != u.Path || (u.Path != "" && u.Path != "/" && u.Path != "/v1") {
+		return fmt.Errorf("external upstream path is not allowed")
 	}
 	return nil
 }

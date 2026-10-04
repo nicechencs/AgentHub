@@ -27,6 +27,7 @@ type PoolMember struct {
 	UpstreamBaseURL   string
 	UpstreamKey       string
 	UpstreamAuth      string
+	UpstreamTransport string
 	Priority          int64
 	Position          int64
 	Models            []string
@@ -121,7 +122,11 @@ func NewPoolFromFixture(fixture ProbeFixture) (*Pool, error) {
 		if base == "" {
 			return nil, errIncompletePool
 		}
-		if err := loopbackURL(base); err != nil {
+		if item.UpstreamTransport == "" {
+			if err := loopbackURL(base); err != nil {
+				return nil, err
+			}
+		} else if err := validateRuntimeUpstreamURL(base, item.UpstreamTransport); err != nil {
 			return nil, err
 		}
 		models := append([]string(nil), item.Models...)
@@ -133,11 +138,19 @@ func NewPoolFromFixture(fixture ProbeFixture) (*Pool, error) {
 			v := *item.QuotaRemainingPct
 			quota = &v
 		}
+		auth := normalizedUpstreamAuth(item.UpstreamAuth)
+		transport := item.UpstreamTransport
+		if transport == "" && auth == authAPIKey {
+			// Legacy probe.json had no transport field. Its x-api-key members
+			// are Messages fixtures and still require the Anthropic version header.
+			transport = transportAnthropicMessages
+		}
 		members = append(members, &PoolMember{
 			ID:                id,
 			UpstreamBaseURL:   strings.TrimRight(base, "/"),
 			UpstreamKey:       item.UpstreamKey,
-			UpstreamAuth:      normalizedUpstreamAuth(item.UpstreamAuth),
+			UpstreamAuth:      auth,
+			UpstreamTransport: transport,
 			Priority:          item.Priority,
 			Position:          item.Position,
 			Models:            models,

@@ -13,6 +13,10 @@ use crate::models::{RouteDownstreamSurface, RoutePool};
 
 const CONFIG_VERSION: &str = "route-config.v0-isolated";
 const PRODUCT_DEFAULT_PORT: u16 = 43121;
+const TRANSPORT_ANTHROPIC_MESSAGES: &str = "anthropic_messages";
+const TRANSPORT_CODEX_RESPONSES: &str = "codex_responses";
+const TRANSPORT_GROK_RESPONSES: &str = "grok_responses";
+const TRANSPORT_OPENAI_CHAT_COMPLETIONS: &str = "openai_chat_completions";
 
 #[derive(Serialize)]
 struct GoRouteIsolatedConfig {
@@ -47,6 +51,7 @@ struct GoRouteIsolatedMember {
     upstream_base_url: String,
     upstream_key: String,
     upstream_auth: &'static str,
+    upstream_transport: &'static str,
     priority: i64,
     position: i64,
     models: Vec<String>,
@@ -102,9 +107,14 @@ fn go_edge_from_spec(pool: &RoutePool, spec: &BridgeStartSpec) -> Result<GoRoute
             .map(|member| indexed_member(pool.downstream_surface, member, &snapshots))
             .collect::<Result<Vec<_>>>()?
     } else {
-        let upstream_auth = compatible_auth(pool.downstream_surface, spec.upstream.protocol)
-            .ok_or_else(incompatible_go_config_error)?;
-        if !is_loopback_upstream(&spec.upstream.base_url) {
+        let (upstream_auth, upstream_transport) =
+            compatible_protocol(pool.downstream_surface, spec.upstream.protocol)
+                .ok_or_else(incompatible_go_config_error)?;
+        if !is_allowed_upstream(
+            &spec.upstream.base_url,
+            pool.downstream_surface,
+            upstream_transport,
+        ) {
             return Err(incompatible_go_config_error());
         }
         spec.members
@@ -114,6 +124,7 @@ fn go_edge_from_spec(pool: &RoutePool, spec: &BridgeStartSpec) -> Result<GoRoute
                     member,
                     &spec.upstream.base_url,
                     upstream_auth,
+                    upstream_transport,
                     spec.listed_models.clone(),
                 )
             })
@@ -143,6 +154,7 @@ fn indexed_member(
 ) -> Result<GoRouteIsolatedMember> {
     let mut upstream_base_url: Option<&str> = None;
     let mut upstream_auth = None;
+    let mut upstream_transport = None;
     let mut models = Vec::new();
     let mut seen_models = HashSet::new();
 
@@ -153,9 +165,9 @@ fn indexed_member(
         if snapshot.public_model.trim() != snapshot.upstream_model.trim() {
             return Err(incompatible_go_config_error());
         }
-        let auth = compatible_transport(surface, &snapshot.transport_key)
+        let (auth, transport) = compatible_transport(surface, &snapshot.transport_key)
             .ok_or_else(incompatible_go_config_error)?;
-        if !is_loopback_upstream(&snapshot.upstream_endpoint) {
+        if !is_allowed_upstream(&snapshot.upstream_endpoint, surface, transport) {
             return Err(incompatible_go_config_error());
         }
         match upstream_base_url {
@@ -170,6 +182,11 @@ fn indexed_member(
             None => upstream_auth = Some(auth),
             _ => {}
         }
+        match upstream_transport {
+            Some(existing) if existing != transport => return Err(incompatible_go_config_error()),
+            None => upstream_transport = Some(transport),
+            _ => {}
+        }
         let model = snapshot.public_model.trim();
         if !model.is_empty() && seen_models.insert(model.to_owned()) {
             models.push(model.to_owned());
@@ -180,6 +197,7 @@ fn indexed_member(
         member,
         upstream_base_url.ok_or_else(incompatible_go_config_error)?,
         upstream_auth.ok_or_else(incompatible_go_config_error)?,
+        upstream_transport.ok_or_else(incompatible_go_config_error)?,
         models,
     )
 }
@@ -188,6 +206,7 @@ fn flat_member(
     member: &BridgeMemberSpec,
     upstream_base_url: &str,
     upstream_auth: &'static str,
+    upstream_transport: &'static str,
     models: Vec<String>,
 ) -> Result<GoRouteIsolatedMember> {
     let source_id = member.source_id.trim();
@@ -209,6 +228,7 @@ fn flat_member(
         upstream_base_url: upstream_base_url.trim_end_matches('/').to_owned(),
         upstream_key,
         upstream_auth,
+        upstream_transport,
         priority: member.priority,
         position: member.position,
         models,
@@ -216,22 +236,24 @@ fn flat_member(
     })
 }
 
-fn compatible_auth(
+fn compatible_protocol(
     surface: RouteDownstreamSurface,
     protocol: BridgeUpstreamProtocol,
-) -> Option<&'static str> {
+) -> Option<(&'static str, &'static str)> {
     match (surface, protocol) {
         (RouteDownstreamSurface::Messages, BridgeUpstreamProtocol::AnthropicMessages) => {
-            Some("x_api_key")
+            Some(("x_api_key", TRANSPORT_ANTHROPIC_MESSAGES))
+        }
+        (RouteDownstreamSurface::Responses, BridgeUpstreamProtocol::CodexResponsesOauth) => {
+            Some(("bearer", TRANSPORT_CODEX_RESPONSES))
+        }
+        (RouteDownstreamSurface::Responses, BridgeUpstreamProtocol::XaiResponsesOauth) => {
+            Some(("bearer", TRANSPORT_GROK_RESPONSES))
         }
         (
-            RouteDownstreamSurface::Responses,
-            BridgeUpstreamProtocol::CodexResponsesOauth | BridgeUpstreamProtocol::XaiResponsesOauth,
-        )
-        | (
             RouteDownstreamSurface::ChatCompletions,
             BridgeUpstreamProtocol::OpenAiChatCompletions,
-        ) => Some("bearer"),
+        ) => Some(("bearer", TRANSPORT_OPENAI_CHAT_COMPLETIONS)),
         _ => None,
     }
 }
@@ -239,13 +261,29 @@ fn compatible_auth(
 fn compatible_transport(
     surface: RouteDownstreamSurface,
     transport_key: &str,
-) -> Option<&'static str> {
+) -> Option<(&'static str, &'static str)> {
     match (surface, transport_key.trim()) {
-        (RouteDownstreamSurface::Messages, "anthropic:claude") => Some("x_api_key"),
-        (RouteDownstreamSurface::Responses, "codex:codex" | "grok:grok")
-        | (RouteDownstreamSurface::ChatCompletions, "openai:generic") => Some("bearer"),
+        (RouteDownstreamSurface::Messages, "anthropic:claude") => {
+            Some(("x_api_key", TRANSPORT_ANTHROPIC_MESSAGES))
+        }
+        (RouteDownstreamSurface::Responses, "codex:codex") => {
+            Some(("bearer", TRANSPORT_CODEX_RESPONSES))
+        }
+        (RouteDownstreamSurface::Responses, "grok:grok") => {
+            Some(("bearer", TRANSPORT_GROK_RESPONSES))
+        }
+        (RouteDownstreamSurface::ChatCompletions, "openai:generic") => {
+            Some(("bearer", TRANSPORT_OPENAI_CHAT_COMPLETIONS))
+        }
         _ => None,
     }
+}
+
+fn is_allowed_upstream(raw: &str, surface: RouteDownstreamSurface, transport: &str) -> bool {
+    is_loopback_upstream(raw)
+        || (surface == RouteDownstreamSurface::Messages
+            && transport == TRANSPORT_ANTHROPIC_MESSAGES
+            && is_official_anthropic_upstream(raw))
 }
 
 fn is_loopback_upstream(raw: &str) -> bool {
@@ -266,6 +304,33 @@ fn is_loopback_upstream(raw: &str) -> bool {
         || host
             .parse::<IpAddr>()
             .is_ok_and(|address| address.is_loopback())
+}
+
+fn is_official_anthropic_upstream(raw: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(raw.trim()) else {
+        return false;
+    };
+    url.scheme() == "https"
+        && has_official_anthropic_authority(raw)
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url
+            .host_str()
+            .is_some_and(|host| host.eq_ignore_ascii_case("api.anthropic.com"))
+        && url.port_or_known_default() == Some(443)
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && matches!(url.path(), "" | "/" | "/v1")
+}
+
+fn has_official_anthropic_authority(raw: &str) -> bool {
+    raw.trim()
+        .split_once("://")
+        .and_then(|(_, remainder)| remainder.split(['/', '?', '#']).next())
+        .is_some_and(|authority| {
+            authority.eq_ignore_ascii_case("api.anthropic.com")
+                || authority.eq_ignore_ascii_case("api.anthropic.com:443")
+        })
 }
 
 fn same_upstream(left: &str, right: &str) -> bool {

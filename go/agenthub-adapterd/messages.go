@@ -85,7 +85,7 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 	rt.addInFlight(1)
 	defer rt.addInFlight(-1)
 
-	client := &http.Client{}
+	client := newUpstreamHTTPClient()
 	excluded := make([]string, 0, 4)
 	var lastStatus int
 	var lastHeader http.Header
@@ -107,7 +107,7 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 			return
 		}
 
-		resp, err := doMemberMessages(r.Context(), client, member, surface, upstreamPath, body, meta.Stream)
+		resp, err := doMemberMessages(r.Context(), client, member, upstreamPath, body, meta.Stream)
 		if err != nil {
 			if r.Context().Err() != nil {
 				return
@@ -220,7 +220,7 @@ func dispatchMemberStream(
 	return dispatchDone
 }
 
-func doMemberMessages(ctx context.Context, client *http.Client, member *PoolMember, surface, upstreamPath string, body []byte, stream bool) (*http.Response, error) {
+func doMemberMessages(ctx context.Context, client *http.Client, member *PoolMember, upstreamPath string, body []byte, stream bool) (*http.Response, error) {
 	upstream := joinUpstreamPath(member.UpstreamBaseURL, upstreamPath)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstream, bytes.NewReader(body))
 	if err != nil {
@@ -232,13 +232,21 @@ func doMemberMessages(ctx context.Context, client *http.Client, member *PoolMemb
 	}
 	if member.UpstreamKey != "" && member.UpstreamAuth == authAPIKey {
 		req.Header.Set("X-API-Key", member.UpstreamKey)
-		if surface == surfaceMessages {
+		if member.UpstreamTransport == transportAnthropicMessages {
 			req.Header.Set("Anthropic-Version", "2023-06-01")
 		}
 	} else if member.UpstreamKey != "" {
 		req.Header.Set("Authorization", "Bearer "+member.UpstreamKey)
 	}
 	return client.Do(req)
+}
+
+func newUpstreamHTTPClient() *http.Client {
+	return &http.Client{
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 }
 
 func joinUpstreamPath(base, endpoint string) string {

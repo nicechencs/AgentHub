@@ -64,22 +64,23 @@ AGENTHUB_HOME="${HOME_DIR}" "${BIN}" run --home "${HOME_DIR}" --listen-port "${L
   < <(python3 - <<PY
 import json
 upstream = "http://127.0.0.1:${UPSTREAM_PORT}/v1"
-def member(member_id, key, auth, model):
+def member(member_id, key, auth, transport, model):
     return {"id": member_id, "upstream_base_url": upstream, "upstream_key": key,
-            "upstream_auth": auth, "priority": 0, "position": 0, "models": [model]}
+            "upstream_auth": auth, "upstream_transport": transport,
+            "priority": 0, "position": 0, "models": [model]}
 print(json.dumps({"version": "route-config.v0-isolated", "edges": [
     {"id": "messages", "ingress_key": "${ENTRY_MESSAGES}", "surface": "messages",
      "dialect": "claude", "schedule_policy": "priority_failover", "fixture_model": "claude-stdin-model",
-     "members": [member("messages-member", "${UPSTREAM_MESSAGES}", "x_api_key", "claude-stdin-model")]},
+     "members": [member("messages-member", "${UPSTREAM_MESSAGES}", "x_api_key", "anthropic_messages", "claude-stdin-model")]},
     {"id": "responses", "ingress_key": "${ENTRY_RESPONSES}", "surface": "responses",
      "dialect": "codex", "schedule_policy": "priority_failover", "fixture_model": "gpt-stdin-response",
-     "members": [member("responses-member", "${UPSTREAM_RESPONSES}", "bearer", "gpt-stdin-response")]},
+     "members": [member("responses-member", "${UPSTREAM_RESPONSES}", "bearer", "codex_responses", "gpt-stdin-response")]},
     {"id": "chat", "ingress_key": "${ENTRY_CHAT}", "surface": "chat_completions",
      "dialect": "generic", "schedule_policy": "round_robin", "fixture_model": "gpt-stdin-chat",
-     "members": [member("chat-member", "${UPSTREAM_CHAT}", "bearer", "gpt-stdin-chat")]},
+     "members": [member("chat-member", "${UPSTREAM_CHAT}", "bearer", "openai_chat_completions", "gpt-stdin-chat")]},
     {"id": "drain", "ingress_key": "${ENTRY_DRAIN}", "surface": "messages",
      "dialect": "claude", "schedule_policy": "priority_failover", "fixture_model": "claude-drain-model",
-     "members": [member("drain-member", "${UPSTREAM_DRAIN}", "x_api_key", "claude-drain-model")]}
+     "members": [member("drain-member", "${UPSTREAM_DRAIN}", "x_api_key", "anthropic_messages", "claude-drain-model")]}
 ]}))
 PY
   ) >"${ADAPTERD_STDOUT}" 2>&1 &

@@ -17,6 +17,11 @@ const (
 
 	authBearer = "bearer"
 	authAPIKey = "x_api_key"
+
+	transportAnthropicMessages     = "anthropic_messages"
+	transportCodexResponses        = "codex_responses"
+	transportGrokResponses         = "grok_responses"
+	transportOpenAIChatCompletions = "openai_chat_completions"
 )
 
 // RuntimeConfig is supplied once on stdin before the control socket starts.
@@ -41,6 +46,7 @@ type RuntimeMemberConfig struct {
 	UpstreamBaseURL   string   `json:"upstream_base_url"`
 	UpstreamKey       string   `json:"upstream_key"`
 	UpstreamAuth      string   `json:"upstream_auth"`
+	UpstreamTransport string   `json:"upstream_transport"`
 	Priority          int64    `json:"priority"`
 	Position          int64    `json:"position"`
 	Models            []string `json:"models"`
@@ -141,6 +147,7 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 			member.ID = strings.TrimSpace(member.ID)
 			member.UpstreamBaseURL = strings.TrimSpace(member.UpstreamBaseURL)
 			member.UpstreamAuth = strings.TrimSpace(member.UpstreamAuth)
+			member.UpstreamTransport = strings.TrimSpace(member.UpstreamTransport)
 			if member.ID == "" || member.UpstreamBaseURL == "" || member.UpstreamKey == "" {
 				return fmt.Errorf("runtime edge %s member %d is incomplete", edge.ID, memberIndex)
 			}
@@ -151,8 +158,11 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 				(edge.Surface != surfaceMessages && member.UpstreamAuth != authBearer) {
 				return fmt.Errorf("runtime edge %s member %s auth does not match surface", edge.ID, member.ID)
 			}
-			if err := loopbackURL(member.UpstreamBaseURL); err != nil {
-				return fmt.Errorf("runtime edge %s member %s upstream must be loopback", edge.ID, member.ID)
+			if !transportMatchesSurface(member.UpstreamTransport, edge.Surface) {
+				return fmt.Errorf("runtime edge %s member %s transport does not match surface", edge.ID, member.ID)
+			}
+			if err := validateRuntimeUpstreamURL(member.UpstreamBaseURL, member.UpstreamTransport); err != nil {
+				return fmt.Errorf("runtime edge %s member %s upstream is not allowed", edge.ID, member.ID)
 			}
 			if len(member.Models) == 0 && edge.FixtureModel == "" {
 				return fmt.Errorf("runtime edge %s member %s has no models", edge.ID, member.ID)
@@ -160,6 +170,19 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 		}
 	}
 	return nil
+}
+
+func transportMatchesSurface(transport, surface string) bool {
+	switch surface {
+	case surfaceMessages:
+		return transport == transportAnthropicMessages
+	case surfaceResponses:
+		return transport == transportCodexResponses || transport == transportGrokResponses
+	case surfaceChatCompletions:
+		return transport == transportOpenAIChatCompletions
+	default:
+		return false
+	}
 }
 
 func dialectMatchesSurface(dialect, surface string) bool {
@@ -188,6 +211,7 @@ func runtimeEdges(config *RuntimeConfig) ([]*RuntimeEdge, error) {
 				UpstreamBaseURL:   member.UpstreamBaseURL,
 				UpstreamKey:       member.UpstreamKey,
 				UpstreamAuth:      member.UpstreamAuth,
+				UpstreamTransport: member.UpstreamTransport,
 				Priority:          member.Priority,
 				Position:          member.Position,
 				Models:            append([]string(nil), member.Models...),

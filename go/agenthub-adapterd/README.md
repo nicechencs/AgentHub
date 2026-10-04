@@ -20,13 +20,20 @@ These slices prove, in an isolated scratch directory:
 `Start` is the product control name for this isolated slice. It does not write
 real agent config, refuses the product default port `43121` and real
 `~/.agenthub`. The application supervisor resolves eligible saved loopback
-routes through core, sends the complete runtime configuration once over the
-child process's stdin, and closes stdin. The configuration is retained only in
-memory. It can contain multiple Messages, Responses, and Chat Completions
-entries selected by their entry key and surface.
+routes and official Anthropic API Key routes through core, sends the complete
+runtime configuration once over the child process's stdin, and closes stdin.
+The configuration is retained only in memory. It can contain multiple
+Messages, Responses, and Chat Completions entries selected by their entry key
+and surface.
 
 The older `$AGENTHUB_HOME/config/probe.json` input remains only for the
 standalone probes and `ActivateProbeListen`; application start does not use it.
+
+Runtime validation accepts external upstreams only for Anthropic Messages
+routes that use an API Key and the exact official
+`https://api.anthropic.com` endpoint (optionally `/v1`). It rejects user info,
+query/fragment data, other ports, encoded paths, and redirects. The isolated
+probes do not call the real Anthropic service.
 
 `ActivateProbeListen` remains a probe-only shortcut with the same listen start.
 It is not the default gateway.
@@ -82,6 +89,7 @@ to the isolated supervisor and is not a public configuration format.
 
 ## Out of scope
 
-Official-login refresh, non-loopback upstreams, live/default gateway cutover,
-real `~/.agenthub` reads/writes, real Agent configuration writes and recovery,
-Windows control transport, plugin SDK/ABI, and stages E/F.
+Official-login refresh, non-allowlisted external upstreams, live/default
+gateway cutover, real `~/.agenthub` reads/writes, combined desktop-to-Agent
+configuration write/recovery, Windows control transport, plugin SDK/ABI, and
+stages E/F. No probe calls the real Anthropic service or uses a real API Key.
