@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -34,18 +33,6 @@ func (body *observedBody) Close() error { return nil }
 
 func testControlToken() string {
 	return base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
-}
-
-func TestConsumeControlTokenEnvironmentUnsetsImmediately(t *testing.T) {
-	token := testControlToken()
-	t.Setenv(controlTokenEnvironment, token)
-	got, present := consumeControlTokenEnvironment()
-	if !present || got != token {
-		t.Fatal("control token was not consumed")
-	}
-	if _, stillPresent := os.LookupEnv(controlTokenEnvironment); stillPresent {
-		t.Fatal("control token remained in process environment")
-	}
 }
 
 func TestConfigureTCPControlRequiresIPv4LoopbackAnd256BitToken(t *testing.T) {

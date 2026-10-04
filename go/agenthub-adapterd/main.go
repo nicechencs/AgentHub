@@ -20,12 +20,11 @@ const runtimeConfigRejectedMessage = "agenthub-adapterd: runtime config rejected
 const maxConsecutiveRuntimeConfigRejections = 8
 
 func main() {
-	controlToken, controlTokenPresent := consumeControlTokenEnvironment()
+	if rejectLegacyControlTokenEnvironment() {
+		fmt.Fprintln(os.Stderr, "agenthub-adapterd: control authentication source rejected")
+		os.Exit(2)
+	}
 	if len(os.Args) > 1 && os.Args[1] == "mock-upstream" {
-		if controlTokenPresent {
-			fmt.Fprintln(os.Stderr, "mock-upstream: control authentication is not accepted in fixture mode")
-			os.Exit(2)
-		}
 		fs := flag.NewFlagSet("mock-upstream", flag.ExitOnError)
 		listen := fs.String("listen", "127.0.0.1:0", "loopback listen address for the fixture upstream")
 		_ = fs.Parse(os.Args[2:])
@@ -45,6 +44,7 @@ func main() {
 	listenPort := fs.Int("listen-port", envInt("AGENTHUB_ADAPTERD_LISTEN_PORT", 0), "loopback Messages port (0 = ephemeral; not the product default)")
 	controlSocket := fs.String("control-socket", os.Getenv("AGENTHUB_ADAPTERD_CONTROL_SOCKET"), "absolute unix control socket (default $AGENTHUB_HOME/run/adapterd.sock)")
 	controlListen := fs.String("control-listen", os.Getenv("AGENTHUB_ADAPTERD_CONTROL_LISTEN"), "authenticated TCP control address (production requires 127.0.0.1:0)")
+	controlTokenStdin := fs.Bool("control-token-stdin", false, "read a framed control authentication token from stdin")
 	runtimeConfigStdin := fs.Bool("runtime-config-stdin", false, "read one route-config.v0-isolated JSON value from stdin")
 	runtimeConfigStdinStream := fs.Bool("runtime-config-stdin-stream", false, "read length-framed route configs from stdin and accept atomic updates")
 	fs.Usage = func() {
@@ -68,12 +68,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, "agenthub-adapterd: choose one control transport")
 		os.Exit(2)
 	}
-	if tcpControl != controlTokenPresent || (!tcpControl && controlToken != "") {
-		fmt.Fprintln(os.Stderr, "agenthub-adapterd: TCP control requires its dedicated environment token")
-		os.Exit(2)
-	}
 	if tcpControl && strings.TrimSpace(*controlListen) != "127.0.0.1:0" {
 		fmt.Fprintln(os.Stderr, "agenthub-adapterd: TCP control must let the child bind 127.0.0.1:0")
+		os.Exit(2)
+	}
+	controlToken, tokenErr := consumeControlTokenStdin(tcpControl, *controlTokenStdin, os.Stdin)
+	if tokenErr != nil {
+		fmt.Fprintln(os.Stderr, "agenthub-adapterd: control authentication source rejected")
 		os.Exit(2)
 	}
 

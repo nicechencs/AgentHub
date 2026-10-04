@@ -68,9 +68,10 @@ it still requires an explicit start and still refuses the default gateway
 port. The Go process also has an authenticated `127.0.0.1` TCP control
 transport that atomically selects its port and limits active connections. It
 has run on Linux and cross-compiles for Windows amd64/arm64. The Windows
-desktop supervisor remains unavailable until the token moves from the child
-environment to an inherited FD/handle and the complete lifecycle passes on a
-Windows machine.
+desktop supervisor remains unavailable until its process supervision and the
+complete lifecycle pass on a Windows machine. The control token is not passed
+through the child environment or command line: it is a framed prelude on the
+same inherited stdin pipe that carries runtime configuration.
 
 ## Isolated probe
 
@@ -107,8 +108,9 @@ root-owned test copy, replaces the original path after it has been opened, and
 confirms that only the verified private copy executes. It also checks that
 stale-session cleanup removes only strictly owned and marked scratch roots.
 The TCP-control probe checks authentication before request processing, a
-child-selected port, the connection ceiling, hot reload, command-line and file
-secret scans, graceful stop, and port release. The bind probe exercises the
+child-selected port, the connection ceiling, hot reload, inherited-stdin token
+delivery, command-line and file secret scans, graceful stop, and port release.
+The bind probe exercises the
 desktop `plan` / `bind` / provider switch / delete / `unbind` path, including
 backup restoration after the original provider row has been deleted.
 
@@ -121,10 +123,13 @@ backup restoration after the original provider row has been deleted.
 Control channel: Unix domain socket at `$AGENTHUB_HOME/run/adapterd.sock`
 (Linux). POST JSON envelopes to `http://localhost/control` with
 `curl --unix-socket`. The alternate TCP control starts only with
-`--control-listen 127.0.0.1:0` and a canonical 256-bit base64url token in
-`AGENTHUB_ADAPTERD_CONTROL_TOKEN`; the child reports its selected endpoint on
-stdout after binding. This transport is for the desktop supervisor and the
-isolated probe, not a user-facing network API.
+`--control-listen 127.0.0.1:0 --control-token-stdin`. Stdin must begin with a
+four-byte big-endian length of exactly 43 followed by a canonical 256-bit raw
+base64url token. Any one-shot JSON or length-framed runtime configuration
+follows immediately on that same pipe. The child reports its selected endpoint
+on stdout after binding. This transport is for the desktop supervisor and the
+isolated probe, not a user-facing network API. The legacy
+`AGENTHUB_ADAPTERD_CONTROL_TOKEN` environment source is rejected.
 
 ```bash
 export AGENTHUB_HOME=/tmp/agenthub-route-runtime-probe/manual/home

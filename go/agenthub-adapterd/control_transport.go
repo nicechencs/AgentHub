@@ -13,24 +13,13 @@ import (
 	"sync"
 )
 
-const controlTokenEnvironment = "AGENTHUB_ADAPTERD_CONTROL_TOKEN"
 const maxTCPControlConnections = 8
-
-func consumeControlTokenEnvironment() (string, bool) {
-	// Unsetenv prevents later child inheritance and ordinary environment reads.
-	// A same-UID process may still inspect startup environment memory on some
-	// systems; product wiring must replace env delivery with an inherited FD or
-	// handle before enabling this transport as the desktop default.
-	token, present := os.LookupEnv(controlTokenEnvironment)
-	_ = os.Unsetenv(controlTokenEnvironment)
-	return token, present
-}
 
 // ConfigureTCPControl selects the cross-platform authenticated control
 // transport. Production CLI callers must request 127.0.0.1:0 so the child
 // binds atomically; a fixed port remains available only to package-level tests.
-// The token is deliberately accepted only in memory; main obtains it from the
-// environment and removes that environment entry immediately.
+// The token is deliberately accepted only in memory; main reads its framed
+// prelude from the inherited stdin pipe before any runtime configuration.
 func (rt *Runtime) ConfigureTCPControl(address, token string) error {
 	normalized, err := validateTCPControl(address, token)
 	if err != nil {
@@ -51,11 +40,18 @@ func validateTCPControl(address, token string) (string, error) {
 	if err != nil || port < 0 || port > 65535 {
 		return "", fmt.Errorf("TCP control listener port must be between 0 and 65535")
 	}
-	decoded, err := base64.RawURLEncoding.DecodeString(token)
-	if err != nil || len(decoded) != 32 || base64.RawURLEncoding.EncodeToString(decoded) != token {
-		return "", fmt.Errorf("TCP control authentication token must be a canonical 256-bit base64url value")
+	if err := validateControlToken(token); err != nil {
+		return "", err
 	}
 	return net.JoinHostPort(host, portText), nil
+}
+
+func validateControlToken(token string) error {
+	decoded, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil || len(decoded) != 32 || base64.RawURLEncoding.EncodeToString(decoded) != token {
+		return fmt.Errorf("TCP control authentication token must be a canonical 256-bit base64url value")
+	}
+	return nil
 }
 
 func (rt *Runtime) handshakeCapabilities() []string {
