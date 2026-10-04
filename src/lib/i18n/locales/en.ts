@@ -1486,6 +1486,7 @@ export const en = {
       goIsolatedReady: "Running",
       goIsolatedStopped: "Stopped",
       goIsolatedFailed: "Failed",
+      goIsolatedUpdateFailed: "Configuration could not be updated",
       goIsolatedRuntime: "In flight {inFlight} · Available logins {healthy}/{members} · Recovered {restarts} times",
       statusSection: "User endpoints",
       fleetLogins: "{count} entry keys",
