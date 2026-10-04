@@ -54,6 +54,8 @@ struct GoRouteIsolatedEdge {
     ingress_keys: Vec<String>,
     surface: &'static str,
     dialect: &'static str,
+    codex_ingress_grok_upstream: bool,
+    grok_ingress_codex_upstream: bool,
     schedule_policy: &'static str,
     fixture_model: String,
     members: Vec<GoRouteIsolatedMember>,
@@ -239,11 +241,21 @@ fn go_edge_from_spec(
         .ok_or_else(incompatible_go_config_error)?
         .clone();
     let downstream_dialect = pool.downstream_dialect.as_str();
-    if members.iter().any(|member| match member.upstream_target {
-        UPSTREAM_TARGET_CODEX_CHATGPT_SUBSCRIPTION => downstream_dialect != "codex",
-        UPSTREAM_TARGET_GROK_XAI_SUBSCRIPTION => downstream_dialect != "grok",
-        _ => false,
-    }) {
+    if members.iter().any(
+        |member| match (downstream_dialect, member.upstream_target) {
+            ("codex", UPSTREAM_TARGET_GROK_XAI_SUBSCRIPTION) => !spec.codex_ingress_grok_upstream,
+            ("grok", UPSTREAM_TARGET_CODEX_CHATGPT_SUBSCRIPTION) => {
+                !spec.grok_ingress_codex_upstream
+            }
+            ("codex", UPSTREAM_TARGET_CODEX_CHATGPT_SUBSCRIPTION)
+            | ("grok", UPSTREAM_TARGET_GROK_XAI_SUBSCRIPTION) => false,
+            (
+                _,
+                UPSTREAM_TARGET_CODEX_CHATGPT_SUBSCRIPTION | UPSTREAM_TARGET_GROK_XAI_SUBSCRIPTION,
+            ) => true,
+            _ => false,
+        },
+    ) {
         return Err(incompatible_go_config_error());
     }
 
@@ -253,6 +265,8 @@ fn go_edge_from_spec(
         ingress_keys,
         surface: pool.downstream_surface.as_str(),
         dialect: downstream_dialect,
+        codex_ingress_grok_upstream: spec.codex_ingress_grok_upstream,
+        grok_ingress_codex_upstream: spec.grok_ingress_codex_upstream,
         schedule_policy: pool.schedule_policy.as_str(),
         fixture_model,
         members,

@@ -47,14 +47,16 @@ type RuntimeConfig struct {
 }
 
 type RuntimeEdgeConfig struct {
-	ID             string                `json:"id"`
-	IngressKey     string                `json:"ingress_key"`
-	IngressKeys    []string              `json:"ingress_keys,omitempty"`
-	Surface        string                `json:"surface"`
-	Dialect        string                `json:"dialect"`
-	SchedulePolicy string                `json:"schedule_policy"`
-	FixtureModel   string                `json:"fixture_model"`
-	Members        []RuntimeMemberConfig `json:"members"`
+	ID                       string                `json:"id"`
+	IngressKey               string                `json:"ingress_key"`
+	IngressKeys              []string              `json:"ingress_keys,omitempty"`
+	Surface                  string                `json:"surface"`
+	Dialect                  string                `json:"dialect"`
+	CodexIngressGrokUpstream bool                  `json:"codex_ingress_grok_upstream,omitempty"`
+	GrokIngressCodexUpstream bool                  `json:"grok_ingress_codex_upstream,omitempty"`
+	SchedulePolicy           string                `json:"schedule_policy"`
+	FixtureModel             string                `json:"fixture_model"`
+	Members                  []RuntimeMemberConfig `json:"members"`
 }
 
 type RuntimeMemberConfig struct {
@@ -76,14 +78,16 @@ type RuntimeMemberConfig struct {
 }
 
 type RuntimeEdge struct {
-	ID           string
-	IngressKey   string
-	IngressKeys  []string
-	Surface      string
-	Dialect      string
-	Pool         *Pool
-	GrokReplay   *grokOfficialReasoningReplay
-	GrokAffinity *grokOfficialAffinity
+	ID                       string
+	IngressKey               string
+	IngressKeys              []string
+	Surface                  string
+	Dialect                  string
+	CodexIngressGrokUpstream bool
+	GrokIngressCodexUpstream bool
+	Pool                     *Pool
+	GrokReplay               *grokOfficialReasoningReplay
+	GrokAffinity             *grokOfficialAffinity
 }
 
 func (edge *RuntimeEdge) acceptsIngressKey(candidate string) bool {
@@ -239,8 +243,7 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 			if !transportMatchesSurface(member.UpstreamTransport, edge.Surface) {
 				return fmt.Errorf("runtime edge %s member %s transport does not match surface", edge.ID, member.ID)
 			}
-			if (member.UpstreamTarget == upstreamTargetCodexChatGPTSubscription && edge.Dialect != "codex") ||
-				(member.UpstreamTarget == upstreamTargetGrokXAISubscription && edge.Dialect != "grok") {
+			if !officialDialectAllowed(edge, member) {
 				return fmt.Errorf("runtime edge %s member %s official-login dialect does not match target", edge.ID, member.ID)
 			}
 			if !refreshMatchesMember(member) {
@@ -262,6 +265,20 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 		}
 	}
 	return nil
+}
+
+func officialDialectAllowed(edge *RuntimeEdgeConfig, member *RuntimeMemberConfig) bool {
+	if edge == nil || member == nil {
+		return false
+	}
+	switch member.UpstreamTarget {
+	case upstreamTargetCodexChatGPTSubscription:
+		return edge.Dialect == "codex" || (edge.Dialect == "grok" && edge.GrokIngressCodexUpstream)
+	case upstreamTargetGrokXAISubscription:
+		return edge.Dialect == "grok" || (edge.Dialect == "codex" && edge.CodexIngressGrokUpstream)
+	default:
+		return true
+	}
 }
 
 func refreshMatchesMember(member *RuntimeMemberConfig) bool {
@@ -373,14 +390,16 @@ func runtimeEdges(config *RuntimeConfig) ([]*RuntimeEdge, error) {
 			return nil, fmt.Errorf("runtime edge %s pool is invalid", edge.ID)
 		}
 		edges = append(edges, &RuntimeEdge{
-			ID:           edge.ID,
-			IngressKey:   edge.IngressKey,
-			IngressKeys:  append([]string(nil), edge.IngressKeys...),
-			Surface:      edge.Surface,
-			Dialect:      edge.Dialect,
-			Pool:         pool,
-			GrokReplay:   newGrokOfficialReasoningReplay(),
-			GrokAffinity: newGrokOfficialAffinity(),
+			ID:                       edge.ID,
+			IngressKey:               edge.IngressKey,
+			IngressKeys:              append([]string(nil), edge.IngressKeys...),
+			Surface:                  edge.Surface,
+			Dialect:                  edge.Dialect,
+			CodexIngressGrokUpstream: edge.CodexIngressGrokUpstream,
+			GrokIngressCodexUpstream: edge.GrokIngressCodexUpstream,
+			Pool:                     pool,
+			GrokReplay:               newGrokOfficialReasoningReplay(),
+			GrokAffinity:             newGrokOfficialAffinity(),
 		})
 	}
 	return edges, nil

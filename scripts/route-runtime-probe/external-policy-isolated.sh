@@ -40,10 +40,13 @@ ALLOWED_CASES=(
   kimi_api_key
   kimi_chat_api_key
   codex_official_login
+  codex_official_login_to_grok
+  grok_official_login
 )
 DENIED_CASES=(
   codex_official_login_missing_account_id
-  grok_official_login
+  codex_official_login_to_grok_flag_off
+  grok_official_login_flag_off
   kimi_oauth
   custom_relay
   moonshot_api_key
@@ -145,7 +148,9 @@ assert len(config["edges"]) == 1, config
 edge = config["edges"][0]
 assert len(edge["members"]) == 1, edge
 member = edge["members"][0]
-if sys.argv[1] == "codex_official_login":
+assert edge.get("codex_ingress_grok_upstream", False) is (sys.argv[1] == "grok_official_login"), edge
+assert edge.get("grok_ingress_codex_upstream", False) is (sys.argv[1] == "codex_official_login_to_grok"), edge
+if sys.argv[1] in {"codex_official_login", "codex_official_login_to_grok"}:
     assert member.get("official_account_id") == "acct_probe_external_policy_do_not_use", member
 else:
     assert "official_account_id" not in member, member
@@ -176,6 +181,7 @@ run_allowed_case() {
     kimi_api_key) short_id=k ;;
     kimi_chat_api_key) short_id=m ;;
     codex_official_login) short_id=x ;;
+    codex_official_login_to_grok) short_id=y ;;
     grok_official_login) short_id=g ;;
     *) echo "FAIL: unknown allowed case ${case_id}" >&2; return 1 ;;
   esac
@@ -365,12 +371,15 @@ expected = {
     "kimi_api_key": ["kimi_code_membership", "api_key", "openai_chat_completions", "responses", "https://api.kimi.com/coding/v1"],
     "kimi_chat_api_key": ["kimi_code_membership", "api_key", "openai_chat_completions", "chat_completions", "https://api.kimi.com/coding/v1"],
     "codex_official_login": ["codex_chatgpt_subscription", "official_login", "codex_responses", "responses", "https://chatgpt.com/backend-api/codex"],
+    "codex_official_login_to_grok": ["codex_chatgpt_subscription", "official_login", "codex_responses", "responses", "https://chatgpt.com/backend-api/codex"],
+    "grok_official_login": ["grok_xai_subscription", "official_login", "grok_responses", "responses", "https://cli-chat-proxy.grok.com/v1"],
 }
 actual = {row[0]: row[1:] for row in rows}
 assert actual == expected, (actual, expected)
 denied = pathlib.Path(denied_path).read_text().splitlines()
 expected_denied = [
-    "codex_official_login_missing_account_id", "grok_official_login", "kimi_oauth",
+    "codex_official_login_missing_account_id", "codex_official_login_to_grok_flag_off",
+    "grok_official_login_flag_off", "kimi_oauth",
     "custom_relay", "moonshot_api_key", "xai_api_key",
     "anthropic_evil_host", "anthropic_wrong_port", "openai_evil_host", "openai_query",
 ]

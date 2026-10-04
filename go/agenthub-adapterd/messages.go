@@ -87,6 +87,7 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 	}
 	_ = json.Unmarshal(body, &meta)
 	continuation := strings.TrimSpace(meta.PreviousResponseID) != ""
+	affinitySeed := officialAffinitySeed(r.Header, body)
 
 	pool := edge.Pool
 	if pool == nil {
@@ -104,17 +105,19 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 	var pinnedMemberID string
 	if continuation {
 		switch edge.Dialect {
-		case "grok":
+		case "grok", "codex":
 			var ok bool
-			pinnedMemberID, ok = edge.GrokAffinity.lookup(meta.PreviousResponseID)
+			pinnedMemberID, ok = edge.GrokAffinity.lookupResponse(meta.PreviousResponseID)
+			if !ok && affinitySeed != "" {
+				pinnedMemberID, ok = edge.GrokAffinity.lookupSeed(affinitySeed)
+			}
 			if !ok {
 				writeMessagesError(w, http.StatusBadRequest, "continuation_unavailable", "This response cannot be continued by the current route.", "invalid_request_error")
 				return
 			}
-		case "codex":
-			writeMessagesError(w, http.StatusBadRequest, "continuation_unavailable", "This response cannot be continued by the current route.", "invalid_request_error")
-			return
 		}
+	} else if affinitySeed != "" {
+		pinnedMemberID, _ = edge.GrokAffinity.lookupSeed(affinitySeed)
 	}
 
 	client := rt.upstreamClient
@@ -164,6 +167,7 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 		upstreamStream := meta.Stream
 		officialCodex := member.UpstreamTarget == upstreamTargetCodexChatGPTSubscription
 		officialGrok := member.UpstreamTarget == upstreamTargetGrokXAISubscription
+		pairDirection := edge.officialPairDirection(member)
 		var grokPrepared *grokOfficialPreparedRequest
 		convertChatResponse := surface == surfaceResponses && member.UpstreamTransport == transportOpenAIChatCompletions
 		if convertChatResponse {
@@ -174,7 +178,11 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 				return
 			}
 		} else if officialCodex {
-			memberBody, downstreamStream, err = prepareOfficialCodexRequest(body, model)
+			if pairDirection == officialPairGrokToCodex {
+				memberBody, downstreamStream, err = prepareGrokIngressCodexRequest(body, model)
+			} else {
+				memberBody, downstreamStream, err = prepareOfficialCodexRequest(body, model)
+			}
 			if err != nil {
 				writeMessagesError(w, http.StatusBadRequest, "invalid_request", "The Responses request cannot be represented by this route.", "invalid_request_error")
 				return
@@ -185,7 +193,13 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 				grokPrepared = retryGrok
 				retryGrok = nil
 			} else {
-				grokPrepared, err = prepareGrokOfficialRequest(body, r.Header, member.SourceID, "", model)
+				grokInput := body
+				if pairDirection == officialPairCodexToGrok {
+					grokInput, downstreamStream, err = prepareCodexIngressGrokRequest(body)
+				}
+				if err == nil {
+					grokPrepared, err = prepareGrokOfficialRequest(grokInput, r.Header, member.SourceID, "", model)
+				}
 				if err == nil {
 					edge.GrokReplay.apply(grokPrepared.Body, grokPrepared.SourceID, grokPrepared.Model, grokPrepared.CacheSeed)
 				}
@@ -279,7 +293,16 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 				return
 			}
 			if officialCodex {
-				outcome := dispatchOfficialResponsesStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy)
+				var sanitizer officialSSEEventSanitizer
+				if pairDirection == officialPairGrokToCodex {
+					sanitizer = sanitizeCodexOfficialSSEEventForGrok
+				}
+				var streamAffinity officialStreamAffinity
+				outcome := dispatchOfficialResponsesStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy, sanitizer, &streamAffinity)
+				if outcome == dispatchDone && streamAffinity.Completed {
+					edge.GrokAffinity.storeResponse(streamAffinity.ResponseID, member.ID)
+					edge.GrokAffinity.storeSeed(affinitySeed, member.ID)
+				}
 				if outcome == dispatchContinue {
 					lastStream = false
 					if continuation {
@@ -297,10 +320,18 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 					io.Reader
 					io.Closer
 				}{Reader: io.TeeReader(resp.Body, captured), Closer: resp.Body}
-				outcome := dispatchGrokResponsesStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy)
-				if outcome == dispatchDone && !captured.Overflowed() {
-					edge.GrokReplay.storeSSE(grokPrepared.SourceID, grokPrepared.Model, grokPrepared.CacheSeed, captured.Bytes())
-					edge.GrokAffinity.store(grokOfficialResponseIDFromSSE(captured.Bytes()), member.ID)
+				var sanitizer officialSSEEventSanitizer
+				if pairDirection == officialPairCodexToGrok {
+					sanitizer = sanitizeGrokOfficialSSEEventForCodex
+				}
+				var streamAffinity officialStreamAffinity
+				outcome := dispatchGrokResponsesStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy, sanitizer, &streamAffinity)
+				if outcome == dispatchDone && streamAffinity.Completed {
+					edge.GrokAffinity.storeResponse(streamAffinity.ResponseID, member.ID)
+					edge.GrokAffinity.storeSeed(affinitySeed, member.ID)
+					if !captured.Overflowed() {
+						edge.GrokReplay.storeSSE(grokPrepared.SourceID, grokPrepared.Model, grokPrepared.CacheSeed, captured.Bytes())
+					}
 				}
 				if outcome == dispatchContinue {
 					lastStream = false
@@ -372,6 +403,11 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 			writeSafeUpstreamResponse(w, http.StatusBadGateway, make(http.Header))
 			return
 		}
+		if readErr == nil && pairDirection == officialPairGrokToCodex {
+			respBody, readErr = sanitizeCodexOfficialResponseForGrok(respBody)
+		} else if readErr == nil && pairDirection == officialPairCodexToGrok {
+			respBody, readErr = sanitizeGrokOfficialResponseForCodex(respBody)
+		}
 		if readErr != nil || (!officialCodex && (!isJSONMediaType(resp.Header.Get("Content-Type")) || !isJSONObject(respBody))) {
 			pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
 			excluded = append(excluded, member.ID)
@@ -417,14 +453,33 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 			respBody = translated
 			resp.Header.Set("Content-Type", "application/json")
 		}
-		if officialGrok && grokPrepared != nil && len(respBody) <= grokOfficialReplayBodyBytes && grokOfficialString(grokCompleted["status"]) == "completed" {
-			edge.GrokReplay.storeCompleted(grokPrepared.SourceID, grokPrepared.Model, grokPrepared.CacheSeed, grokCompleted)
-			edge.GrokAffinity.store(grokOfficialResponseID(grokCompleted), member.ID)
+		if officialGrok && grokOfficialString(grokCompleted["status"]) == "completed" {
+			if grokPrepared != nil && len(respBody) <= grokOfficialReplayBodyBytes {
+				edge.GrokReplay.storeCompleted(grokPrepared.SourceID, grokPrepared.Model, grokPrepared.CacheSeed, grokCompleted)
+			}
+			responseID := grokOfficialResponseID(grokCompleted)
+			edge.GrokAffinity.storeResponse(responseID, member.ID)
+			edge.GrokAffinity.storeSeed(affinitySeed, member.ID)
+		} else if officialCodex {
+			var completed map[string]any
+			if json.Unmarshal(respBody, &completed) == nil {
+				responseID := grokOfficialResponseID(completed)
+				edge.GrokAffinity.storeResponse(responseID, member.ID)
+				edge.GrokAffinity.storeSeed(affinitySeed, member.ID)
+			}
 		}
 		pool.ReportSuccess(member.ID)
 		writeClientResponse(w, resp.StatusCode, resp.Header, respBody, false)
 		return
 	}
+}
+
+func officialAffinitySeed(headers http.Header, raw []byte) string {
+	var body map[string]any
+	if json.Unmarshal(raw, &body) != nil || body == nil {
+		return ""
+	}
+	return extractGrokOfficialPromptCacheSeed(headers, body)
 }
 
 func dispatchConvertedChatStream(

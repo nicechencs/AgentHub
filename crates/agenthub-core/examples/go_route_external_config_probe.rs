@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use agenthub_core::models::{
     AccountInput, AccountKind, AdapterSourceKind, AgentId, ProviderInput, RouteDownstreamSurface,
+    FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
 };
 use agenthub_core::AgentHub;
 use serde_json::json;
@@ -66,6 +67,17 @@ fn run() -> ProbeResult<()> {
     let (data, skills) = validate_scratch(&scratch)?;
     let hub = AgentHub::open_with_skills_root(Some(&data), Some(&skills))
         .map_err(|_| ProbeError::Fatal("open isolated AgentHub failed"))?;
+    match case_id.as_str() {
+        "grok_official_login" => hub
+            .db()
+            .set_setting(FEATURE_CODEX_INGRESS_GROK_UPSTREAM, "on")
+            .map_err(|_| ProbeError::Fatal("enable Codex to Grok pair adapter failed"))?,
+        "codex_official_login_to_grok" => hub
+            .db()
+            .set_setting(FEATURE_GROK_INGRESS_CODEX_UPSTREAM, "on")
+            .map_err(|_| ProbeError::Fatal("enable Grok to Codex pair adapter failed"))?,
+        _ => {}
+    }
     let source = seed_case(&hub, &case_id)?;
     let pool = hub
         .route_pools()
@@ -272,7 +284,35 @@ fn seed_case(hub: &AgentHub, case_id: &str) -> ProbeResult<SeededSource> {
             AgentId::Codex,
             RouteDownstreamSurface::Responses,
         ),
+        "codex_official_login_to_grok" | "codex_official_login_to_grok_flag_off" => account(
+            hub,
+            AgentId::Codex,
+            json!({
+                "format": "auth_json",
+                "account_id": CHATGPT_ACCOUNT_ID,
+                "tokens": {
+                    "access_token": ACCESS_TOKEN,
+                    "refresh_token": REFRESH_TOKEN,
+                }
+            }),
+            json!({}),
+            AgentId::Grok,
+            RouteDownstreamSurface::Responses,
+        ),
         "grok_official_login" => account(
+            hub,
+            AgentId::Grok,
+            json!({
+                "format": "oauth",
+                "provider": "xai",
+                "access_token": ACCESS_TOKEN,
+                "refresh_token": REFRESH_TOKEN,
+            }),
+            json!({"source": "oauth_pkce"}),
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+        ),
+        "grok_official_login_flag_off" => account(
             hub,
             AgentId::Grok,
             json!({

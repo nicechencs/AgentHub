@@ -1,49 +1,123 @@
 package main
 
 import (
+	"container/list"
 	"encoding/json"
 	"strings"
 	"sync"
+	"time"
 )
 
-const grokOfficialAffinityEntries = 1024
+const (
+	grokOfficialAffinityEntries = 8192
+	grokOfficialAffinityIdleTTL = 2 * time.Hour
+)
+
+type grokOfficialAffinityEntry struct {
+	memberID string
+	lastUsed time.Time
+	element  *list.Element
+}
 
 type grokOfficialAffinity struct {
 	mu      sync.Mutex
-	members map[string]string
-	order   []string
+	members map[string]*grokOfficialAffinityEntry
+	order   *list.List
 }
 
 func newGrokOfficialAffinity() *grokOfficialAffinity {
-	return &grokOfficialAffinity{members: make(map[string]string)}
+	return &grokOfficialAffinity{members: make(map[string]*grokOfficialAffinityEntry), order: list.New()}
 }
 
-func (affinity *grokOfficialAffinity) lookup(responseID string) (string, bool) {
-	if affinity == nil || strings.TrimSpace(responseID) == "" {
+func (affinity *grokOfficialAffinity) lookupResponse(responseID string) (string, bool) {
+	return affinity.lookup("response:", responseID)
+}
+
+func (affinity *grokOfficialAffinity) lookupSeed(seed string) (string, bool) {
+	return affinity.lookup("seed:", seed)
+}
+
+func (affinity *grokOfficialAffinity) lookup(prefix, value string) (string, bool) {
+	return affinity.lookupAt(prefix, value, time.Now())
+}
+
+func (affinity *grokOfficialAffinity) lookupAt(prefix, value string, now time.Time) (string, bool) {
+	value = strings.TrimSpace(value)
+	if affinity == nil || value == "" {
 		return "", false
 	}
 	affinity.mu.Lock()
 	defer affinity.mu.Unlock()
-	memberID, ok := affinity.members[strings.TrimSpace(responseID)]
-	return memberID, ok
+	affinity.pruneExpiredLocked(now)
+	entry, ok := affinity.members[prefix+value]
+	if !ok {
+		return "", false
+	}
+	entry.lastUsed = now
+	affinity.order.MoveToBack(entry.element)
+	return entry.memberID, true
 }
 
-func (affinity *grokOfficialAffinity) store(responseID, memberID string) {
-	responseID = strings.TrimSpace(responseID)
+func (affinity *grokOfficialAffinity) storeResponse(responseID, memberID string) {
+	affinity.store("response:", responseID, memberID)
+}
+
+func (affinity *grokOfficialAffinity) storeSeed(seed, memberID string) {
+	affinity.store("seed:", seed, memberID)
+}
+
+func (affinity *grokOfficialAffinity) store(prefix, value, memberID string) {
+	affinity.storeAt(prefix, value, memberID, time.Now())
+}
+
+func (affinity *grokOfficialAffinity) storeAt(prefix, value, memberID string, now time.Time) {
+	value = strings.TrimSpace(value)
 	memberID = strings.TrimSpace(memberID)
-	if affinity == nil || responseID == "" || memberID == "" {
+	if affinity == nil || value == "" || memberID == "" {
 		return
 	}
+	key := prefix + value
 	affinity.mu.Lock()
 	defer affinity.mu.Unlock()
-	if _, exists := affinity.members[responseID]; !exists {
-		if len(affinity.members) >= grokOfficialAffinityEntries && len(affinity.order) > 0 {
-			delete(affinity.members, affinity.order[0])
-			affinity.order = affinity.order[1:]
-		}
-		affinity.order = append(affinity.order, responseID)
+	affinity.pruneExpiredLocked(now)
+	if entry, exists := affinity.members[key]; exists {
+		entry.memberID = memberID
+		entry.lastUsed = now
+		affinity.order.MoveToBack(entry.element)
+		return
 	}
-	affinity.members[responseID] = memberID
+	for len(affinity.members) >= grokOfficialAffinityEntries {
+		affinity.removeOldestLocked()
+	}
+	element := affinity.order.PushBack(key)
+	affinity.members[key] = &grokOfficialAffinityEntry{memberID: memberID, lastUsed: now, element: element}
+}
+
+func (affinity *grokOfficialAffinity) pruneExpiredLocked(now time.Time) {
+	cutoff := now.Add(-grokOfficialAffinityIdleTTL)
+	for {
+		front := affinity.order.Front()
+		if front == nil {
+			return
+		}
+		key, _ := front.Value.(string)
+		entry := affinity.members[key]
+		if entry != nil && entry.lastUsed.After(cutoff) {
+			return
+		}
+		affinity.order.Remove(front)
+		delete(affinity.members, key)
+	}
+}
+
+func (affinity *grokOfficialAffinity) removeOldestLocked() {
+	front := affinity.order.Front()
+	if front == nil {
+		return
+	}
+	key, _ := front.Value.(string)
+	affinity.order.Remove(front)
+	delete(affinity.members, key)
 }
 
 func grokOfficialResponseID(value map[string]any) string {

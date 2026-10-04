@@ -18,6 +18,13 @@ type cappedCapture struct {
 	overflow bool
 }
 
+type officialSSEEventSanitizer func([]byte) ([]byte, error)
+
+type officialStreamAffinity struct {
+	ResponseID string
+	Completed  bool
+}
+
 func newCappedCapture(limit int) *cappedCapture { return &cappedCapture{limit: limit} }
 
 func (capture *cappedCapture) Write(raw []byte) (int, error) {
@@ -50,6 +57,8 @@ func dispatchOfficialResponsesStream(
 	lastBody *[]byte,
 	hasLast *bool,
 	policy routeHTTPSafetyPolicy,
+	sanitize officialSSEEventSanitizer,
+	affinity *officialStreamAffinity,
 ) int {
 	defer resp.Body.Close()
 	if !isEventStreamMediaType(resp.Header.Get("Content-Type")) {
@@ -62,8 +71,12 @@ func dispatchOfficialResponsesStream(
 		return dispatchContinue
 	}
 
-	committed, safeSequence, relayErr := relayStrictResponsesSSE(w, r, resp, policy)
+	var observed officialStreamAffinity
+	committed, safeSequence, relayErr := relayStrictResponsesSSE(w, r, resp, policy, sanitize, &observed)
 	if relayErr == nil {
+		if affinity != nil {
+			*affinity = observed
+		}
 		pool.ReportSuccess(member.ID)
 		return dispatchDone
 	}
@@ -93,7 +106,7 @@ func dispatchOfficialResponsesStream(
 	return dispatchContinue
 }
 
-func relayStrictResponsesSSE(w http.ResponseWriter, r *http.Request, resp *http.Response, policy routeHTTPSafetyPolicy) (bool, uint64, error) {
+func relayStrictResponsesSSE(w http.ResponseWriter, r *http.Request, resp *http.Response, policy routeHTTPSafetyPolicy, sanitize officialSSEEventSanitizer, affinity *officialStreamAffinity) (bool, uint64, error) {
 	streamCtx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	lines := scanConvertedSSELines(streamCtx, resp.Body, policy.SSEBodyBytes)
@@ -122,7 +135,19 @@ func relayStrictResponsesSSE(w http.ResponseWriter, r *http.Request, resp *http.
 			safeSequence = event.SequenceNumber
 			return errOfficialResponsesFailure
 		}
+		observeOfficialStreamAffinity(affinity, event.Type, event.Value)
 		safeSequence = event.SequenceNumber + 1
+		if sanitize != nil {
+			_, payload, hasData, parseErr := parseResponsesSSEFields(frame)
+			if parseErr != nil || !hasData {
+				return errInvalidResponsesSSE
+			}
+			sanitized, sanitizeErr := sanitize(payload)
+			if sanitizeErr != nil {
+				return errInvalidResponsesSSE
+			}
+			frame = []byte("event: " + event.Type + "\ndata: " + string(sanitized))
+		}
 		if !committed {
 			committed = true
 			refreshDownstreamWriteDeadline(w, policy.DownstreamWriteTimeout)
@@ -203,6 +228,8 @@ func dispatchGrokResponsesStream(
 	lastBody *[]byte,
 	hasLast *bool,
 	policy routeHTTPSafetyPolicy,
+	sanitize officialSSEEventSanitizer,
+	affinity *officialStreamAffinity,
 ) int {
 	defer resp.Body.Close()
 	if !isEventStreamMediaType(resp.Header.Get("Content-Type")) {
@@ -214,8 +241,12 @@ func dispatchGrokResponsesStream(
 		*lastBody = safeUpstreamErrorBody()
 		return dispatchContinue
 	}
-	committed, relayErr := relayGrokResponsesSSE(w, r, resp, policy)
+	var observed officialStreamAffinity
+	committed, safeSequence, relayErr := relayGrokResponsesSSE(w, r, resp, policy, sanitize, &observed)
 	if relayErr == nil {
+		if affinity != nil {
+			*affinity = observed
+		}
 		pool.ReportSuccess(member.ID)
 		return dispatchDone
 	}
@@ -229,12 +260,12 @@ func dispatchGrokResponsesStream(
 			setSafeSuccessHeaders(w.Header(), true)
 			w.WriteHeader(http.StatusOK)
 		}
-		writeSafeGrokSSETermination(w, policy.DownstreamWriteTimeout)
+		writeSafeGrokPairSSETermination(w, safeSequence, policy.DownstreamWriteTimeout, sanitize != nil)
 		return dispatchDone
 	}
 	pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
 	if committed {
-		writeSafeGrokSSETermination(w, policy.DownstreamWriteTimeout)
+		writeSafeGrokPairSSETermination(w, safeSequence, policy.DownstreamWriteTimeout, sanitize != nil)
 		return dispatchDone
 	}
 	*excluded = append(*excluded, member.ID)
@@ -245,7 +276,7 @@ func dispatchGrokResponsesStream(
 	return dispatchContinue
 }
 
-func relayGrokResponsesSSE(w http.ResponseWriter, r *http.Request, resp *http.Response, policy routeHTTPSafetyPolicy) (bool, error) {
+func relayGrokResponsesSSE(w http.ResponseWriter, r *http.Request, resp *http.Response, policy routeHTTPSafetyPolicy, sanitize officialSSEEventSanitizer, affinity *officialStreamAffinity) (bool, uint64, error) {
 	streamCtx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	lines := scanConvertedSSELines(streamCtx, resp.Body, policy.SSEBodyBytes)
@@ -254,6 +285,7 @@ func relayGrokResponsesSSE(w http.ResponseWriter, r *http.Request, resp *http.Re
 	frameLines := make([]string, 0, 4)
 	committed := false
 	terminal := false
+	var safeSequence uint64
 	var total int64
 
 	consume := func() error {
@@ -279,6 +311,32 @@ func relayGrokResponsesSSE(w http.ResponseWriter, r *http.Request, resp *http.Re
 		if isResponsesTerminalEvent(kind) {
 			terminal = true
 		}
+		payload, payloadErr := grokResponsesFramePayload(frame)
+		if payloadErr != nil {
+			return errInvalidResponsesSSE
+		}
+		var eventValue map[string]any
+		if json.Unmarshal(payload, &eventValue) != nil || eventValue == nil {
+			return errInvalidResponsesSSE
+		}
+		observeOfficialStreamAffinity(affinity, kind, eventValue)
+		if sanitize != nil {
+			sanitized, sanitizeErr := sanitize(payload)
+			if sanitizeErr != nil {
+				return errInvalidResponsesSSE
+			}
+			var value map[string]any
+			if json.Unmarshal(sanitized, &value) != nil || value == nil {
+				return errInvalidResponsesSSE
+			}
+			value["sequence_number"] = safeSequence
+			sanitized, sanitizeErr = json.Marshal(value)
+			if sanitizeErr != nil {
+				return errInvalidResponsesSSE
+			}
+			frame = []byte("event: " + kind + "\ndata: " + string(sanitized))
+			safeSequence++
+		}
 		if !committed {
 			committed = true
 			refreshDownstreamWriteDeadline(w, policy.DownstreamWriteTimeout)
@@ -299,19 +357,19 @@ func relayGrokResponsesSSE(w http.ResponseWriter, r *http.Request, resp *http.Re
 		select {
 		case <-r.Context().Done():
 			_ = resp.Body.Close()
-			return committed, r.Context().Err()
+			return committed, safeSequence, r.Context().Err()
 		case <-idle.C:
 			_ = resp.Body.Close()
-			return committed, errSSEIdle
+			return committed, safeSequence, errSSEIdle
 		case item, ok := <-lines:
 			if !ok {
-				return committed, errInvalidResponsesSSE
+				return committed, safeSequence, errInvalidResponsesSSE
 			}
 			if item.err != nil {
 				if errors.Is(item.err, io.EOF) && len(frameLines) == 0 && terminal {
-					return committed, nil
+					return committed, safeSequence, nil
 				}
-				return committed, errInvalidResponsesSSE
+				return committed, safeSequence, errInvalidResponsesSSE
 			}
 			if !idle.Stop() {
 				select {
@@ -323,18 +381,43 @@ func relayGrokResponsesSSE(w http.ResponseWriter, r *http.Request, resp *http.Re
 			total += int64(len(item.line) + 1)
 			if total > policy.SSEBodyBytes {
 				_ = resp.Body.Close()
-				return committed, errUpstreamBodyTooLarge
+				return committed, safeSequence, errUpstreamBodyTooLarge
 			}
 			line := strings.TrimSuffix(item.line, "\r")
 			if line == "" {
 				if err := consume(); err != nil {
-					return committed, err
+					return committed, safeSequence, err
 				}
 			} else {
 				frameLines = append(frameLines, line)
 			}
 		}
 	}
+}
+
+func observeOfficialStreamAffinity(affinity *officialStreamAffinity, kind string, event map[string]any) {
+	if affinity == nil {
+		return
+	}
+	if response, ok := event["response"].(map[string]any); ok {
+		if responseID := grokOfficialResponseID(response); responseID != "" {
+			affinity.ResponseID = responseID
+		}
+	}
+	if isResponsesTerminalEvent(kind) {
+		affinity.Completed = kind == "response.completed"
+		if !affinity.Completed {
+			affinity.ResponseID = ""
+		}
+	}
+}
+
+func writeSafeGrokPairSSETermination(w http.ResponseWriter, sequence uint64, timeout time.Duration, codexShape bool) {
+	if codexShape {
+		writeSafeResponsesSSETermination(w, sequence, timeout)
+		return
+	}
+	writeSafeGrokSSETermination(w, timeout)
 }
 
 func parseGrokResponsesFrame(frame []byte) (string, bool, error) {
@@ -379,6 +462,20 @@ func parseGrokResponsesFrame(frame []byte) (string, bool, error) {
 		return "", false, errInvalidResponsesSSE
 	}
 	return kind, true, nil
+}
+
+func grokResponsesFramePayload(frame []byte) ([]byte, error) {
+	normalized := strings.ReplaceAll(strings.ReplaceAll(string(frame), "\r\n", "\n"), "\r", "\n")
+	var dataLines []string
+	for _, line := range strings.Split(normalized, "\n") {
+		if value, ok := strings.CutPrefix(line, "data:"); ok {
+			dataLines = append(dataLines, strings.TrimSpace(value))
+		}
+	}
+	if len(dataLines) == 0 {
+		return nil, errInvalidResponsesSSE
+	}
+	return []byte(strings.Join(dataLines, "\n")), nil
 }
 
 func writeSafeGrokSSETermination(w http.ResponseWriter, timeout time.Duration) {

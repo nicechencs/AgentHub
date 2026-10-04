@@ -274,6 +274,15 @@ func TestOfficialLoginConfigBindsAccountMetadata(t *testing.T) {
 	if err := validateRuntimeConfig(crossDialect); err == nil {
 		t.Fatal("Grok official login accepted a Codex downstream dialect")
 	}
+	crossDialect.Edges[0].GrokIngressCodexUpstream = true
+	if err := validateRuntimeConfig(crossDialect); err == nil {
+		t.Fatal("reverse pair flag opened Codex ingress to Grok upstream")
+	}
+	crossDialect.Edges[0].GrokIngressCodexUpstream = false
+	crossDialect.Edges[0].CodexIngressGrokUpstream = true
+	if err := validateRuntimeConfig(crossDialect); err != nil {
+		t.Fatalf("matching pair flag did not open Codex ingress to Grok upstream: %v", err)
+	}
 }
 
 func TestClassifyHTTPBodyKeepsOrdinaryForbiddenRequestScoped(t *testing.T) {
@@ -285,5 +294,262 @@ func TestClassifyHTTPBodyKeepsOrdinaryForbiddenRequestScoped(t *testing.T) {
 	}
 	if got := classifyHTTPBody(http.StatusNotFound, []byte(`{"error":"previous_response_id missing"}`)); got != classRequest {
 		t.Fatalf("previous response 404 class=%q", got)
+	}
+}
+
+func TestCodexIngressGrokUpstreamPairIsSanitizedEndToEnd(t *testing.T) {
+	config := officialRuntimeConfig(upstreamTargetGrokXAISubscription)
+	config.Edges[0].Dialect = "codex"
+	config.Edges[0].CodexIngressGrokUpstream = true
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		raw, _ := io.ReadAll(req.Body)
+		var body map[string]any
+		_ = json.Unmarshal(raw, &body)
+		if body["store"] != nil || body["metadata"] != nil || !strings.Contains(string(raw), "policy") {
+			t.Fatalf("unsanitized Codex request reached Grok: %s", raw)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"id":"resp_pair","status":"completed","session_id":"private","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}],"x_grok_req_id":"private"}]}`))}, nil
+	})
+	rt := servingOfficialRuntime(t, config, transport)
+	recorder := httptest.NewRecorder()
+	rt.handleResponses(recorder, officialResponsesRequest(`{"model":"gpt-5-codex","store":true,"metadata":{"private":true},"input":[{"role":"system","content":"policy"},{"role":"user","content":"ping"}]}`))
+	if recorder.Code != http.StatusOK || strings.Contains(recorder.Body.String(), "private") || !strings.Contains(recorder.Body.String(), `"text":"ok"`) {
+		t.Fatalf("status=%d body=%q", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestGrokIngressCodexUpstreamPairIsSanitizedEndToEnd(t *testing.T) {
+	config := officialRuntimeConfig(upstreamTargetCodexChatGPTSubscription)
+	config.Edges[0].Dialect = "grok"
+	config.Edges[0].GrokIngressCodexUpstream = true
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		raw, _ := io.ReadAll(req.Body)
+		var body map[string]any
+		_ = json.Unmarshal(raw, &body)
+		if body["prompt_cache_key"] != nil || body["reasoning"] != nil || body["stream"] != true || body["store"] != false {
+			t.Fatalf("official Codex policy was not applied: %s", raw)
+		}
+		stream := "event: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":0,\"response\":{\"id\":\"resp_pair\",\"status\":\"completed\",\"store\":false,\"metadata\":{\"private\":true},\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"ok\",\"metadata\":{\"private\":true}}]}]}}\n\n"
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(stream))}, nil
+	})
+	rt := servingOfficialRuntime(t, config, transport)
+	recorder := httptest.NewRecorder()
+	rt.handleResponses(recorder, officialResponsesRequest(`{"model":"gpt-5-codex","prompt_cache_key":"private","reasoning":{"effort":"high"},"input":"ping"}`))
+	if recorder.Code != http.StatusOK || strings.Contains(recorder.Body.String(), "private") || strings.Contains(recorder.Body.String(), `"store"`) || !strings.Contains(recorder.Body.String(), `"text":"ok"`) {
+		t.Fatalf("status=%d body=%q", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestOfficialPairStreamingSanitizesEverySSEEvent(t *testing.T) {
+	t.Run("Codex to Grok", func(t *testing.T) {
+		config := officialRuntimeConfig(upstreamTargetGrokXAISubscription)
+		config.Edges[0].Dialect = "codex"
+		config.Edges[0].CodexIngressGrokUpstream = true
+		transport := roundTripFunc(func(*http.Request) (*http.Response, error) {
+			stream := "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_pair\",\"session_id\":\"private\"}}\n\n" +
+				"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_pair\",\"status\":\"completed\",\"x_grok_req_id\":\"private\"}}\n\n"
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(stream))}, nil
+		})
+		rt := servingOfficialRuntime(t, config, transport)
+		recorder := httptest.NewRecorder()
+		rt.handleResponses(recorder, officialResponsesRequest(`{"model":"gpt-5-codex","input":"ping","stream":true}`))
+		if recorder.Code != http.StatusOK || strings.Contains(recorder.Body.String(), "private") || !strings.Contains(recorder.Body.String(), "response.completed") {
+			t.Fatalf("status=%d body=%q", recorder.Code, recorder.Body.String())
+		}
+		frames, err := splitCompleteResponsesSSEFrames(recorder.Body.Bytes())
+		if err != nil {
+			t.Fatalf("Codex pair stream framing: %v body=%q", err, recorder.Body.String())
+		}
+		state := newResponsesSSEState()
+		for _, frame := range frames {
+			if _, err := state.consumeFrame(frame); err != nil {
+				t.Fatalf("Codex pair stream contract: %v frame=%q", err, frame)
+			}
+		}
+		if err := state.finish(); err != nil {
+			t.Fatalf("Codex pair stream terminal: %v body=%q", err, recorder.Body.String())
+		}
+	})
+
+	t.Run("Grok to Codex", func(t *testing.T) {
+		config := officialRuntimeConfig(upstreamTargetCodexChatGPTSubscription)
+		config.Edges[0].Dialect = "grok"
+		config.Edges[0].GrokIngressCodexUpstream = true
+		transport := roundTripFunc(func(*http.Request) (*http.Response, error) {
+			stream := "event: response.created\ndata: {\"type\":\"response.created\",\"sequence_number\":0,\"response\":{\"id\":\"resp_pair\",\"metadata\":{\"private\":true}}}\n\n" +
+				"event: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":1,\"response\":{\"id\":\"resp_pair\",\"status\":\"completed\",\"store\":false,\"output\":[]}}\n\n"
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(stream))}, nil
+		})
+		rt := servingOfficialRuntime(t, config, transport)
+		recorder := httptest.NewRecorder()
+		rt.handleResponses(recorder, officialResponsesRequest(`{"model":"gpt-5-codex","input":"ping","stream":true}`))
+		if recorder.Code != http.StatusOK || strings.Contains(recorder.Body.String(), "private") || strings.Contains(recorder.Body.String(), `"store"`) || !strings.Contains(recorder.Body.String(), "response.completed") {
+			t.Fatalf("status=%d body=%q", recorder.Code, recorder.Body.String())
+		}
+	})
+
+	t.Run("Codex safe termination stays strict", func(t *testing.T) {
+		config := officialRuntimeConfig(upstreamTargetGrokXAISubscription)
+		config.Edges[0].Dialect = "codex"
+		config.Edges[0].CodexIngressGrokUpstream = true
+		transport := roundTripFunc(func(*http.Request) (*http.Response, error) {
+			stream := "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_pair\"}}\n\n"
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(stream))}, nil
+		})
+		rt := servingOfficialRuntime(t, config, transport)
+		recorder := httptest.NewRecorder()
+		rt.handleResponses(recorder, officialResponsesRequest(`{"model":"gpt-5-codex","input":"ping","stream":true}`))
+		frames, err := splitCompleteResponsesSSEFrames(recorder.Body.Bytes())
+		if err != nil {
+			t.Fatalf("safe termination framing: %v body=%q", err, recorder.Body.String())
+		}
+		state := newResponsesSSEState()
+		for _, frame := range frames {
+			if _, err := state.consumeFrame(frame); err != nil {
+				t.Fatalf("safe termination contract: %v frame=%q", err, frame)
+			}
+		}
+		if err := state.finish(); err != nil || !strings.Contains(recorder.Body.String(), `"sequence_number":1`) {
+			t.Fatalf("safe termination is not a strict terminal stream: %v body=%q", err, recorder.Body.String())
+		}
+	})
+}
+
+func TestOfficialPairsKeepResponseAndCacheAffinity(t *testing.T) {
+	tests := []struct {
+		name    string
+		target  string
+		dialect string
+		flag    func(*RuntimeEdgeConfig)
+	}{
+		{
+			name: "Codex to Grok", target: upstreamTargetGrokXAISubscription, dialect: "codex",
+			flag: func(edge *RuntimeEdgeConfig) { edge.CodexIngressGrokUpstream = true },
+		},
+		{
+			name: "Grok to Codex", target: upstreamTargetCodexChatGPTSubscription, dialect: "grok",
+			flag: func(edge *RuntimeEdgeConfig) { edge.GrokIngressCodexUpstream = true },
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			config := officialRuntimeConfig(test.target)
+			config.Edges[0].Dialect = test.dialect
+			config.Edges[0].SchedulePolicy = policyRoundRobin
+			test.flag(&config.Edges[0])
+			first := config.Edges[0].Members[0]
+			first.ID, first.SourceID, first.UpstreamKey = "account:first", "first", "access-first"
+			second := first
+			second.ID, second.SourceID, second.UpstreamKey = "account:second", "second", "access-second"
+			config.Edges[0].Members = []RuntimeMemberConfig{first, second}
+
+			var authorizations []string
+			transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				authorizations = append(authorizations, req.Header.Get("Authorization"))
+				if test.target == upstreamTargetCodexChatGPTSubscription {
+					stream := "event: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":0,\"response\":{\"id\":\"resp_pair_affinity\",\"status\":\"completed\",\"output\":[]}}\n\n"
+					return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(stream))}, nil
+				}
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"id":"resp_pair_affinity","status":"completed","output":[]}`))}, nil
+			})
+			rt := servingOfficialRuntime(t, config, transport)
+			for _, body := range []string{
+				`{"model":"gpt-5-codex","input":"first","prompt_cache_key":"pair-cache"}`,
+				`{"model":"gpt-5-codex","input":"same cache","prompt_cache_key":"pair-cache"}`,
+				`{"model":"gpt-5-codex","input":"continue","previous_response_id":"resp_pair_affinity"}`,
+				`{"model":"gpt-5-codex","input":"fallback","previous_response_id":"unknown","prompt_cache_key":"pair-cache"}`,
+			} {
+				recorder := httptest.NewRecorder()
+				rt.handleResponses(recorder, officialResponsesRequest(body))
+				if recorder.Code != http.StatusOK {
+					t.Fatalf("status=%d body=%q", recorder.Code, recorder.Body.String())
+				}
+			}
+			if len(authorizations) != 4 {
+				t.Fatalf("authorizations=%v", authorizations)
+			}
+			for _, got := range authorizations {
+				if got != "Bearer access-first" {
+					t.Fatalf("pair affinity drifted: %v", authorizations)
+				}
+			}
+		})
+	}
+}
+
+func TestCodexGrokPairLargeStreamStillKeepsAffinity(t *testing.T) {
+	config := officialRuntimeConfig(upstreamTargetGrokXAISubscription)
+	config.Edges[0].Dialect = "codex"
+	config.Edges[0].CodexIngressGrokUpstream = true
+	config.Edges[0].SchedulePolicy = policyRoundRobin
+	first := config.Edges[0].Members[0]
+	first.ID, first.SourceID, first.UpstreamKey = "account:first", "first", "access-first"
+	second := first
+	second.ID, second.SourceID, second.UpstreamKey = "account:second", "second", "access-second"
+	config.Edges[0].Members = []RuntimeMemberConfig{first, second}
+
+	largeDelta := strings.Repeat("x", grokOfficialReplayBodyBytes+1024)
+	var authorizations []string
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		authorizations = append(authorizations, req.Header.Get("Authorization"))
+		if len(authorizations) == 1 {
+			stream := "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_large_pair\"}}\n\n" +
+				"data: {\"type\":\"response.output_text.delta\",\"delta\":\"" + largeDelta + "\"}\n\n" +
+				"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_large_pair\",\"status\":\"completed\"}}\n\n"
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(stream))}, nil
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"id":"resp_large_pair_next","status":"completed","output":[]}`))}, nil
+	})
+	rt := servingOfficialRuntime(t, config, transport)
+	firstRecorder := httptest.NewRecorder()
+	rt.handleResponses(firstRecorder, officialResponsesRequest(`{"model":"gpt-5-codex","input":"first","stream":true,"prompt_cache_key":"large-pair"}`))
+	secondRecorder := httptest.NewRecorder()
+	rt.handleResponses(secondRecorder, officialResponsesRequest(`{"model":"gpt-5-codex","input":"continue","previous_response_id":"resp_large_pair"}`))
+	if firstRecorder.Code != http.StatusOK || secondRecorder.Code != http.StatusOK {
+		t.Fatalf("statuses=%d,%d", firstRecorder.Code, secondRecorder.Code)
+	}
+	if len(authorizations) != 2 || authorizations[0] != "Bearer access-first" || authorizations[1] != "Bearer access-first" {
+		t.Fatalf("large stream affinity drifted: %v", authorizations)
+	}
+}
+
+func TestOfficialPairCacheAffinityDoesNotRequireResponseID(t *testing.T) {
+	for _, target := range []string{upstreamTargetGrokXAISubscription, upstreamTargetCodexChatGPTSubscription} {
+		t.Run(target, func(t *testing.T) {
+			config := officialRuntimeConfig(target)
+			config.Edges[0].SchedulePolicy = policyRoundRobin
+			if target == upstreamTargetGrokXAISubscription {
+				config.Edges[0].Dialect = "codex"
+				config.Edges[0].CodexIngressGrokUpstream = true
+			} else {
+				config.Edges[0].Dialect = "grok"
+				config.Edges[0].GrokIngressCodexUpstream = true
+			}
+			first := config.Edges[0].Members[0]
+			first.ID, first.SourceID, first.UpstreamKey = "account:first", "first", "access-first"
+			second := first
+			second.ID, second.SourceID, second.UpstreamKey = "account:second", "second", "access-second"
+			config.Edges[0].Members = []RuntimeMemberConfig{first, second}
+			var authorizations []string
+			transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				authorizations = append(authorizations, req.Header.Get("Authorization"))
+				if target == upstreamTargetCodexChatGPTSubscription {
+					stream := "event: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":0,\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n"
+					return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(stream))}, nil
+				}
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"status":"completed","output":[]}`))}, nil
+			})
+			rt := servingOfficialRuntime(t, config, transport)
+			for _, input := range []string{"first", "same cache"} {
+				recorder := httptest.NewRecorder()
+				rt.handleResponses(recorder, officialResponsesRequest(`{"model":"gpt-5-codex","input":"`+input+`","prompt_cache_key":"seed-only"}`))
+				if recorder.Code != http.StatusOK {
+					t.Fatalf("status=%d body=%q", recorder.Code, recorder.Body.String())
+				}
+			}
+			if len(authorizations) != 2 || authorizations[0] != "Bearer access-first" || authorizations[1] != "Bearer access-first" {
+				t.Fatalf("seed-only affinity drifted: %v", authorizations)
+			}
+		})
 	}
 }
