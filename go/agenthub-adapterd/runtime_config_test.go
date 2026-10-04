@@ -133,14 +133,39 @@ func TestLoadRuntimeConfigValidatesSchemaWithoutEchoingSecrets(t *testing.T) {
 
 func TestRuntimeConfigRejectionMessageDoesNotEchoInput(t *testing.T) {
 	raw := `{"version":"route-config.v0-isolated","edges":[{"id":"malicious-id-must-not-echo","ingress_key":"secret","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"model","members":[]}],"unknown-field-must-not-echo":true}`
-	config, rejection := loadRuntimeConfigForRun(strings.NewReader(raw))
+	config, digest, rejection := loadRuntimeConfigForRun(strings.NewReader(raw))
 	if config != nil || rejection != runtimeConfigRejectedMessage {
-		t.Fatalf("config=%v rejection=%q", config, rejection)
+		t.Fatalf("config=%v digest=%q rejection=%q", config, digest, rejection)
 	}
 	for _, attackerControlled := range []string{"malicious-id-must-not-echo", "unknown-field-must-not-echo"} {
 		if strings.Contains(rejection, attackerControlled) {
 			t.Fatalf("rejection echoed attacker-controlled input: %q", rejection)
 		}
+	}
+}
+
+func TestOneShotRuntimeConfigHasCompleteStatusIdentity(t *testing.T) {
+	raw := streamRuntimeConfigJSON("edge-one-shot", streamIngressSecret, streamUpstreamSecret)
+	config, digest, rejection := loadRuntimeConfigForRun(bytes.NewReader(raw))
+	if rejection != "" || config == nil {
+		t.Fatalf("config=%v rejection=%q", config, rejection)
+	}
+	if digest != runtimeConfigDigest(raw) {
+		t.Fatalf("digest=%q", digest)
+	}
+	rt, err := NewRuntime(t.TempDir(), 0, "", func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.SetRuntimeConfigWithDigest(config, digest); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := rt.statusSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.ActiveRevision == nil || *snapshot.ActiveRevision != "1" || snapshot.ActiveHash == nil || *snapshot.ActiveHash != digest {
+		t.Fatalf("one-shot status identity is incomplete: %+v", snapshot)
 	}
 }
 
@@ -562,6 +587,151 @@ func TestRuntimeConfigConvertedStreamSignalsTruncationAfterCommit(t *testing.T) 
 	}
 	if health["healthy_member_count"] != float64(0) {
 		t.Fatalf("truncated upstream remained healthy: %#v", health)
+	}
+}
+
+func TestRuntimeConfigSwapIsAtomicForInFlightRequests(t *testing.T) {
+	oldEntered := make(chan struct{})
+	releaseOld := make(chan struct{})
+	oldUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		select {
+		case <-oldEntered:
+		default:
+			close(oldEntered)
+		}
+		<-releaseOld
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"source":"old"}`)
+	}))
+	t.Cleanup(oldUpstream.Close)
+	newUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"source":"new"}`)
+	}))
+	t.Cleanup(newUpstream.Close)
+
+	configFor := func(id, upstream, secret string) *RuntimeConfig {
+		return &RuntimeConfig{Version: runtimeConfigVersion, Edges: []RuntimeEdgeConfig{{
+			ID: "atomic-edge", IngressKey: configIngressResponses, Surface: surfaceResponses,
+			Dialect: "codex", SchedulePolicy: policyPriorityFailover, FixtureModel: "gpt-atomic",
+			Members: []RuntimeMemberConfig{{
+				ID: id, UpstreamBaseURL: upstream, UpstreamKey: secret,
+				UpstreamAuth: authBearer, UpstreamTransport: transportCodexResponses,
+				Models: []string{"gpt-atomic"},
+			}},
+		}}}
+	}
+	rt, _, _, port := configuredRuntime(t, configFor("old-member", oldUpstream.URL, configUpstreamResponse))
+	post := func() (int, []byte, error) {
+		body := bytes.NewBufferString(`{"model":"gpt-atomic","input":"ping"}`)
+		req, _ := http.NewRequest(http.MethodPost, "http://127.0.0.1:"+strconv.Itoa(port)+"/v1/responses", body)
+		req.Header.Set("Authorization", "Bearer "+configIngressResponses)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return 0, nil, err
+		}
+		defer resp.Body.Close()
+		got, err := io.ReadAll(resp.Body)
+		return resp.StatusCode, got, err
+	}
+
+	oldResult := make(chan []byte, 1)
+	oldError := make(chan error, 1)
+	go func() {
+		status, body, err := post()
+		if err != nil {
+			oldError <- err
+			return
+		}
+		if status != http.StatusOK {
+			oldError <- fmt.Errorf("old request status=%d body=%s", status, body)
+			return
+		}
+		oldResult <- body
+	}()
+	select {
+	case <-oldEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("old request did not reach upstream")
+	}
+
+	bad := configFor("bad-member", newUpstream.URL, configUpstreamChat)
+	bad.Edges[0].Surface = surfaceMessages
+	if err := rt.SwapRuntimeConfig(bad, "bad-digest"); err == nil {
+		t.Fatal("invalid hot config was accepted")
+	}
+	if err := rt.SwapRuntimeConfig(configFor("new-member", newUpstream.URL, configUpstreamChat), "new-digest"); err != nil {
+		t.Fatal(err)
+	}
+	status, body, err := post()
+	if err != nil || status != http.StatusOK || !bytes.Contains(body, []byte(`"source":"new"`)) {
+		t.Fatalf("new request status=%d body=%s err=%v", status, body, err)
+	}
+	close(releaseOld)
+	select {
+	case err := <-oldError:
+		t.Fatal(err)
+	case body := <-oldResult:
+		if !bytes.Contains(body, []byte(`"source":"old"`)) {
+			t.Fatalf("in-flight request changed edge: %s", body)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("old request did not complete")
+	}
+
+	statusReply := controlJSON(t, rt, map[string]any{
+		"type": typeStatus, "request_id": "atomic-status", "instance_epoch": rt.instanceEpoch,
+		"owner_id": "config-owner", "owner_term": int64(1), "app_data_dir": rt.Home(), "payload": map[string]any{},
+	})
+	if !statusReply.OK {
+		t.Fatalf("status: %+v", statusReply.Error)
+	}
+	var snapshot StatusSuccess
+	if err := json.Unmarshal(statusReply.Payload, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Port == nil || *snapshot.Port != port || snapshot.ActiveHash == nil || *snapshot.ActiveHash != "new-digest" {
+		t.Fatalf("status after atomic swap: %+v", snapshot)
+	}
+	if bytes.Contains(statusReply.Payload, []byte(configUpstreamChat)) || bytes.Contains(statusReply.Payload, []byte(configIngressResponses)) {
+		t.Fatalf("status leaked secret: %s", statusReply.Payload)
+	}
+}
+
+func TestRuntimeConfigSwapWaitsForLifecycleTransition(t *testing.T) {
+	rt, err := NewRuntime(t.TempDir(), 0, "", func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadRuntimeConfig(bytes.NewReader(streamRuntimeConfigJSON(
+		"serialized-edge", streamIngressSecret, streamUpstreamSecret,
+	)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rt.lifecycleMu.Lock()
+	started := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		close(started)
+		done <- rt.SwapRuntimeConfig(config, "serialized-digest")
+	}()
+	<-started
+	select {
+	case err := <-done:
+		rt.lifecycleMu.Unlock()
+		t.Fatalf("swap crossed an active lifecycle transition: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	rt.lifecycleMu.Unlock()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.configHash != "serialized-digest" || len(rt.edges) != 1 || rt.edges[0].ID != "serialized-edge" {
+		t.Fatalf("serialized swap did not commit: hash=%q edges=%+v", rt.configHash, rt.edges)
 	}
 }
 

@@ -5,11 +5,12 @@
 
 use serde::Serialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 #[cfg(debug_assertions)]
 use std::sync::Weak;
 use std::sync::{Arc, Mutex};
@@ -22,15 +23,18 @@ const OWNER_ID: &str = "agenthub-gui";
 const PROTOCOL_VERSION: &str = "route-runtime.v0-isolated";
 const CONFIG_FORMAT_VERSION: &str = "route-config.v0-isolated";
 const PACKAGE_VERSION: &str = "0.0.0-isolated";
+const CONFIG_STREAM_CAPABILITY: &str = "config.stdin_stream.atomic";
 const ISOLATED_LEASE_BUDGET_MS: i64 = 24 * 60 * 60 * 1_000;
 const OWNER_RENEW_INTERVAL: Duration = Duration::from_secs(30);
 const START_STOP_WAIT: Duration = Duration::from_secs(10);
 const GRACEFUL_STOP_WAIT: Duration = Duration::from_secs(9);
+const CONFIG_WRITE_WAIT: Duration = Duration::from_secs(8);
 const MAX_RECOVERY_BUDGET: u32 = 3;
 const STABLE_RUN_RESET: Duration = Duration::from_secs(30);
 const ERROR_ISOLATED_UNAVAILABLE: &str = "Go route is unavailable in this build";
 const ERROR_START_FAILED: &str = "Go route could not start";
 const ERROR_CONTROL_UNAVAILABLE: &str = "Go route status is unavailable";
+const MAX_RUNTIME_CONFIG_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,6 +55,7 @@ pub struct GoRouteIsolatedStatus {
 pub struct GoRouteIsolatedHost {
     hub: Option<Arc<AgentHub>>,
     inner: Mutex<Inner>,
+    update_gate: Mutex<()>,
 }
 
 struct Inner {
@@ -61,6 +66,14 @@ struct Inner {
     recovery_budget_used: u32,
     stable_since: Option<Instant>,
     next_restart_at: Option<Instant>,
+    committed_plan: Option<RuntimePlan>,
+}
+
+#[derive(Clone)]
+struct RuntimePlan {
+    config: Vec<u8>,
+    config_hash: String,
+    port: u16,
 }
 
 struct Session {
@@ -70,6 +83,7 @@ struct Session {
     instance_epoch: String,
     port: u16,
     next_owner_renewal: Instant,
+    config_stdin: Arc<Mutex<ChildStdin>>,
     adapterd: Child,
 }
 
@@ -126,7 +140,9 @@ impl GoRouteIsolatedHost {
                 recovery_budget_used: 0,
                 stable_since: None,
                 next_restart_at: None,
+                committed_plan: None,
             }),
+            update_gate: Mutex::new(()),
         });
         #[cfg(debug_assertions)]
         Self::spawn_monitor(Arc::downgrade(&host));
@@ -191,7 +207,7 @@ impl GoRouteIsolatedHost {
         }
         #[cfg(all(debug_assertions, unix))]
         {
-            {
+            let reload = {
                 let mut inner = self.lock();
                 refresh_locked(&mut inner);
                 inner.desired = true;
@@ -199,26 +215,149 @@ impl GoRouteIsolatedHost {
                 inner.recovery_budget_used = 0;
                 inner.stable_since = None;
                 inner.next_restart_at = None;
-                if inner.status.state == "starting" || inner.session.is_some() {
+                if inner.status.state == "starting" {
                     return inner.status.clone();
                 }
-                inner.status.state = "starting".into();
-                inner.status.last_error = None;
-                inner.status.listen_ready = false;
+                if inner.session.is_some() {
+                    true
+                } else {
+                    inner.status.state = "starting".into();
+                    inner.status.last_error = None;
+                    inner.status.listen_ready = false;
+                    false
+                }
+            };
+            if reload {
+                return self.reload();
             }
             self.finish_start(false)
         }
     }
 
+    /// Rebuilds the complete edge table and swaps it into the running Go
+    /// process. The previous committed snapshot remains the recovery source
+    /// until Status acknowledges the exact new digest.
+    pub fn reload(&self) -> GoRouteIsolatedStatus {
+        #[cfg(not(debug_assertions))]
+        {
+            return unavailable_status();
+        }
+        #[cfg(all(debug_assertions, not(unix)))]
+        {
+            return unix_only_failed();
+        }
+        #[cfg(all(debug_assertions, unix))]
+        {
+            let _update = self
+                .update_gate
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let Some(hub) = self.hub.as_ref() else {
+                return unavailable_status();
+            };
+            let config = match build_runtime_config(hub) {
+                Ok(config) => config,
+                Err(_) => return self.status_with_reload_error(),
+            };
+            let config_hash = sha256_hex(&config);
+
+            let (config_stdin, control, port) = {
+                let mut inner = self.lock();
+                refresh_locked(&mut inner);
+                let Some(session) = inner.session.as_ref() else {
+                    return inner.status.clone();
+                };
+                (
+                    Arc::clone(&session.config_stdin),
+                    ControlSession::from(session),
+                    session.port,
+                )
+            };
+            let config =
+                match write_runtime_config_with_timeout(config_stdin, config, CONFIG_WRITE_WAIT) {
+                    Ok(config) => config,
+                    Err(_) => return self.fail_session(&control),
+                };
+
+            let deadline = Instant::now() + Duration::from_secs(8);
+            let acknowledged = loop {
+                match session_status(&control) {
+                    Ok(status)
+                        if status.get("active_hash").and_then(Value::as_str)
+                            == Some(config_hash.as_str())
+                            && status.get("instance_epoch").and_then(Value::as_str)
+                                == Some(control.instance_epoch.as_str())
+                            && status.get("port").and_then(Value::as_u64)
+                                == Some(u64::from(port))
+                            && status.get("listen_ready").and_then(Value::as_bool)
+                                == Some(true) =>
+                    {
+                        break true;
+                    }
+                    Ok(_) if Instant::now() < deadline => {
+                        std::thread::sleep(Duration::from_millis(25));
+                    }
+                    Ok(_) | Err(_) => break false,
+                }
+            };
+            if !acknowledged {
+                return self.fail_session(&control);
+            }
+
+            let mut inner = self.lock();
+            let same_session = inner
+                .session
+                .as_ref()
+                .is_some_and(|session| session.instance_epoch == control.instance_epoch);
+            if !same_session {
+                return inner.status.clone();
+            }
+            inner.committed_plan = Some(RuntimePlan {
+                config,
+                config_hash,
+                port,
+            });
+            inner.status.clone()
+        }
+    }
+
+    #[cfg(all(debug_assertions, unix))]
+    fn fail_session(&self, control: &ControlSession) -> GoRouteIsolatedStatus {
+        let mut inner = self.lock();
+        let same_session = inner
+            .session
+            .as_ref()
+            .is_some_and(|session| session.instance_epoch == control.instance_epoch);
+        let mut session = same_session.then(|| inner.session.take()).flatten();
+        if same_session {
+            mark_runtime_unavailable(&mut inner);
+        }
+        drop(inner);
+        if let Some(session) = session.as_mut() {
+            terminate_session(session);
+        }
+        self.lock().status.clone()
+    }
+
+    #[cfg(all(debug_assertions, unix))]
+    fn status_with_reload_error(&self) -> GoRouteIsolatedStatus {
+        let mut inner = self.lock();
+        inner.status.last_error = Some("Go route configuration could not be updated".into());
+        inner.status.clone()
+    }
+
     #[cfg(all(debug_assertions, unix))]
     fn finish_start(&self, recovering: bool) -> GoRouteIsolatedStatus {
-        let result = self
-            .hub
-            .as_ref()
-            .ok_or_else(|| ERROR_ISOLATED_UNAVAILABLE.to_string())
-            .and_then(|hub| start_session(hub));
+        let existing_plan = self.lock().committed_plan.clone();
+        let plan = existing_plan.map(Ok).unwrap_or_else(|| {
+            self.hub
+                .as_ref()
+                .ok_or_else(|| ERROR_ISOLATED_UNAVAILABLE.to_string())
+                .and_then(|hub| build_runtime_plan(hub))
+        });
+        let result = plan.and_then(|plan| start_session(&plan).map(|session| (session, plan)));
         match result {
-            Ok(mut session) => {
+            Ok((mut session, plan)) => {
                 let mut inner = self.lock();
                 if inner.status.state != "starting" || !inner.desired || inner.stopping {
                     drop(inner);
@@ -245,6 +384,7 @@ impl GoRouteIsolatedHost {
                     restart_count: inner.status.restart_count + u32::from(recovering),
                 };
                 inner.session = Some(session);
+                inner.committed_plan = Some(plan);
                 inner.stable_since = Some(Instant::now());
                 inner.next_restart_at = None;
                 inner.status = status.clone();
@@ -308,6 +448,7 @@ impl GoRouteIsolatedHost {
                     let restart_count = inner.status.restart_count;
                     inner.status = stopped_status();
                     inner.status.restart_count = restart_count;
+                    inner.committed_plan = None;
                     inner.stopping = false;
                     return inner.status.clone();
                 }
@@ -316,6 +457,7 @@ impl GoRouteIsolatedHost {
                     inner.status = stopped_status();
                     inner.status.restart_count = restart_count;
                     inner.stopping = false;
+                    inner.committed_plan = None;
                     return inner.status.clone();
                 }
                 if wait_started.elapsed() >= START_STOP_WAIT {
@@ -522,7 +664,28 @@ fn terminate_session(session: &mut Session) {
 }
 
 #[cfg(unix)]
-fn start_session(hub: &AgentHub) -> Result<Session, String> {
+fn build_runtime_config(hub: &AgentHub) -> Result<Vec<u8>, String> {
+    let pools = hub
+        .route_pools()
+        .list_gateway_listener_pools()
+        .map_err(|error| error.to_string())?;
+    hub.adapter_bridge()
+        .build_go_route_isolated_config(&pools)
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(unix)]
+fn build_runtime_plan(hub: &AgentHub) -> Result<RuntimePlan, String> {
+    let config = build_runtime_config(hub)?;
+    Ok(RuntimePlan {
+        config_hash: sha256_hex(&config),
+        config,
+        port: pick_loopback_port()?,
+    })
+}
+
+#[cfg(unix)]
+fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
     let home = create_scratch_home()?;
     if is_forbidden_user_home(&home) {
         return Err("refusing real user AGENTHUB_HOME".into());
@@ -531,15 +694,11 @@ fn start_session(hub: &AgentHub) -> Result<Session, String> {
         return Err("AGENTHUB_HOME must be an absolute scratch directory under /tmp".into());
     }
 
-    let messages_port = pick_loopback_port()?;
-    let pools = hub
-        .route_pools()
-        .list_gateway_listener_pools()
-        .map_err(|error| error.to_string())?;
-    let runtime_config = hub
-        .adapter_bridge()
-        .build_go_route_isolated_config(&pools)
-        .map_err(|error| error.to_string())?;
+    if plan.port == PRODUCT_DEFAULT_PORT {
+        return Err(format!(
+            "refusing product default listen port {PRODUCT_DEFAULT_PORT}"
+        ));
+    }
 
     let scratch_root = home.parent().unwrap_or(home.as_path());
     let bin = resolve_adapterd_bin(scratch_root)?;
@@ -550,27 +709,31 @@ fn start_session(hub: &AgentHub) -> Result<Session, String> {
             .arg("--home")
             .arg(&home)
             .arg("--listen-port")
-            .arg(messages_port.to_string())
-            .arg("--runtime-config-stdin")
+            .arg(plan.port.to_string())
+            .arg("--runtime-config-stdin-stream")
             .stdin(Stdio::piped())
             .env("AGENTHUB_HOME", &home),
         &adapterd_log,
     )
     .map_err(|err| format!("adapterd spawn failed: {err}"))?;
-    if let Some(mut stdin) = adapterd.stdin.take() {
-        if let Err(error) = stdin.write_all(&runtime_config) {
-            let _ = adapterd.kill();
-            let _ = adapterd.wait();
-            return Err(format!("adapterd runtime config write failed: {error}"));
-        }
-    } else {
+    let Some(config_stdin) = adapterd.stdin.take() else {
         let _ = adapterd.kill();
         let _ = adapterd.wait();
         return Err("adapterd stdin unavailable".into());
+    };
+    let config_stdin = Arc::new(Mutex::new(config_stdin));
+    if let Err(error) = write_runtime_config_with_timeout(
+        Arc::clone(&config_stdin),
+        plan.config.clone(),
+        CONFIG_WRITE_WAIT,
+    ) {
+        let _ = adapterd.kill();
+        let _ = adapterd.wait();
+        return Err(format!("adapterd runtime config write failed: {error}"));
     }
 
     let socket = home.join("run/adapterd.sock");
-    let started = match handshake_start(&home, &socket, messages_port) {
+    let started = match handshake_start(&home, &socket, plan.port, &plan.config_hash) {
         Ok(session) => Session {
             home: session.home,
             socket: session.socket,
@@ -578,6 +741,7 @@ fn start_session(hub: &AgentHub) -> Result<Session, String> {
             instance_epoch: session.instance_epoch,
             port: session.port,
             next_owner_renewal: Instant::now() + OWNER_RENEW_INTERVAL,
+            config_stdin,
             adapterd,
         },
         Err(err) => {
@@ -587,6 +751,46 @@ fn start_session(hub: &AgentHub) -> Result<Session, String> {
         }
     };
     Ok(started)
+}
+
+#[cfg(unix)]
+fn write_runtime_config_frame(writer: &mut impl Write, config: &[u8]) -> Result<(), String> {
+    if config.is_empty() || config.len() > MAX_RUNTIME_CONFIG_BYTES {
+        return Err("runtime config frame is invalid".into());
+    }
+    let length =
+        u32::try_from(config.len()).map_err(|_| "runtime config frame is too large".to_string())?;
+    writer
+        .write_all(&length.to_be_bytes())
+        .and_then(|_| writer.write_all(config))
+        .and_then(|_| writer.flush())
+        .map_err(|_| "runtime config frame write failed".to_string())
+}
+
+#[cfg(unix)]
+fn write_runtime_config_with_timeout(
+    writer: Arc<Mutex<ChildStdin>>,
+    config: Vec<u8>,
+    timeout: Duration,
+) -> Result<Vec<u8>, String> {
+    let (sent, received) = std::sync::mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let result = {
+            let mut writer = writer
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            write_runtime_config_frame(&mut *writer, &config)
+        };
+        let _ = sent.send(result.map(|()| config));
+    });
+    received
+        .recv_timeout(timeout)
+        .map_err(|_| "runtime config frame write timed out".to_string())?
+}
+
+#[cfg(unix)]
+fn sha256_hex(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
 }
 
 struct HandshakeMeta {
@@ -602,6 +806,7 @@ fn handshake_start(
     home: &Path,
     socket: &Path,
     fallback_port: u16,
+    expected_config_hash: &str,
 ) -> Result<HandshakeMeta, String> {
     wait_for_socket(socket, Duration::from_secs(8))?;
     let home_s = home.display().to_string();
@@ -620,6 +825,17 @@ fn handshake_start(
         }),
     )?;
     let hs_payload = require_ok(&hs)?;
+    let supports_config_stream = hs_payload
+        .get("capabilities")
+        .and_then(Value::as_array)
+        .is_some_and(|capabilities| {
+            capabilities
+                .iter()
+                .any(|capability| capability.as_str() == Some(CONFIG_STREAM_CAPABILITY))
+        });
+    if !supports_config_stream {
+        return Err("Go route config stream is unavailable".into());
+    }
     let instance_epoch = hs_payload
         .get("instance_epoch")
         .and_then(Value::as_str)
@@ -669,6 +885,7 @@ fn handshake_start(
     let status_payload = require_ok(&st)?;
     if status_payload.get("listen_ready").and_then(Value::as_bool) != Some(true)
         || !owner_lease_valid(status_payload)
+        || status_payload.get("active_hash").and_then(Value::as_str) != Some(expected_config_hash)
     {
         return Err(ERROR_START_FAILED.into());
     }

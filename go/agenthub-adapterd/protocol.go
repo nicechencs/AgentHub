@@ -31,6 +31,7 @@ const (
 	errUnauthenticated   = "route.runtime.unauthenticated"
 	errProtocolMismatch  = "route.runtime.protocol_mismatch"
 	errConfigMismatch    = "route.runtime.config_format_mismatch"
+	errConfigStream      = "route.runtime.config_stream_unavailable"
 	errPackageMismatch   = "route.runtime.package_mismatch"
 	errScopeMismatch     = "route.runtime.scope_mismatch"
 	errStaleEpoch        = "route.runtime.stale_epoch"
@@ -56,6 +57,7 @@ var handshakeCapabilities = []string{
 	"control.acquire_owner",
 	"control.start",
 	"control.activate_probe_listen",
+	"config.stdin_stream.atomic",
 }
 
 type Envelope struct {

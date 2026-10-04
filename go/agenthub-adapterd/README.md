@@ -59,6 +59,7 @@ scripts/route-runtime-probe/messages-isolated.sh
 scripts/route-runtime-probe/pool-isolated.sh
 scripts/route-runtime-probe/protocols-isolated.sh
 scripts/route-runtime-probe/existing-flow-isolated.sh
+scripts/route-runtime-probe/config-stream-isolated.sh
 ```
 
 The scripts list every data/config/log path before start, check they stay
@@ -86,9 +87,18 @@ mkdir -p "$AGENTHUB_HOME"/{config,run,logs}
 ```
 
 Status replies must not include the entry key or upstream credentials.
-Application-managed runs add `--runtime-config-stdin` and provide the strict
-`route-config.v0-isolated` document on stdin. This interface remains internal
-to the isolated supervisor and is not a public configuration format.
+Application-managed runs use `--runtime-config-stdin-stream` and provide one or
+more length-framed `route-config.v0-isolated` documents on stdin. Each frame is
+a four-byte big-endian length followed by the exact JSON bytes. A valid update
+atomically replaces the complete edge table without changing the process or
+listen port; requests already in flight retain the table they selected. A
+complete but invalid JSON/schema frame is rejected while the last good table
+keeps serving. EOF, truncation, and oversize frames terminate the runtime
+instead of leaving an unsupervised stale configuration. Status exposes only an
+opaque SHA-256 acknowledgement and revision, never the configuration itself.
+The one-shot `--runtime-config-stdin` mode remains available to existing
+isolated probes. Both interfaces are internal and are not public configuration
+formats.
 
 ## Out of scope
 

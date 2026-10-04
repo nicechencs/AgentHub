@@ -42,9 +42,11 @@ type Runtime struct {
 	inFlight    int
 	lastError   *LastError
 
-	probe *ProbeFixture
-	pool  *Pool
-	edges []*RuntimeEdge
+	probe          *ProbeFixture
+	pool           *Pool
+	edges          []*RuntimeEdge
+	configRevision uint64
+	configHash     string
 
 	idempotency map[string]idempotentEntry
 
@@ -130,6 +132,23 @@ func (rt *Runtime) PIDFile() string       { return rt.pidFile }
 func (rt *Runtime) LogFile() string       { return rt.logFile }
 
 func (rt *Runtime) SetRuntimeConfig(config *RuntimeConfig) error {
+	return rt.replaceRuntimeConfig(config, "", false)
+}
+
+func (rt *Runtime) SetRuntimeConfigWithDigest(config *RuntimeConfig, digest string) error {
+	return rt.replaceRuntimeConfig(config, digest, false)
+}
+
+// SwapRuntimeConfig atomically replaces the authenticated edge table while
+// the loopback listener keeps serving. Requests that already selected an edge
+// retain their old pool pointer; new requests observe the new table.
+func (rt *Runtime) SwapRuntimeConfig(config *RuntimeConfig, digest string) error {
+	rt.lifecycleMu.Lock()
+	defer rt.lifecycleMu.Unlock()
+	return rt.replaceRuntimeConfig(config, digest, true)
+}
+
+func (rt *Runtime) replaceRuntimeConfig(config *RuntimeConfig, digest string, allowServing bool) error {
 	if err := validateRuntimeConfig(config); err != nil {
 		return err
 	}
@@ -139,11 +158,43 @@ func (rt *Runtime) SetRuntimeConfig(config *RuntimeConfig) error {
 	}
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	if rt.listenReady {
+	if rt.listenReady && !allowServing {
 		return fmt.Errorf("runtime config cannot change while serving")
 	}
 	rt.edges = edges
+	rt.configRevision = rt.configRevision + 1
+	rt.configHash = digest
+	rt.lastError = nil
 	return nil
+}
+
+func (rt *Runtime) recordRuntimeConfigRejection() {
+	rt.mu.Lock()
+	rt.lastError = &LastError{
+		Code:       errConfigMismatch,
+		Message:    "runtime config update was rejected",
+		ObservedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	rt.mu.Unlock()
+	rt.logf("runtime config update rejected")
+}
+
+func (rt *Runtime) stopAfterRuntimeConfigStreamFailure() {
+	rt.lifecycleMu.Lock()
+	rt.mu.Lock()
+	rt.listenReady = false
+	rt.lifecycle = lifecycleNotServing
+	rt.lastError = &LastError{
+		Code:       errConfigStream,
+		Message:    "runtime config stream is unavailable",
+		ObservedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	rt.mu.Unlock()
+	rt.lifecycleMu.Unlock()
+	rt.logf("runtime config stream unavailable; stopping")
+	if rt.cancel != nil {
+		rt.cancel()
+	}
 }
 
 func (rt *Runtime) WritePID() error {
@@ -480,6 +531,15 @@ func (rt *Runtime) statusSnapshot() (StatusSuccess, error) {
 		portPtr = &p
 	}
 	var schedule string
+	var activeRevision, activeHash *string
+	if rt.configRevision > 0 {
+		revision := fmt.Sprintf("%d", rt.configRevision)
+		activeRevision = &revision
+	}
+	if rt.configHash != "" {
+		hash := rt.configHash
+		activeHash = &hash
+	}
 	var memberCount, healthyCount int
 	if len(rt.edges) > 0 {
 		for _, edge := range rt.edges {
@@ -502,8 +562,8 @@ func (rt *Runtime) statusSnapshot() (StatusSuccess, error) {
 		InstanceID:         rt.instanceID,
 		InstanceEpoch:      rt.instanceEpoch,
 		OwnerTerm:          term,
-		ActiveRevision:     nil,
-		ActiveHash:         nil,
+		ActiveRevision:     activeRevision,
+		ActiveHash:         activeHash,
 		Prepared:           []byte("null"),
 		Lifecycle:          rt.lifecycle,
 		ListenReady:        rt.listenReady,

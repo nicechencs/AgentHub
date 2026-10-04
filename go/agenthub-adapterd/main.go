@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -9,9 +11,12 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 )
 
 const runtimeConfigRejectedMessage = "agenthub-adapterd: runtime config rejected"
+
+const maxConsecutiveRuntimeConfigRejections = 8
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "mock-upstream" {
@@ -34,8 +39,9 @@ func main() {
 	listenPort := fs.Int("listen-port", envInt("AGENTHUB_ADAPTERD_LISTEN_PORT", 0), "loopback Messages port (0 = ephemeral; not the product default)")
 	controlSocket := fs.String("control-socket", os.Getenv("AGENTHUB_ADAPTERD_CONTROL_SOCKET"), "absolute unix control socket (default $AGENTHUB_HOME/run/adapterd.sock)")
 	runtimeConfigStdin := fs.Bool("runtime-config-stdin", false, "read one route-config.v0-isolated JSON value from stdin")
+	runtimeConfigStdinStream := fs.Bool("runtime-config-stdin-stream", false, "read length-framed route configs from stdin and accept atomic updates")
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: agenthub-adapterd run --home DIR --listen-port PORT [--runtime-config-stdin]\n")
+		fmt.Fprintf(os.Stderr, "Usage: agenthub-adapterd run --home DIR --listen-port PORT [--runtime-config-stdin | --runtime-config-stdin-stream]\n")
 		fmt.Fprintf(os.Stderr, "       agenthub-adapterd mock-upstream --listen 127.0.0.1:PORT\n")
 		fs.PrintDefaults()
 	}
@@ -46,14 +52,26 @@ func main() {
 		fs.Usage()
 		os.Exit(2)
 	}
+	if *runtimeConfigStdin && *runtimeConfigStdinStream {
+		fmt.Fprintln(os.Stderr, "agenthub-adapterd: choose one runtime config stdin mode")
+		os.Exit(2)
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	var runtimeConfig *RuntimeConfig
+	var runtimeConfigHash string
 	if *runtimeConfigStdin {
 		var rejection string
-		runtimeConfig, rejection = loadRuntimeConfigForRun(os.Stdin)
+		runtimeConfig, runtimeConfigHash, rejection = loadRuntimeConfigForRun(os.Stdin)
+		if rejection != "" {
+			fmt.Fprintln(os.Stderr, rejection)
+			os.Exit(1)
+		}
+	} else if *runtimeConfigStdinStream {
+		var rejection string
+		runtimeConfig, _, runtimeConfigHash, rejection = loadRuntimeConfigFrameForRun(os.Stdin)
 		if rejection != "" {
 			fmt.Fprintln(os.Stderr, rejection)
 			os.Exit(1)
@@ -66,10 +84,13 @@ func main() {
 		os.Exit(1)
 	}
 	if runtimeConfig != nil {
-		if err := rt.SetRuntimeConfig(runtimeConfig); err != nil {
+		if err := rt.SetRuntimeConfigWithDigest(runtimeConfig, runtimeConfigHash); err != nil {
 			fmt.Fprintln(os.Stderr, "agenthub-adapterd: runtime config rejected")
 			os.Exit(1)
 		}
+	}
+	if *runtimeConfigStdinStream {
+		go consumeRuntimeConfigFrames(ctx, rt, os.Stdin)
 	}
 	if err := rt.WritePID(); err != nil {
 		fmt.Fprintf(os.Stderr, "agenthub-adapterd: pid file: %v\n", err)
@@ -89,12 +110,60 @@ func main() {
 	_ = rt.Shutdown(context.Background())
 }
 
-func loadRuntimeConfigForRun(r io.Reader) (*RuntimeConfig, string) {
-	config, err := LoadRuntimeConfig(r)
+func loadRuntimeConfigFrameForRun(r io.Reader) (*RuntimeConfig, []byte, string, string) {
+	config, raw, digest, err := readRuntimeConfigFrame(r)
 	if err != nil {
-		return nil, runtimeConfigRejectedMessage
+		return nil, nil, "", runtimeConfigRejectedMessage
 	}
-	return config, ""
+	return config, raw, digest, ""
+}
+
+func consumeRuntimeConfigFrames(ctx context.Context, rt *Runtime, r io.Reader) {
+	consecutiveRejections := 0
+	for {
+		config, _, digest, err := readRuntimeConfigFrame(r)
+		if ctx.Err() != nil {
+			return
+		}
+		if errors.Is(err, errRuntimeConfigFrameInvalid) {
+			consecutiveRejections++
+			rt.recordRuntimeConfigRejection()
+			if consecutiveRejections >= maxConsecutiveRuntimeConfigRejections {
+				rt.stopAfterRuntimeConfigStreamFailure()
+				return
+			}
+			time.Sleep(time.Duration(consecutiveRejections) * 25 * time.Millisecond)
+			continue
+		}
+		if err != nil {
+			rt.stopAfterRuntimeConfigStreamFailure()
+			return
+		}
+		if err := rt.SwapRuntimeConfig(config, digest); err != nil {
+			consecutiveRejections++
+			rt.recordRuntimeConfigRejection()
+			if consecutiveRejections >= maxConsecutiveRuntimeConfigRejections {
+				rt.stopAfterRuntimeConfigStreamFailure()
+				return
+			}
+			time.Sleep(time.Duration(consecutiveRejections) * 25 * time.Millisecond)
+			continue
+		}
+		consecutiveRejections = 0
+		rt.logf("runtime config updated atomically")
+	}
+}
+
+func loadRuntimeConfigForRun(r io.Reader) (*RuntimeConfig, string, string) {
+	raw, err := io.ReadAll(io.LimitReader(r, maxRuntimeConfigSize+1))
+	if err != nil || len(raw) > maxRuntimeConfigSize {
+		return nil, "", runtimeConfigRejectedMessage
+	}
+	config, err := LoadRuntimeConfig(bytes.NewReader(raw))
+	if err != nil {
+		return nil, "", runtimeConfigRejectedMessage
+	}
+	return config, runtimeConfigDigest(raw), ""
 }
 
 func envInt(name string, fallback int) int {
