@@ -1,6 +1,7 @@
 use agenthub_core::models::ConnectionTrashItem;
 use tauri::State;
 
+use super::adapter::finish_go_route_string_write_result;
 use super::{map_err_string, parse_agent_opt, with_hub_blocking};
 use crate::state::AppState;
 
@@ -33,11 +34,12 @@ pub async fn restore_connection_trash(
     id: String,
 ) -> Result<(), String> {
     let hub = state.hub_arc()?;
-    with_hub_blocking(hub, move |hub| {
+    let restored = with_hub_blocking(hub, move |hub| {
         hub.restore_connection_trash(&id)
             .map_err(|err| map_err_string("restore_connection_trash", err))
     })
-    .await
+    .await;
+    finish_go_route_string_write_result(&state, restored).await
 }
 
 #[tauri::command]

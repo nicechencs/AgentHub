@@ -16,6 +16,8 @@ use std::sync::Weak;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+#[cfg(all(debug_assertions, unix))]
+use agenthub_core::error::AppError;
 use agenthub_core::AgentHub;
 
 const PRODUCT_DEFAULT_PORT: u16 = 43121;
@@ -34,9 +36,14 @@ const STABLE_RUN_RESET: Duration = Duration::from_secs(30);
 const ERROR_ISOLATED_UNAVAILABLE: &str = "Go route is unavailable in this build";
 const ERROR_START_FAILED: &str = "Go route could not start";
 const ERROR_CONTROL_UNAVAILABLE: &str = "Go route status is unavailable";
+#[cfg(all(debug_assertions, unix))]
+const ERROR_REQUIRED_RELOAD_FAILED: &str = "go.route.required_reload_failed";
+#[cfg(all(debug_assertions, unix))]
+const REQUIRED_RELOAD_STOPPED_MESSAGE: &str =
+    "Go route configuration could not be updated; Go route was stopped";
 const MAX_RUNTIME_CONFIG_BYTES: usize = 8 * 1024 * 1024;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GoRouteIsolatedStatus {
     pub state: String,
@@ -50,6 +57,35 @@ pub struct GoRouteIsolatedStatus {
     pub healthy_member_count: u64,
     pub recovering: bool,
     pub restart_count: u32,
+}
+
+/// Result of synchronizing a committed product write into the optional Go
+/// route. This is deliberately a value rather than an error: callers need to
+/// distinguish an unavailable/disabled experiment from an enabled route that
+/// was stopped because it could not accept the new configuration.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum GoRouteRequiredReloadResult {
+    Reloaded {
+        config_hash: String,
+        instance_epoch: String,
+        port: u16,
+    },
+    Skipped {
+        reason: GoRouteRequiredReloadSkipReason,
+    },
+    Failed {
+        code: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GoRouteRequiredReloadSkipReason {
+    NotRunning,
+    #[allow(dead_code)] // constructed only by release and non-Unix builds
+    Unavailable,
+    Unchanged,
 }
 
 pub struct GoRouteIsolatedHost {
@@ -146,6 +182,23 @@ impl GoRouteIsolatedHost {
         });
         #[cfg(debug_assertions)]
         Self::spawn_monitor(Arc::downgrade(&host));
+        #[cfg(all(debug_assertions, unix))]
+        if let Some(hub) = host.hub.as_ref() {
+            let weak_host = Arc::downgrade(&host);
+            hub.accounts().set_oauth_access_publish(Arc::new(move || {
+                let Some(host) = weak_host.upgrade() else {
+                    return Ok(());
+                };
+                match host.reload_required_after_write() {
+                    GoRouteRequiredReloadResult::Reloaded { .. }
+                    | GoRouteRequiredReloadResult::Skipped { .. } => Ok(()),
+                    GoRouteRequiredReloadResult::Failed { .. } => Err(AppError::message(
+                        ERROR_REQUIRED_RELOAD_FAILED,
+                        REQUIRED_RELOAD_STOPPED_MESSAGE,
+                    )),
+                }
+            }));
+        }
         host
     }
 
@@ -318,6 +371,213 @@ impl GoRouteIsolatedHost {
                 port,
             });
             inner.status.clone()
+        }
+    }
+
+    /// Synchronizes a successful product write into an enabled Go route.
+    ///
+    /// This method is synchronous so async commands can run it with
+    /// `spawn_blocking`. A skipped result never changes product state. Once an
+    /// enabled session enters the reload, every failure is fail-closed: the
+    /// process is terminated, automatic recovery is disabled, and the last
+    /// committed runtime snapshot is discarded so stale configuration cannot
+    /// be restored.
+    pub fn reload_required_after_write(&self) -> GoRouteRequiredReloadResult {
+        #[cfg(not(debug_assertions))]
+        {
+            return GoRouteRequiredReloadResult::Skipped {
+                reason: GoRouteRequiredReloadSkipReason::Unavailable,
+            };
+        }
+        #[cfg(all(debug_assertions, not(unix)))]
+        {
+            return GoRouteRequiredReloadResult::Skipped {
+                reason: GoRouteRequiredReloadSkipReason::Unavailable,
+            };
+        }
+        #[cfg(all(debug_assertions, unix))]
+        {
+            let _update = self
+                .update_gate
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+            let session = {
+                let mut inner = self.lock();
+                refresh_locked(&mut inner);
+                if inner.desired && !inner.stopping {
+                    inner.session.as_ref().map(|session| {
+                        (
+                            Arc::clone(&session.config_stdin),
+                            ControlSession::from(session),
+                            session.port,
+                        )
+                    })
+                } else {
+                    return GoRouteRequiredReloadResult::Skipped {
+                        reason: GoRouteRequiredReloadSkipReason::NotRunning,
+                    };
+                }
+            };
+            let Some((config_stdin, control, port)) = session else {
+                return self.fail_required_reload();
+            };
+
+            let Some(hub) = self.hub.as_ref() else {
+                return self.fail_required_reload();
+            };
+            let config = match build_runtime_config(hub) {
+                Ok(config) => config,
+                Err(_) => return self.fail_required_reload(),
+            };
+            let config_hash = sha256_hex(&config);
+
+            let (same_session, unchanged) = {
+                let mut inner = self.lock();
+                refresh_locked(&mut inner);
+                let same_session = inner.desired
+                    && !inner.stopping
+                    && inner.session.as_ref().is_some_and(|session| {
+                        session.instance_epoch == control.instance_epoch && session.port == port
+                    });
+                let unchanged = same_session
+                    && inner
+                        .committed_plan
+                        .as_ref()
+                        .is_some_and(|plan| plan.config_hash == config_hash && plan.port == port);
+                (same_session, unchanged)
+            };
+            if !same_session {
+                return self.fail_required_reload();
+            }
+            if unchanged {
+                return match session_status(&control) {
+                    Ok(status)
+                        if required_reload_ack_matches(
+                            &status,
+                            &config_hash,
+                            &control.instance_epoch,
+                            port,
+                        ) =>
+                    {
+                        GoRouteRequiredReloadResult::Skipped {
+                            reason: GoRouteRequiredReloadSkipReason::Unchanged,
+                        }
+                    }
+                    Ok(_) | Err(_) => self.fail_required_reload(),
+                };
+            }
+
+            let config =
+                match write_runtime_config_with_timeout(config_stdin, config, CONFIG_WRITE_WAIT) {
+                    Ok(config) => config,
+                    Err(_) => return self.fail_required_reload(),
+                };
+
+            let deadline = Instant::now() + Duration::from_secs(8);
+            let acknowledged = loop {
+                match session_status(&control) {
+                    Ok(status)
+                        if required_reload_ack_matches(
+                            &status,
+                            &config_hash,
+                            &control.instance_epoch,
+                            port,
+                        ) =>
+                    {
+                        break true;
+                    }
+                    Ok(_) if Instant::now() < deadline => {
+                        std::thread::sleep(Duration::from_millis(25));
+                    }
+                    Ok(_) | Err(_) => break false,
+                }
+            };
+            if !acknowledged {
+                return self.fail_required_reload();
+            }
+
+            let committed = {
+                let mut inner = self.lock();
+                refresh_locked(&mut inner);
+                let same_session = inner
+                    .session
+                    .as_ref()
+                    .is_some_and(|session| session.instance_epoch == control.instance_epoch);
+                if same_session && inner.desired && !inner.stopping {
+                    inner.committed_plan = Some(RuntimePlan {
+                        config,
+                        config_hash: config_hash.clone(),
+                        port,
+                    });
+                    true
+                } else {
+                    false
+                }
+            };
+            if !committed {
+                return self.fail_required_reload();
+            }
+
+            GoRouteRequiredReloadResult::Reloaded {
+                config_hash,
+                instance_epoch: control.instance_epoch,
+                port,
+            }
+        }
+    }
+
+    /// Fail closed when the blocking task that owns a required reload cannot
+    /// return a result (for example, because its worker panicked).
+    pub fn fail_required_reload_task(&self) -> GoRouteRequiredReloadResult {
+        #[cfg(not(debug_assertions))]
+        {
+            GoRouteRequiredReloadResult::Skipped {
+                reason: GoRouteRequiredReloadSkipReason::Unavailable,
+            }
+        }
+        #[cfg(all(debug_assertions, not(unix)))]
+        {
+            GoRouteRequiredReloadResult::Skipped {
+                reason: GoRouteRequiredReloadSkipReason::Unavailable,
+            }
+        }
+        #[cfg(all(debug_assertions, unix))]
+        {
+            self.fail_required_reload()
+        }
+    }
+
+    #[cfg(all(debug_assertions, unix))]
+    fn fail_required_reload(&self) -> GoRouteRequiredReloadResult {
+        let mut inner = self.lock();
+        let mut session = inner.session.take();
+        let restart_count = inner.status.restart_count;
+        inner.desired = false;
+        inner.stopping = false;
+        inner.recovery_budget_used = 0;
+        inner.stable_since = None;
+        inner.next_restart_at = None;
+        inner.committed_plan = None;
+        inner.status = GoRouteIsolatedStatus {
+            state: "failed".into(),
+            listen_ready: false,
+            port: None,
+            last_error: Some(REQUIRED_RELOAD_STOPPED_MESSAGE.into()),
+            home: inner.status.home.clone(),
+            lifecycle: Some("stopped".into()),
+            in_flight_count: 0,
+            member_count: 0,
+            healthy_member_count: 0,
+            recovering: false,
+            restart_count,
+        };
+        drop(inner);
+        if let Some(session) = session.as_mut() {
+            terminate_session(session);
+        }
+        GoRouteRequiredReloadResult::Failed {
+            code: ERROR_REQUIRED_RELOAD_FAILED.into(),
         }
     }
 
@@ -774,15 +1034,18 @@ fn write_runtime_config_with_timeout(
     timeout: Duration,
 ) -> Result<Vec<u8>, String> {
     let (sent, received) = std::sync::mpsc::sync_channel(1);
-    std::thread::spawn(move || {
-        let result = {
-            let mut writer = writer
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            write_runtime_config_frame(&mut *writer, &config)
-        };
-        let _ = sent.send(result.map(|()| config));
-    });
+    std::thread::Builder::new()
+        .name("agenthub-go-config-write".into())
+        .spawn(move || {
+            let result = {
+                let mut writer = writer
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                write_runtime_config_frame(&mut *writer, &config)
+            };
+            let _ = sent.send(result.map(|()| config));
+        })
+        .map_err(|_| "runtime config writer could not start".to_string())?;
     received
         .recv_timeout(timeout)
         .map_err(|_| "runtime config frame write timed out".to_string())?
@@ -1132,6 +1395,19 @@ fn session_status(session: &ControlSession) -> Result<Value, String> {
         }),
     )?;
     Ok(require_ok(&reply)?.clone())
+}
+
+#[cfg(all(debug_assertions, unix))]
+fn required_reload_ack_matches(
+    status: &Value,
+    expected_hash: &str,
+    expected_epoch: &str,
+    expected_port: u16,
+) -> bool {
+    status.get("active_hash").and_then(Value::as_str) == Some(expected_hash)
+        && status.get("instance_epoch").and_then(Value::as_str) == Some(expected_epoch)
+        && status.get("port").and_then(Value::as_u64) == Some(u64::from(expected_port))
+        && status.get("listen_ready").and_then(Value::as_bool) == Some(true)
 }
 
 #[cfg(all(debug_assertions, unix))]

@@ -22,11 +22,11 @@ These slices prove, in an isolated scratch directory:
 `Start` is the product control name for this isolated slice. It does not write
 real agent config, refuses the product default port `43121` and real
 `~/.agenthub`. The application supervisor resolves eligible saved loopback
-routes and official Anthropic API Key routes through core, sends the complete
-runtime configuration once over the child process's stdin, and closes stdin.
-The configuration is retained only in memory. It can contain multiple
-Messages, Responses, and Chat Completions entries selected by their entry key
-and surface.
+routes and official Anthropic API Key routes through core, sends the initial
+complete runtime snapshot as a length-framed document, and keeps stdin open
+for later atomic replacements. The active configuration is retained only in
+memory. It can contain multiple Messages, Responses, and Chat Completions
+entries selected by their entry key and surface.
 
 The older `$AGENTHUB_HOME/config/probe.json` input remains only for the
 standalone probes and `ActivateProbeListen`; application start does not use it.
@@ -96,6 +96,10 @@ complete but invalid JSON/schema frame is rejected while the last good table
 keeps serving. EOF, truncation, and oversize frames terminate the runtime
 instead of leaving an unsupervised stale configuration. Status exposes only an
 opaque SHA-256 acknowledgement and revision, never the configuration itself.
+Each edge keeps its required primary entry Key in `ingress_key`; optional
+additional entry Keys use `ingress_keys`. Repeated Keys on one edge are
+deduplicated, while assigning any Key to multiple edges rejects the complete
+configuration. Request authentication still requires the edge's exact surface.
 The one-shot `--runtime-config-stdin` mode remains available to existing
 isolated probes. Both interfaces are internal and are not public configuration
 formats.

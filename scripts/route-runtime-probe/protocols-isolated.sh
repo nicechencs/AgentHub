@@ -24,6 +24,7 @@ ADAPTERD_LOG_STDOUT="${SCRATCH}/adapterd.stdout.log"
 SYNTHETIC_KEY="ahb_probe_isolated_synthetic_not_a_real_login"
 KEY_TAIL="${SYNTHETIC_KEY: -4}"
 CROSS_KEY="ahb_probe_cross_protocol_synthetic_not_a_real_login"
+CROSS_ALIAS="ahb_probe_cross_protocol_alias_synthetic"
 WRONG_KEY="ahb_probe_wrong_bearer_not_ingress"
 REAL_HOME="${HOME}/.agenthub"
 PRODUCT_PORT=43121
@@ -293,11 +294,11 @@ start_adapterd_cross_protocol() {
   rm -f "${PID_FILE}"
   echo "+ AGENTHUB_HOME=${HOME_DIR} ${BIN} run --home ${HOME_DIR} --listen-port ${port} --runtime-config-stdin (Responses -> OpenAI Chat)"
   AGENTHUB_HOME="${HOME_DIR}" "${BIN}" run --home "${HOME_DIR}" --listen-port "${port}" --runtime-config-stdin \
-    < <(python3 - "${UPSTREAM_PORT}" "${CROSS_KEY}" "${kind}" \
+    < <(python3 - "${UPSTREAM_PORT}" "${CROSS_KEY}" "${CROSS_ALIAS}" "${kind}" \
       "${MEMBER_HI}" "${MEMBER_QUOTA}" "${MEMBER_SLOW}" "${MODEL}" <<'PY'
 import json, sys
-port, ingress, kind = sys.argv[1:4]
-hi, quota, slow, model = sys.argv[4:8]
+port, ingress, ingress_alias, kind = sys.argv[1:5]
+hi, quota, slow, model = sys.argv[5:9]
 base = f"http://127.0.0.1:{port}/v1"
 
 def member(member_id, token, priority, position):
@@ -325,6 +326,7 @@ print(json.dumps({
     "edges": [{
         "id": "responses-to-openai-chat",
         "ingress_key": ingress,
+        "ingress_keys": [ingress, ingress_alias],
         "surface": "responses",
         "dialect": "codex",
         "schedule_policy": "priority_failover",
@@ -498,6 +500,12 @@ PY
 }
 
 post_cross_responses() {
+  post_cross_responses_as "${CROSS_KEY}" "$@"
+}
+
+post_cross_responses_as() {
+  local ingress_key="$1"
+  shift
   local out="$1"
   local hdr="$2"
   local stream="$3"
@@ -516,7 +524,7 @@ PY
 )"
   curl -sS -D "${hdr}" -o "${out}" -w '%{http_code}' \
     "${extra[@]}" \
-    -H "Authorization: Bearer ${CROSS_KEY}" \
+    -H "Authorization: Bearer ${ingress_key}" \
     -H 'Content-Type: application/json' \
     --data-binary "${payload}" \
     "http://127.0.0.1:${RESPONSES_PORT}/v1/responses" || true
@@ -534,6 +542,7 @@ assert_no_secrets_in() {
   for secret in \
     "${SYNTHETIC_KEY}" \
     "${CROSS_KEY}" \
+    "${CROSS_ALIAS}" \
     "${MEMBER_HI}" "${MEMBER_LO}" "${MEMBER_A}" "${MEMBER_B}" \
     "${MEMBER_QUOTA}" "${MEMBER_DOWN}" "${MEMBER_SLOW}" "${MEMBER_COMMIT}"
   do
@@ -1083,6 +1092,24 @@ else
   note_leftover "cross_responses_json: Responses -> OpenAI Chat translation is unavailable or malformed"
 fi
 
+CROSS_ALIAS_JSON="$(post_cross_responses_as "${CROSS_ALIAS}" \
+  "${SCRATCH}/resp/cross-alias.json" "${SCRATCH}/resp/cross-alias.headers" false false)"
+CROSS_ALIAS_WRONG_SURFACE="$(curl -sS \
+  -o "${SCRATCH}/resp/cross-alias-wrong-surface.json" -w '%{http_code}' \
+  -H "Authorization: Bearer ${CROSS_ALIAS}" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}" \
+  "http://127.0.0.1:${RESPONSES_PORT}/v1/chat/completions" || true)"
+if [[ "${CROSS_ALIAS_JSON}" == "200" ]] \
+  && cross_responses_json_ok "${SCRATCH}/resp/cross-alias.json" "${SCRATCH}/resp/cross-alias.headers" \
+  && [[ "${CROSS_ALIAS_WRONG_SURFACE}" == "401" ]] \
+  && invalid_key_ok "${SCRATCH}/resp/cross-alias-wrong-surface.json"; then
+  record_pass "cross_alias_and_surface_auth"
+else
+  record_fail "cross_alias_and_surface_auth" \
+    "alias=${CROSS_ALIAS_JSON} wrong_surface=${CROSS_ALIAS_WRONG_SURFACE}"
+fi
+
 CROSS_TOOL="$(post_cross_responses "${SCRATCH}/resp/cross-tool.sse" "${SCRATCH}/resp/cross-tool.headers" true true)"
 if [[ "${CROSS_TOOL}" == "200" ]] \
   && grep -Fqi 'text/event-stream' "${SCRATCH}/resp/cross-tool.headers" \
@@ -1155,6 +1182,7 @@ secret_scan_fail=0
 for secret in \
   "${SYNTHETIC_KEY}" \
   "${CROSS_KEY}" \
+  "${CROSS_ALIAS}" \
   "${MEMBER_HI}" "${MEMBER_LO}" "${MEMBER_A}" "${MEMBER_B}" \
   "${MEMBER_QUOTA}" "${MEMBER_DOWN}" "${MEMBER_SLOW}" "${MEMBER_COMMIT}"
 do
@@ -1194,6 +1222,7 @@ names = [
     "chat_commit_no_replay",
     "chat_client_cancel",
     "cross_responses_json",
+    "cross_alias_and_surface_auth",
     "cross_responses_tool_sse",
     "cross_method_and_auth",
     "cross_quota_before_output",
@@ -1225,6 +1254,7 @@ PY
 
 if grep -F -q -- "${SYNTHETIC_KEY}" "${EVIDENCE}" \
   || grep -F -q -- "${CROSS_KEY}" "${EVIDENCE}" \
+  || grep -F -q -- "${CROSS_ALIAS}" "${EVIDENCE}" \
   || grep -E -q 'sk-member-[a-z]+-synthetic' "${EVIDENCE}"; then
   echo "FAIL: evidence.json contains a secret" >&2
   record_fail "evidence_secret"

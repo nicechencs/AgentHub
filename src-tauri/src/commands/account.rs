@@ -6,6 +6,7 @@ use agenthub_core::models::{Account, AccountSwitchResult, AuthState, ImportLiveR
 use agenthub_core::AgentHub;
 use tauri::State;
 
+use crate::commands::adapter::finish_go_route_string_write_result;
 use crate::commands::{
     invalidate_runtime_catalogs, map_err_string, parse_agent, with_hub_blocking,
 };
@@ -18,10 +19,11 @@ pub async fn list_accounts(
     agent_id: Option<String>,
 ) -> Result<Vec<Account>, String> {
     let hub = state.hub_arc()?;
-    with_hub_blocking(hub, move |hub| {
+    let accounts = with_hub_blocking(hub, move |hub| {
         list_accounts_inner(hub, agent_id.as_deref())
     })
-    .await
+    .await;
+    finish_go_route_string_write_result(&state, accounts).await
 }
 
 /// Invoke: `probe_live_auth` — read-only, redacted authentication status.
@@ -44,10 +46,11 @@ pub async fn import_account_live(
     let hub = state.hub_arc()?;
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
-    with_hub_blocking(hub, move |hub| {
+    let report = with_hub_blocking(hub, move |hub| {
         import_account_live_inner(hub, &agent_id, name.as_deref())
     })
-    .await
+    .await;
+    finish_go_route_string_write_result(&state, report).await
 }
 
 /// Invoke: `add_api_key_account`
@@ -65,7 +68,7 @@ pub async fn add_api_key_account(
     let hub = state.hub_arc()?;
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
-    with_hub_blocking(hub, move |hub| {
+    let account = with_hub_blocking(hub, move |hub| {
         add_api_key_account_inner_with_catalog(
             hub,
             &agent_id,
@@ -77,7 +80,8 @@ pub async fn add_api_key_account(
             model_id.as_deref(),
         )
     })
-    .await
+    .await;
+    finish_go_route_string_write_result(&state, account).await
 }
 
 /// Invoke: `update_api_key_account`
@@ -92,7 +96,7 @@ pub async fn update_api_key_account(
     let hub = state.hub_arc()?;
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
-    with_hub_blocking(hub, move |hub| {
+    let account = with_hub_blocking(hub, move |hub| {
         update_api_key_account_inner(
             hub,
             &agent_id,
@@ -101,7 +105,8 @@ pub async fn update_api_key_account(
             key.as_deref(),
         )
     })
-    .await
+    .await;
+    finish_go_route_string_write_result(&state, account).await
 }
 
 /// Invoke: `switch_account`
@@ -114,10 +119,11 @@ pub async fn switch_account(
     let hub = state.hub_arc()?;
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
-    with_hub_blocking(hub, move |hub| {
+    let result = with_hub_blocking(hub, move |hub| {
         switch_account_inner(hub, &agent_id, &id_or_label)
     })
-    .await
+    .await;
+    finish_go_route_string_write_result(&state, result).await
 }
 
 /// Invoke: `undo_switch_account` — re-apply the previous account after a switch.
@@ -129,7 +135,7 @@ pub async fn undo_switch_account(
     let hub = state.hub_arc()?;
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
-    with_hub_blocking(hub, move |hub| {
+    let undone = with_hub_blocking(hub, move |hub| {
         let undone = hub
             .accounts()
             .undo_switch(agent)
@@ -139,7 +145,8 @@ pub async fn undo_switch_account(
         }
         Ok(undone)
     })
-    .await
+    .await;
+    finish_go_route_string_write_result(&state, undone).await
 }
 
 /// Invoke: `delete_account`
@@ -152,10 +159,11 @@ pub async fn delete_account(
     let hub = state.hub_arc()?;
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
-    with_hub_blocking(hub, move |hub| {
+    let deleted = with_hub_blocking(hub, move |hub| {
         delete_account_inner(hub, &agent_id, &id_or_label)
     })
-    .await
+    .await;
+    finish_go_route_string_write_result(&state, deleted).await
 }
 
 /// Invoke: `refresh_account_token`
@@ -168,13 +176,14 @@ pub async fn refresh_account_token(
     let hub = state.hub_arc()?;
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
-    with_hub_blocking(hub, move |hub| {
+    let account = with_hub_blocking(hub, move |hub| {
         hub.accounts()
             .refresh_token(&id_or_label, agent)
             .map(|a| a.redacted())
             .map_err(|e| map_err_string("refresh_account_token", e))
     })
-    .await
+    .await;
+    finish_go_route_string_write_result(&state, account).await
 }
 
 /// Invoke: `refresh_account_quota` — force 5h/7d upstream quota probe for OAuth.
@@ -200,15 +209,17 @@ pub async fn refresh_account_quota(
         Ok((account.redacted(), hint))
     })
     .await?;
-    host.apply_account_quota(
-        &account.id,
-        hint.remaining_pct,
-        hint.reset_at,
-        hint.fresh_until,
-        hint.credit,
-    )
-    .map_err(|err| err.to_string())?;
-    Ok(account)
+    let applied = host
+        .apply_account_quota(
+            &account.id,
+            hint.remaining_pct,
+            hint.reset_at,
+            hint.fresh_until,
+            hint.credit,
+        )
+        .map_err(|err| err.to_string())
+        .map(|_| account);
+    finish_go_route_string_write_result(&state, applied).await
 }
 
 fn list_accounts_inner(hub: &AgentHub, agent_id: Option<&str>) -> Result<Vec<Account>, String> {
@@ -232,7 +243,7 @@ pub async fn reconcile_accounts(
     agent_id: Option<String>,
 ) -> Result<Vec<Account>, String> {
     let hub = state.hub_arc()?;
-    with_hub_blocking(hub, move |hub| {
+    let accounts = with_hub_blocking(hub, move |hub| {
         let filter = match agent_id.as_deref() {
             None => None,
             Some(s) if s.trim().is_empty() => None,
@@ -244,7 +255,8 @@ pub async fn reconcile_accounts(
             .map_err(|e| map_err_string("reconcile_accounts", e))?;
         Ok(items.into_iter().map(|a| a.redacted()).collect())
     })
-    .await
+    .await;
+    finish_go_route_string_write_result(&state, accounts).await
 }
 
 fn probe_live_auth_inner(hub: &AgentHub, agent_id: &str) -> Result<AuthState, String> {

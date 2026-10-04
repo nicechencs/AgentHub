@@ -34,6 +34,7 @@ type RuntimeConfig struct {
 type RuntimeEdgeConfig struct {
 	ID             string                `json:"id"`
 	IngressKey     string                `json:"ingress_key"`
+	IngressKeys    []string              `json:"ingress_keys,omitempty"`
 	Surface        string                `json:"surface"`
 	Dialect        string                `json:"dialect"`
 	SchedulePolicy string                `json:"schedule_policy"`
@@ -54,11 +55,27 @@ type RuntimeMemberConfig struct {
 }
 
 type RuntimeEdge struct {
-	ID         string
-	IngressKey string
-	Surface    string
-	Dialect    string
-	Pool       *Pool
+	ID          string
+	IngressKey  string
+	IngressKeys []string
+	Surface     string
+	Dialect     string
+	Pool        *Pool
+}
+
+func (edge *RuntimeEdge) acceptsIngressKey(candidate string) bool {
+	if edge == nil || candidate == "" {
+		return false
+	}
+	if edge.IngressKey == candidate {
+		return true
+	}
+	for _, ingressKey := range edge.IngressKeys {
+		if ingressKey == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func LoadRuntimeConfig(r io.Reader) (*RuntimeConfig, error) {
@@ -106,7 +123,7 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 		return fmt.Errorf("runtime config requires at least one edge")
 	}
 	ids := make(map[string]struct{}, len(config.Edges))
-	ingressKeys := make(map[string]struct{}, len(config.Edges))
+	ingressKeyOwners := make(map[string]int, len(config.Edges))
 	for edgeIndex := range config.Edges {
 		edge := &config.Edges[edgeIndex]
 		edge.ID = strings.TrimSpace(edge.ID)
@@ -129,10 +146,28 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 		if !dialectMatchesSurface(edge.Dialect, edge.Surface) {
 			return fmt.Errorf("runtime edge %s dialect does not match surface", edge.ID)
 		}
-		if _, exists := ingressKeys[edge.IngressKey]; exists {
-			return fmt.Errorf("runtime edge ingress_key is duplicated")
+		acceptedIngressKeys := make([]string, 0, len(edge.IngressKeys)+1)
+		acceptedIngressKeys = append(acceptedIngressKeys, edge.IngressKey)
+		acceptedIngressKeys = append(acceptedIngressKeys, edge.IngressKeys...)
+		deduplicatedAliases := make([]string, 0, len(edge.IngressKeys))
+		seenOnEdge := make(map[string]struct{}, len(acceptedIngressKeys))
+		for keyIndex, ingressKey := range acceptedIngressKeys {
+			if ingressKey == "" {
+				return fmt.Errorf("runtime edge %d ingress key %d is empty", edgeIndex, keyIndex)
+			}
+			if owner, exists := ingressKeyOwners[ingressKey]; exists && owner != edgeIndex {
+				return fmt.Errorf("runtime edge ingress key is assigned to multiple edges")
+			}
+			ingressKeyOwners[ingressKey] = edgeIndex
+			if _, duplicate := seenOnEdge[ingressKey]; duplicate {
+				continue
+			}
+			seenOnEdge[ingressKey] = struct{}{}
+			if keyIndex > 0 {
+				deduplicatedAliases = append(deduplicatedAliases, ingressKey)
+			}
 		}
-		ingressKeys[edge.IngressKey] = struct{}{}
+		edge.IngressKeys = deduplicatedAliases
 		if edge.SchedulePolicy == "" {
 			edge.SchedulePolicy = policyPriorityFailover
 		}
@@ -228,11 +263,12 @@ func runtimeEdges(config *RuntimeConfig) ([]*RuntimeEdge, error) {
 			return nil, fmt.Errorf("runtime edge %s pool is invalid", edge.ID)
 		}
 		edges = append(edges, &RuntimeEdge{
-			ID:         edge.ID,
-			IngressKey: edge.IngressKey,
-			Surface:    edge.Surface,
-			Dialect:    edge.Dialect,
-			Pool:       pool,
+			ID:          edge.ID,
+			IngressKey:  edge.IngressKey,
+			IngressKeys: append([]string(nil), edge.IngressKeys...),
+			Surface:     edge.Surface,
+			Dialect:     edge.Dialect,
+			Pool:        pool,
 		})
 	}
 	return edges, nil

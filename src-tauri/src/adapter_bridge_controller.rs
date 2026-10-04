@@ -46,6 +46,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::commands::{map_err_string, with_hub_blocking};
 use crate::exit_coordinator::LifecycleShutdownBarrier;
+use crate::go_route_isolated::GoRouteIsolatedHost;
 
 const CODE_BRIDGE_START: &str = "adapter.bridge_start";
 const CODE_BRIDGE_PROJECTION: &str = "adapter.bridge_projection";
@@ -575,6 +576,7 @@ pub(crate) fn restore_adapter_bridges(
     coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     restarting: Arc<AtomicBool>,
+    go_route: Arc<GoRouteIsolatedHost>,
     app: AppHandle,
 ) {
     tauri::async_runtime::spawn(async move {
@@ -815,6 +817,16 @@ pub(crate) fn restore_adapter_bridges(
                 );
                 surface_shared_restore_failure(hub.clone(), &error).await;
             }
+        }
+        if let Err(error) =
+            crate::commands::adapter::reload_go_route_host_after_write(go_route).await
+        {
+            tracing::warn!(
+                target: targets::GUI,
+                op = "adapter_bridge_restore",
+                error = %error,
+                "启动恢复已保存，但 Go 路由无法加载新配置，已停止"
+            );
         }
     });
 }

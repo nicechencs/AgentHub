@@ -171,20 +171,35 @@ impl AccountService {
         if !matches!(account.agent_id, AgentId::Grok | AgentId::Codex) {
             return Ok(None);
         }
-        if oauth_grant_is_cli_owned(&account) {
-            let rotated = self.follow_cli_owned_access(&account.id, account.agent_id)?;
-            if rotated.is_some() {
-                return Ok(rotated);
+        let reload = (|| {
+            if oauth_grant_is_cli_owned(&account) {
+                let rotated = self.follow_cli_owned_access(&account.id, account.agent_id)?;
+                if rotated.is_some() {
+                    Ok(rotated)
+                } else {
+                    Ok(usable_access_token(
+                        &self.get(&account.id, Some(account.agent_id))?,
+                    ))
+                }
+            } else if oauth_grant_is_hub_owned(&account) {
+                let refreshed = self.refresh_token(&account.id, account.agent_id)?;
+                Ok(usable_access_token(&refreshed))
+            } else {
+                Ok(None)
             }
-            return Ok(usable_access_token(
-                &self.get(&account.id, Some(account.agent_id))?,
-            ));
+        })();
+
+        // Refresh/follow may commit a replacement, clear usability, or mark the
+        // login as needing attention before returning an error. Always publish
+        // after the attempt so an enabled runtime can never retain the prior
+        // bearer. The signal carries no token; an unchanged snapshot is a
+        // verified no-op at the host boundary.
+        let publish = self.publish_oauth_access_change();
+        match (reload, publish) {
+            (Ok(next), Ok(())) => Ok(next),
+            (Err(error), Ok(())) => Err(error),
+            (Ok(_), Err(error)) | (Err(_), Err(error)) => Err(error),
         }
-        if !oauth_grant_is_hub_owned(&account) {
-            return Ok(None);
-        }
-        let refreshed = self.refresh_token(&account.id, account.agent_id)?;
-        Ok(usable_access_token(&refreshed))
     }
 
     fn mark_cli_oauth_needs_login(&self, account: &Account) -> Result<()> {

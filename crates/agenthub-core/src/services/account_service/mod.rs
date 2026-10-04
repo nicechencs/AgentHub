@@ -17,7 +17,7 @@ mod switch_saga;
 mod tests;
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use crate::adapters::{AdapterRegistry, AgentAdapter};
 use crate::error::{AppError, Result};
@@ -62,6 +62,11 @@ pub const MAX_ACCOUNT_LABEL_LEN: usize = 256;
 
 pub use oauth_owner::oauth_bridge_reload_callback;
 
+/// Process-local notification that an OAuth reload attempt may have changed
+/// persisted upstream access state. The callback carries no account id or
+/// secret; the host rebuilds its complete snapshot from storage.
+pub type OAuthAccessPublish = Arc<dyn Fn() -> Result<()> + Send + Sync>;
+
 /// Business facade over [`AccountRepo`].
 #[derive(Clone)]
 pub struct AccountService {
@@ -71,6 +76,7 @@ pub struct AccountService {
     pub(super) backup: Option<BackupService>,
     pub(super) lock_dir: Option<PathBuf>,
     pub(super) connections: ConnectionService,
+    oauth_access_publish: Arc<RwLock<Option<OAuthAccessPublish>>>,
 }
 
 impl AccountService {
@@ -86,6 +92,7 @@ impl AccountService {
             backup: None,
             lock_dir: None,
             connections: ConnectionService::new(db),
+            oauth_access_publish: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -107,7 +114,28 @@ impl AccountService {
             registry,
             lock_dir: Some(lock_dir),
             connections: ConnectionService::new(db),
+            oauth_access_publish: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Install the desktop-owned publication boundary for OAuth reload
+    /// outcomes. Core stays independent of the optional runtime; CLI callers
+    /// simply leave this unset.
+    pub fn set_oauth_access_publish(&self, publish: OAuthAccessPublish) {
+        let mut slot = self
+            .oauth_access_publish
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *slot = Some(publish);
+    }
+
+    pub(super) fn publish_oauth_access_change(&self) -> Result<()> {
+        let publish = self
+            .oauth_access_publish
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        publish.map_or(Ok(()), |publish| publish())
     }
 
     #[cfg(test)]

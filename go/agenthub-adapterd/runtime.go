@@ -495,6 +495,7 @@ func (rt *Runtime) handleStatus(env Envelope) Reply {
 	}
 	for _, edge := range rt.edges {
 		secrets = append(secrets, edge.IngressKey)
+		secrets = append(secrets, edge.IngressKeys...)
 		secrets = append(secrets, edge.Pool.Secrets()...)
 	}
 	rt.mu.Unlock()
@@ -943,7 +944,7 @@ func (rt *Runtime) edgeForRequest(ingressKey, surface string) *RuntimeEdge {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	for _, edge := range rt.edges {
-		if edge.IngressKey == ingressKey && edge.Surface == surface {
+		if edge.Surface == surface && edge.acceptsIngressKey(ingressKey) {
 			return edge
 		}
 	}
@@ -957,7 +958,7 @@ func (rt *Runtime) edgeForIngress(ingressKey string) *RuntimeEdge {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	for _, edge := range rt.edges {
-		if edge.IngressKey == ingressKey {
+		if edge.acceptsIngressKey(ingressKey) {
 			return edge
 		}
 	}

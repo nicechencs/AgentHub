@@ -83,6 +83,7 @@ pub fn run() {
                     app.state::<AppState>().bridge_saga_coordinator(),
                     app.state::<AppState>().lifecycle_shutdown_barrier(),
                     app.state::<AppState>().local_gateway_restarting(),
+                    app.state::<AppState>().go_route_isolated(),
                     app.handle().clone(),
                 );
             }

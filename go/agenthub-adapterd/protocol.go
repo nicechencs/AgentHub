@@ -189,6 +189,7 @@ func controlContainsForbiddenFields(raw []byte) bool {
 	lower := strings.ToLower(string(raw))
 	needles := []string{
 		`"ingress_key"`,
+		`"ingress_keys"`,
 		`"local_token"`,
 		`"api_key"`,
 		`"upstream_key"`,

@@ -6,6 +6,7 @@ use agenthub_core::oauth::{
 };
 use tauri::State;
 
+use crate::commands::adapter::reload_go_route_after_write;
 use crate::commands::{map_err_string, parse_agent, with_hub_blocking};
 use crate::state::AppState;
 
@@ -30,8 +31,9 @@ pub async fn oauth_start(
 ) -> Result<StartOAuthResult, String> {
     let hub = state.hub_arc()?;
     let open = open_browser.unwrap_or(false);
-    with_hub_blocking(hub, move |hub| {
-        let agent = parse_agent(&agent_id)?;
+    let agent = parse_agent(&agent_id)?;
+    let saves_kiro_login = agent == AgentId::Kiro;
+    let result = with_hub_blocking(hub, move |hub| {
         if agent == AgentId::Kiro {
             return oauth::start_kiro_cli_login(Some(hub.accounts()))
                 .map_err(|e| map_err_string("oauth_start", e));
@@ -39,7 +41,11 @@ pub async fn oauth_start(
         oauth::start_oauth(agent, open, provider_key.as_deref())
             .map_err(|e| map_err_string("oauth_start", e))
     })
-    .await
+    .await;
+    if saves_kiro_login {
+        return finish_oauth_route_write(&state, result).await;
+    }
+    result
 }
 
 /// Invoke: `oauth_wait`
@@ -70,7 +76,7 @@ pub async fn oauth_complete(
         .map_err(|e| map_err_string("oauth_complete", e))?
         .agent_id;
     let _target_guard = state.bridge_saga_coordinator().lock_target(target).await;
-    with_hub_blocking(hub, move |hub| {
+    let result = with_hub_blocking(hub, move |hub| {
         let current = oauth::oauth_session_info(&oauth_state)
             .map_err(|e| map_err_string("oauth_complete", e))?;
         if current.agent_id != target {
@@ -80,7 +86,8 @@ pub async fn oauth_complete(
             .map(|a| a.redacted())
             .map_err(|e| map_err_string("oauth_complete", e))
     })
-    .await
+    .await;
+    finish_oauth_route_write(&state, result).await
 }
 
 /// Invoke: `oauth_cancel` — fail an in-flight PKCE/device session and drop its listener.
@@ -150,7 +157,7 @@ pub async fn oauth_device_complete(
             })?,
         ),
     };
-    with_hub_blocking(hub, move |hub| {
+    let result = with_hub_blocking(hub, move |hub| {
         let current = oauth::device_oauth_agent(&oauth_state)
             .map_err(|e| map_err_string("oauth_device_complete", e))?;
         if current != target {
@@ -177,5 +184,22 @@ pub async fn oauth_device_complete(
             .map(|a| a.redacted())
             .map_err(|e| map_err_string("oauth_device_complete", e))
     })
-    .await
+    .await;
+    finish_oauth_route_write(&state, result).await
+}
+
+/// A login flow may save a refreshed login before a later attach, logout, or
+/// process-launch step fails. Always reconcile the optional Go route after the
+/// flow has started; an unchanged snapshot is a cheap no-op.
+async fn finish_oauth_route_write<T>(
+    state: &AppState,
+    result: Result<T, String>,
+) -> Result<T, String> {
+    let reload = reload_go_route_after_write(state).await;
+    match (result, reload) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Ok(_), Err(reload_error)) => Err(reload_error),
+        (Err(error), Ok(())) => Err(error),
+        (Err(error), Err(reload_error)) => Err(format!("{error}; {reload_error}")),
+    }
 }

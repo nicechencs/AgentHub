@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -190,6 +191,22 @@ func TestControlRejectsIngressKeyField(t *testing.T) {
 	reply := rt.HandleControl([]byte(`{"type":"Status","request_id":"nope","ingress_key":"secret"}`))
 	if reply.OK || reply.Error == nil || reply.Error.Code != errSecretOnControl {
 		t.Fatalf("expected secret_on_control, got %+v", reply)
+	}
+}
+
+func TestControlRejectsIngressKeysField(t *testing.T) {
+	rt := testRuntime(t)
+	const alias = "ahb_control_alias_must_not_echo"
+	reply := rt.HandleControl([]byte(`{"type":"Status","request_id":"nope","ingress_keys":["` + alias + `"]}`))
+	if reply.OK || reply.Error == nil || reply.Error.Code != errSecretOnControl {
+		t.Fatalf("reply=%+v", reply)
+	}
+	raw, err := json.Marshal(reply)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte(alias)) {
+		t.Fatalf("control rejection leaked an entry Key: %s", raw)
 	}
 }
 

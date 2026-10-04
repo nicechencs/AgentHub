@@ -11,6 +11,7 @@ use tauri::{
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
+use crate::commands::adapter::reload_go_route_host_after_write;
 use crate::commands::{map_err_string, with_hub_blocking};
 use crate::exit_coordinator::{
     exit_impact_action, CoordinatedShutdownAction, ExitImpactAction, ExitImpactChoice,
@@ -279,9 +280,10 @@ fn spawn_tray_bridge_batch<R: Runtime>(app: AppHandle<R>, start: bool) {
                 state.hub_arc().ok()?,
                 state.bridge_host(),
                 state.adapter_control().ok()?,
+                state.go_route_isolated(),
             ))
         });
-        let Some((hub, host, control)) = extracted else {
+        let Some((hub, host, control, go_route)) = extracted else {
             tracing::warn!(
                 target: "gui",
                 op = "tray_routes",
@@ -334,6 +336,7 @@ fn spawn_tray_bridge_batch<R: Runtime>(app: AppHandle<R>, start: bool) {
             start,
         );
 
+        let attempted_start = start && !ids.is_empty();
         for id in ids {
             let result = if start {
                 control.start_bridge(id.clone()).await
@@ -348,6 +351,16 @@ fn spawn_tray_bridge_batch<R: Runtime>(app: AppHandle<R>, start: bool) {
                     start,
                     error = %error,
                     "tray bridge batch item failed"
+                );
+            }
+        }
+        if attempted_start {
+            if let Err(error) = reload_go_route_host_after_write(go_route).await {
+                tracing::warn!(
+                    target: "gui",
+                    op = "tray_routes",
+                    error = %error,
+                    "托盘启动已保存，但 Go 路由无法加载新配置，已停止"
                 );
             }
         }

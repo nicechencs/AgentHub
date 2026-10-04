@@ -19,6 +19,9 @@ const (
 	configIngressMessages  = "ahb_config_messages_secret"
 	configIngressResponses = "ahb_config_responses_secret"
 	configIngressChat      = "ahb_config_chat_secret"
+	configAliasMessages    = "ahb_config_messages_alias_secret"
+	configAliasResponses   = "ahb_config_responses_alias_secret"
+	configAliasChat        = "ahb_config_chat_alias_secret"
 	configUpstreamMessages = "upstream_messages_secret"
 	configUpstreamResponse = "upstream_responses_secret"
 	configUpstreamChat     = "upstream_chat_secret"
@@ -87,17 +90,17 @@ func threeEdgeConfig(upstream string) *RuntimeConfig {
 		Version: runtimeConfigVersion,
 		Edges: []RuntimeEdgeConfig{
 			{
-				ID: "messages-edge", IngressKey: configIngressMessages, Surface: surfaceMessages,
+				ID: "messages-edge", IngressKey: configIngressMessages, IngressKeys: []string{configAliasMessages}, Surface: surfaceMessages,
 				Dialect: "claude", SchedulePolicy: policyPriorityFailover, FixtureModel: "claude-config-model",
 				Members: []RuntimeMemberConfig{{ID: "messages-member", UpstreamBaseURL: upstream, UpstreamKey: configUpstreamMessages, UpstreamAuth: authAPIKey, UpstreamTransport: transportAnthropicMessages, Models: []string{"claude-config-model"}}},
 			},
 			{
-				ID: "responses-edge", IngressKey: configIngressResponses, Surface: surfaceResponses,
+				ID: "responses-edge", IngressKey: configIngressResponses, IngressKeys: []string{configAliasResponses}, Surface: surfaceResponses,
 				Dialect: "codex", SchedulePolicy: policyPriorityFailover, FixtureModel: "gpt-config-response",
 				Members: []RuntimeMemberConfig{{ID: "responses-member", UpstreamBaseURL: upstream, UpstreamKey: configUpstreamResponse, UpstreamAuth: authBearer, UpstreamTransport: transportCodexResponses, Models: []string{"gpt-config-response"}}},
 			},
 			{
-				ID: "chat-edge", IngressKey: configIngressChat, Surface: surfaceChatCompletions,
+				ID: "chat-edge", IngressKey: configIngressChat, IngressKeys: []string{configAliasChat}, Surface: surfaceChatCompletions,
 				Dialect: "generic", SchedulePolicy: policyRoundRobin, FixtureModel: "gpt-config-chat",
 				Members: []RuntimeMemberConfig{{ID: "chat-member", UpstreamBaseURL: upstream, UpstreamKey: configUpstreamChat, UpstreamAuth: authBearer, UpstreamTransport: transportOpenAIChatCompletions, Models: []string{"gpt-config-chat"}}},
 			},
@@ -128,6 +131,50 @@ func TestLoadRuntimeConfigValidatesSchemaWithoutEchoingSecrets(t *testing.T) {
 		} else if strings.Contains(err.Error(), "ingress-secret") || strings.Contains(err.Error(), "upstream-secret") {
 			t.Fatalf("validation error leaked a secret: %v", err)
 		}
+	}
+}
+
+func TestRuntimeConfigIngressAliasesAreDeduplicatedPerEdgeAndUniqueAcrossEdges(t *testing.T) {
+	const primary = "ahb_alias_test_primary_synthetic"
+	const alias = "ahb_alias_test_extra_synthetic"
+	raw := `{"version":"route-config.v0-isolated","edges":[{"id":"edge","ingress_key":"` + primary + `","ingress_keys":["` + primary + `","` + alias + `","` + alias + `"],"surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"upstream-secret","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","priority":0,"position":0,"models":["model"]}]}]}`
+	config, err := LoadRuntimeConfig(strings.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := config.Edges[0].IngressKeys; len(got) != 1 || got[0] != alias {
+		t.Fatalf("deduplicated aliases=%#v", got)
+	}
+
+	otherEdge := func(ingressKey string, ingressKeys []string) RuntimeEdgeConfig {
+		return RuntimeEdgeConfig{
+			ID: "other", IngressKey: ingressKey, IngressKeys: ingressKeys,
+			Surface: surfaceMessages, Dialect: "claude", FixtureModel: "model",
+			Members: []RuntimeMemberConfig{{
+				ID: "member-2", UpstreamBaseURL: "http://127.0.0.1:18080", UpstreamKey: "upstream-secret-2",
+				UpstreamAuth: authAPIKey, UpstreamTransport: transportAnthropicMessages, Models: []string{"model"},
+			}},
+		}
+	}
+	for _, duplicate := range []RuntimeEdgeConfig{
+		otherEdge(primary, nil),
+		otherEdge("other-primary", []string{alias}),
+	} {
+		candidate, loadErr := LoadRuntimeConfig(strings.NewReader(raw))
+		if loadErr != nil {
+			t.Fatal(loadErr)
+		}
+		candidate.Edges = append(candidate.Edges, duplicate)
+		if err := validateRuntimeConfig(candidate); err == nil {
+			t.Fatal("accepted an ingress key assigned to multiple edges")
+		} else if strings.Contains(err.Error(), primary) || strings.Contains(err.Error(), alias) {
+			t.Fatalf("cross-edge conflict leaked an ingress key: %v", err)
+		}
+	}
+
+	emptyAlias := strings.Replace(raw, `"ingress_keys":["`+primary+`","`+alias+`","`+alias+`"]`, `"ingress_keys":[""]`, 1)
+	if _, err := LoadRuntimeConfig(strings.NewReader(emptyAlias)); err == nil {
+		t.Fatal("accepted an empty ingress alias")
 	}
 }
 
@@ -393,8 +440,11 @@ func TestRuntimeConfigRoutesThreeSurfacesAndAuthModes(t *testing.T) {
 		path, key, model string
 	}{
 		{"/v1/messages", configIngressMessages, "claude-config-model"},
+		{"/v1/messages", configAliasMessages, "claude-config-model"},
 		{"/v1/responses", configIngressResponses, "gpt-config-response"},
+		{"/v1/responses", configAliasResponses, "gpt-config-response"},
 		{"/v1/chat/completions", configIngressChat, "gpt-config-chat"},
+		{"/v1/chat/completions", configAliasChat, "gpt-config-chat"},
 	}
 	for _, item := range requests {
 		body := bytes.NewBufferString(`{"model":"` + item.model + `","stream":false}`)
@@ -447,7 +497,11 @@ func TestRuntimeConfigRoutesThreeSurfacesAndAuthModes(t *testing.T) {
 	if !status.OK {
 		t.Fatalf("status: %+v", status.Error)
 	}
-	for _, secret := range []string{configIngressMessages, configIngressResponses, configIngressChat, configUpstreamMessages, configUpstreamResponse, configUpstreamChat} {
+	for _, secret := range []string{
+		configIngressMessages, configIngressResponses, configIngressChat,
+		configAliasMessages, configAliasResponses, configAliasChat,
+		configUpstreamMessages, configUpstreamResponse, configUpstreamChat,
+	} {
 		if bytes.Contains(status.Payload, []byte(secret)) {
 			t.Fatalf("status leaked secret: %s", status.Payload)
 		}

@@ -17,6 +17,7 @@ use agenthub_core::models::{
 };
 use agenthub_core::utils::upstream_model_catalog::SourceModelCatalog;
 use agenthub_core::AgentHub;
+use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 use crate::adapter_bridge_controller::{
@@ -29,6 +30,7 @@ use crate::adapter_control_host::apply_result_from_binding;
 use crate::commands::{
     adapter_error_from_string, map_err_string, parse_agent, with_hub_blocking, GuiError,
 };
+use crate::go_route_isolated::{GoRouteIsolatedHost, GoRouteRequiredReloadResult};
 use crate::state::AppState;
 
 /// Preview a supported connection route. This command never applies a config or starts a bridge.
@@ -85,7 +87,7 @@ pub async fn plan_adapter(
 pub async fn list_ticket_wallet(state: State<'_, AppState>) -> Result<TicketWallet, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     let host = state.bridge_host();
-    with_hub_blocking(hub, move |hub| {
+    let wallet = with_hub_blocking(hub, move |hub| {
         let mut wallet = hub
             .tickets()
             .list_wallet()
@@ -94,7 +96,8 @@ pub async fn list_ticket_wallet(state: State<'_, AppState>) -> Result<TicketWall
         Ok(wallet)
     })
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, wallet).await
 }
 
 /// Plan an adapter route from a ticket id (`account:<id>` / `provider:<id>`).
@@ -154,10 +157,11 @@ pub async fn bind_ticket(
 ) -> Result<TicketBinding, GuiError> {
     let control = state.adapter_control().map_err(adapter_error_from_string)?;
     let target_agent_id = parse_agent(&target_agent_id).map_err(adapter_error_from_string)?;
-    control
+    let binding = control
         .bind(ticket_id, target_agent_id)
         .await
-        .map_err(adapter_error_from_string)
+        .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, binding).await
 }
 
 /// Unbind a ticket from an Agent. Stops a bridge first, then restores previous
@@ -170,10 +174,11 @@ pub async fn unbind_ticket(
 ) -> Result<(), GuiError> {
     let control = state.adapter_control().map_err(adapter_error_from_string)?;
     let agent_id = parse_agent(&agent_id).map_err(adapter_error_from_string)?;
-    control
+    let unbound = control
         .unbind(ticket_id, agent_id)
         .await
-        .map_err(adapter_error_from_string)
+        .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, unbound).await
 }
 
 /// Thin compatibility delegate to [`bind_ticket`]. Prefer bind as the write API.
@@ -204,13 +209,13 @@ pub async fn apply_adapter(
     }
     let control = state.adapter_control().map_err(adapter_error_from_string)?;
     let target_agent_id = preflight_target;
-    let binding = control
-        .bind(ticket, target_agent_id)
-        .await
-        .map_err(adapter_error_from_string)?;
-    with_hub_blocking(hub, move |hub| apply_result_from_binding(hub, &binding))
-        .await
-        .map_err(adapter_error_from_string)
+    let result = match control.bind(ticket, target_agent_id).await {
+        Ok(binding) => with_hub_blocking(hub, move |hub| apply_result_from_binding(hub, &binding))
+            .await
+            .map_err(adapter_error_from_string),
+        Err(error) => Err(adapter_error_from_string(error)),
+    };
+    finish_go_route_write_result(&state, result).await
 }
 
 /// Start an already-created local bridge by profile id.
@@ -219,12 +224,13 @@ pub async fn start_adapter_bridge(
     state: State<'_, AppState>,
     profile_id: String,
 ) -> Result<AdapterBridgeStatusDto, GuiError> {
-    state
+    let status = state
         .adapter_control()
         .map_err(adapter_error_from_string)?
         .start_bridge(profile_id)
         .await
-        .map_err(adapter_error_from_string)
+        .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, status).await
 }
 
 /// Stop one local bridge. Calling stop for an already-stopped profile is safe.
@@ -261,7 +267,7 @@ pub async fn start_local_gateway(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<LocalGatewayStatus, GuiError> {
-    start_shared_local_gateway(
+    let status = start_shared_local_gateway(
         state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
         state.bridge_saga_coordinator(),
@@ -271,7 +277,8 @@ pub async fn start_local_gateway(
         true,
     )
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, status).await
 }
 
 /// Stop the shared local gateway.
@@ -357,13 +364,14 @@ pub async fn set_chat_completions_shared(
     shared: bool,
 ) -> Result<DefaultRoutePoolList, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    with_hub_blocking(hub, move |hub| {
+    let pools = with_hub_blocking(hub, move |hub| {
         hub.route_pools()
             .set_chat_completions_shared(shared)
             .map_err(|err| map_err_string("set_chat_completions_shared", err))
     })
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, pools).await
 }
 
 /// Default RoutePool overview for the Routes page. Hub token is never serialized.
@@ -410,17 +418,20 @@ pub async fn test_local_token(
     let host = state.bridge_host();
     let status = match read_local_gateway_status(&host, &state.local_gateway_restarting()) {
         Ok(status) if status.running => status,
-        _ => start_shared_local_gateway(
-            hub.clone(),
-            host.clone(),
-            state.bridge_saga_coordinator(),
-            state.lifecycle_shutdown_barrier(),
-            state.local_gateway_restarting(),
-            app,
-            false,
-        )
-        .await
-        .map_err(adapter_error_from_string)?,
+        _ => {
+            let started = start_shared_local_gateway(
+                hub.clone(),
+                host.clone(),
+                state.bridge_saga_coordinator(),
+                state.lifecycle_shutdown_barrier(),
+                state.local_gateway_restarting(),
+                app,
+                false,
+            )
+            .await
+            .map_err(adapter_error_from_string);
+            finish_go_route_write_result(&state, started).await?
+        }
     };
     let live_endpoint = status
         .port
@@ -483,14 +494,15 @@ pub async fn ensure_source_model_catalog(
     source_id: String,
 ) -> Result<SourceModelCatalog, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    with_hub_blocking(hub, move |hub| {
+    let catalog = with_hub_blocking(hub, move |hub| {
         let kind = parse_source_kind(&source_kind)?;
         hub.route_pools()
             .ensure_source_model_catalog(kind, &source_id)
             .map_err(|err| map_err_string("ensure_source_model_catalog", err))
     })
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, catalog).await
 }
 
 /// Replace the cached list with a user-supplied model list for routing.
@@ -502,14 +514,15 @@ pub async fn set_source_custom_models(
     models: Vec<String>,
 ) -> Result<SourceModelCatalog, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    with_hub_blocking(hub, move |hub| {
+    let catalog = with_hub_blocking(hub, move |hub| {
         let kind = parse_source_kind(&source_kind)?;
         hub.route_pools()
             .set_source_custom_models(kind, &source_id, models)
             .map_err(|err| map_err_string("set_source_custom_models", err))
     })
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, catalog).await
 }
 
 /// Save a custom model list for the token's pool logins.
@@ -519,7 +532,7 @@ pub async fn set_local_token_custom_models(
     token: String,
     models: Vec<String>,
 ) -> Result<Vec<String>, GuiError> {
-    set_local_gateway_custom_models(
+    let listed = set_local_gateway_custom_models(
         state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
         state.bridge_saga_coordinator(),
@@ -528,7 +541,8 @@ pub async fn set_local_token_custom_models(
         models,
     )
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, listed).await
 }
 
 /// Live model ids for the tokens-page test dropdown.
@@ -549,7 +563,7 @@ pub async fn refresh_local_token_models(
     state: State<'_, AppState>,
     token: String,
 ) -> Result<Vec<String>, GuiError> {
-    refresh_local_gateway_models(
+    let listed = refresh_local_gateway_models(
         state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
         state.bridge_saga_coordinator(),
@@ -557,7 +571,8 @@ pub async fn refresh_local_token_models(
         token,
     )
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, listed).await
 }
 
 /// Replace one default-pool loopback bearer. Restarts that edge if it is live.
@@ -567,7 +582,7 @@ pub async fn set_local_token(
     pool_id: String,
     token: String,
 ) -> Result<LocalTokenRecord, GuiError> {
-    crate::adapter_bridge_controller::set_local_gateway_token(
+    let record = crate::adapter_bridge_controller::set_local_gateway_token(
         state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
         state.bridge_saga_coordinator(),
@@ -576,7 +591,8 @@ pub async fn set_local_token(
         token,
     )
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, record).await
 }
 
 #[tauri::command]
@@ -585,7 +601,7 @@ pub async fn create_local_token(
     pool_id: String,
     name: String,
 ) -> Result<LocalTokenRecord, GuiError> {
-    create_local_gateway_token(
+    let record = create_local_gateway_token(
         state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
         state.bridge_saga_coordinator(),
@@ -594,7 +610,8 @@ pub async fn create_local_token(
         name,
     )
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, record).await
 }
 
 #[tauri::command]
@@ -615,7 +632,7 @@ pub async fn set_local_token_name(
 
 #[tauri::command]
 pub async fn delete_local_token(state: State<'_, AppState>, id: String) -> Result<(), GuiError> {
-    crate::adapter_bridge_controller::delete_local_gateway_token(
+    let deleted = crate::adapter_bridge_controller::delete_local_gateway_token(
         state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
         state.bridge_saga_coordinator(),
@@ -623,7 +640,8 @@ pub async fn delete_local_token(state: State<'_, AppState>, id: String) -> Resul
         id,
     )
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, deleted).await
 }
 
 /// Enroll a newly added authorization into the default auth pool and mark it
@@ -638,7 +656,7 @@ pub async fn attach_pool_owned_authorization(
     schedule_policy: Option<String>,
 ) -> Result<DefaultRoutePoolOverview, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    with_hub_blocking(hub, move |hub| {
+    let overview = with_hub_blocking(hub, move |hub| {
         let source_kind = parse_source_kind(&source_kind)?;
         let target_agent_id = parse_agent(&target_agent_id)?;
         let surface = RouteDownstreamSurface::parse(&surface).ok_or_else(|| {
@@ -665,7 +683,8 @@ pub async fn attach_pool_owned_authorization(
             .map_err(|err| map_err_string("attach_pool_owned_authorization", err))
     })
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, overview).await
 }
 
 /// Copy a Connections-managed official login into a pool-owned row.
@@ -676,14 +695,15 @@ pub async fn fork_connection_authorization(
     source_id: String,
 ) -> Result<ForkedConnectionAuthorization, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    with_hub_blocking(hub, move |hub| {
+    let authorization = with_hub_blocking(hub, move |hub| {
         let source_kind = parse_source_kind(&source_kind)?;
         hub.route_pools()
             .fork_connection_authorization(source_kind, &source_id)
             .map_err(|err| map_err_string("fork_connection_authorization", err))
     })
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, authorization).await
 }
 
 /// Enable or disable every default-pool membership of one login.
@@ -695,14 +715,15 @@ pub async fn set_route_authorization_enabled(
     enabled: bool,
 ) -> Result<u32, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    with_hub_blocking(hub, move |hub| {
+    let updated = with_hub_blocking(hub, move |hub| {
         let source_kind = parse_source_kind(&source_kind)?;
         hub.route_pools()
             .set_authorization_enabled(source_kind, &source_id, enabled)
             .map_err(|err| map_err_string("set_route_authorization_enabled", err))
     })
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, updated).await
 }
 
 /// Set one pool's schedule. Unknown values fail closed.
@@ -717,7 +738,7 @@ pub async fn set_route_pool_schedule_policy(
 ) -> Result<DefaultRoutePoolOverview, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     let host = state.bridge_host();
-    let (overview, policy) = with_hub_blocking(hub.clone(), move |hub| {
+    let persisted = with_hub_blocking(hub.clone(), move |hub| {
         let policy = RouteSchedulePolicy::parse(&schedule_policy).ok_or_else(|| {
             "invalid schedule_policy, expected: priority_failover|round_robin".to_string()
         })?;
@@ -728,10 +749,15 @@ pub async fn set_route_pool_schedule_policy(
         Ok::<_, String>((overview, policy))
     })
     .await
-    .map_err(adapter_error_from_string)?;
-    host.apply_pool_schedule_policy(&overview.id, policy)
-        .map_err(|err| adapter_error_from_string(err.to_string()))?;
-    Ok(overview)
+    .map_err(adapter_error_from_string);
+    let applied = match persisted {
+        Ok((overview, policy)) => host
+            .apply_pool_schedule_policy(&overview.id, policy)
+            .map_err(|err| adapter_error_from_string(err.to_string()))
+            .map(|_| overview),
+        Err(error) => Err(error),
+    };
+    finish_go_route_write_result(&state, applied).await
 }
 
 /// Set priority on every default-pool membership of one login.
@@ -743,14 +769,15 @@ pub async fn set_route_authorization_priority(
     priority: i64,
 ) -> Result<u32, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    with_hub_blocking(hub, move |hub| {
+    let updated = with_hub_blocking(hub, move |hub| {
         let source_kind = parse_source_kind(&source_kind)?;
         hub.route_pools()
             .set_authorization_priority(source_kind, &source_id, priority)
             .map_err(|err| map_err_string("set_route_authorization_priority", err))
     })
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, updated).await
 }
 
 /// Remove every default-pool membership of one login.
@@ -764,14 +791,15 @@ pub async fn remove_route_authorization(
     source_id: String,
 ) -> Result<u32, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    with_hub_blocking(hub, move |hub| {
+    let removed = with_hub_blocking(hub, move |hub| {
         let source_kind = parse_source_kind(&source_kind)?;
         hub.route_pools()
             .remove_route_authorization(source_kind, &source_id)
             .map_err(|err| map_err_string("remove_route_authorization", err))
     })
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, removed).await
 }
 
 /// Move a Connections-managed pool member into the pool recycle bin.
@@ -783,14 +811,15 @@ pub async fn recycle_route_membership(
     source_id: String,
 ) -> Result<u32, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    with_hub_blocking(hub, move |hub| {
+    let recycled = with_hub_blocking(hub, move |hub| {
         let source_kind = parse_source_kind(&source_kind)?;
         hub.route_pools()
             .recycle_route_membership(source_kind, &source_id)
             .map_err(|err| map_err_string("recycle_route_membership", err))
     })
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, recycled).await
 }
 
 /// Enroll existing Connections authorizations into default auth pools.
@@ -801,7 +830,7 @@ pub async fn sync_connection_authorizations(
     request: Option<agenthub_core::models::SyncConnectionAuthorizationsRequest>,
 ) -> Result<SyncConnectionAuthorizationsResult, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    with_hub_blocking(hub, move |hub| {
+    let synced = with_hub_blocking(hub, move |hub| {
         let result = match request.as_ref() {
             Some(request) => hub.route_pools().sync_connection_authorizations_selected(
                 Some(&request.sources),
@@ -812,7 +841,8 @@ pub async fn sync_connection_authorizations(
         result.map_err(|err| map_err_string("sync_connection_authorizations", err))
     })
     .await
-    .map_err(adapter_error_from_string)
+    .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, synced).await
 }
 
 /// Convert a native_endpoint / config_sync login into the target Agent default
@@ -833,15 +863,15 @@ pub async fn enroll_native_to_gateway(
         .await
         .map_err(adapter_error_from_string)?
     };
-    let binding = match control.bind(ticket, target).await {
-        Ok(binding) => binding,
-        Err(error) => return Err(adapter_error_from_string(error)),
+    let overview = match control.bind(ticket, target).await {
+        Ok(binding) => with_hub_blocking(hub, move |hub| {
+            persist_enroll_native_if_bound(hub, host.as_ref(), Ok(binding))
+        })
+        .await
+        .map_err(adapter_error_from_string),
+        Err(error) => Err(adapter_error_from_string(error)),
     };
-    with_hub_blocking(hub, move |hub| {
-        persist_enroll_native_if_bound(hub, host.as_ref(), Ok(binding))
-    })
-    .await
-    .map_err(adapter_error_from_string)
+    finish_go_route_write_result(&state, overview).await
 }
 
 /// Remove an adapter profile and its generated provider when it is not current.
@@ -850,12 +880,75 @@ pub async fn remove_adapter(
     state: State<'_, AppState>,
     profile_id: String,
 ) -> Result<(), GuiError> {
-    state
+    let removed = state
         .adapter_control()
         .map_err(adapter_error_from_string)?
         .remove(profile_id)
         .await
-        .map_err(adapter_error_from_string)
+        .map_err(adapter_error_from_string);
+    finish_go_route_write_result(&state, removed).await
+}
+
+/// Publish a possibly committed route write into the optional isolated Go
+/// runtime. Product writes stay committed; an enabled runtime that cannot
+/// acknowledge the exact new snapshot is stopped and surfaced explicitly.
+async fn finish_go_route_write_result<T>(
+    state: &AppState,
+    result: Result<T, GuiError>,
+) -> Result<T, GuiError> {
+    let reload = reload_go_route_after_write(state).await;
+    match (result, reload) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(primary), Ok(())) => Err(primary),
+        (Ok(_), Err(reload)) => Err(adapter_error_from_string(reload)),
+        (Err(mut primary), Err(reload)) => {
+            primary.message = format!("{}；{reload}", primary.message);
+            Err(primary)
+        }
+    }
+}
+
+pub(crate) async fn finish_go_route_string_write_result<T>(
+    state: &AppState,
+    result: Result<T, String>,
+) -> Result<T, String> {
+    let reload = reload_go_route_after_write(state).await;
+    match (result, reload) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(primary), Ok(())) => Err(primary),
+        (Ok(_), Err(reload)) => Err(reload),
+        (Err(primary), Err(reload)) => Err(format!("{primary}; {reload}")),
+    }
+}
+
+pub(crate) async fn reload_go_route_after_write(state: &AppState) -> Result<(), String> {
+    reload_go_route_host_after_write(state.go_route_isolated()).await
+}
+
+pub(crate) async fn reload_go_route_host_after_write(
+    host: Arc<GoRouteIsolatedHost>,
+) -> Result<(), String> {
+    let reload_host = Arc::clone(&host);
+    let outcome = match tauri::async_runtime::spawn_blocking(move || {
+        reload_host.reload_required_after_write()
+    })
+    .await
+    {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            let _ = host.fail_required_reload_task();
+            return Err(format!(
+                "写入已保存，但 Go 路由更新任务失败，已停止。请检查后重新开启：{error}"
+            ));
+        }
+    };
+    match outcome {
+        GoRouteRequiredReloadResult::Reloaded { .. }
+        | GoRouteRequiredReloadResult::Skipped { .. } => Ok(()),
+        GoRouteRequiredReloadResult::Failed { code } => Err(format!(
+            "写入已保存，但 Go 路由无法加载新配置，已停止。请检查后重新开启。 [{code}]"
+        )),
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -18,6 +18,7 @@ use agenthub_core::AgentHub;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
+use crate::commands::adapter::finish_go_route_string_write_result;
 use crate::commands::{
     invalidate_runtime_catalogs, map_err_string, parse_agent, parse_agent_opt, with_hub_blocking,
 };
@@ -53,7 +54,8 @@ pub async fn list_providers(
     let items = with_hub_blocking(hub.clone(), move |hub| {
         list_providers_inner(hub, agent_id.as_deref())
     })
-    .await?;
+    .await;
+    let items = finish_go_route_string_write_result(&state, items).await?;
     emit_provider_binding_heals(&app, hub.providers().drain_adapter_binding_heals());
     Ok(items)
 }
@@ -96,7 +98,8 @@ pub async fn upsert_provider(
         .bridge_saga_coordinator()
         .lock_target(input.agent_id)
         .await;
-    with_hub_blocking(hub, move |hub| upsert_provider_inner(hub, input)).await
+    let provider = with_hub_blocking(hub, move |hub| upsert_provider_inner(hub, input)).await;
+    finish_go_route_string_write_result(&state, provider).await
 }
 
 /// Invoke: `delete_provider`
@@ -109,10 +112,11 @@ pub async fn delete_provider(
     let agent = parse_agent(&agent_id)?;
     let hub = state.hub_arc()?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
-    with_hub_blocking(hub, move |hub| {
+    let deleted = with_hub_blocking(hub, move |hub| {
         delete_provider_inner(hub, &agent_id, &provider_id)
     })
-    .await
+    .await;
+    finish_go_route_string_write_result(&state, deleted).await
 }
 
 /// Invoke: `disconnect_pi_provider` — remove a Pi provider from live config,
@@ -128,12 +132,13 @@ pub async fn disconnect_pi_provider(
         .bridge_saga_coordinator()
         .lock_target(AgentId::Pi)
         .await;
-    with_hub_blocking(hub, move |hub| {
+    let disconnected = with_hub_blocking(hub, move |hub| {
         hub.providers()
             .disconnect_pi_provider(&id, delete_from_library)
             .map_err(|e| map_err_string("disconnect_pi_provider", e))
     })
-    .await
+    .await;
+    finish_go_route_string_write_result(&state, disconnected).await
 }
 
 /// Invoke: `import_provider_live` — capture live agent config into the pool.
@@ -146,10 +151,11 @@ pub async fn import_provider_live(
     let agent = parse_agent(&agent_id)?;
     let hub = state.hub_arc()?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
-    with_hub_blocking(hub, move |hub| {
+    let provider = with_hub_blocking(hub, move |hub| {
         import_provider_live_inner(hub, &agent_id, name.as_deref())
     })
-    .await
+    .await;
+    finish_go_route_string_write_result(&state, provider).await
 }
 
 /// Invoke: `switch_provider` — backfill → backup → live write → DB select.
@@ -162,10 +168,11 @@ pub async fn switch_provider(
     let agent = parse_agent(&agent_id)?;
     let hub = state.hub_arc()?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
-    with_hub_blocking(hub, move |hub| {
+    let result = with_hub_blocking(hub, move |hub| {
         switch_provider_inner(hub, &agent_id, &id_or_name)
     })
-    .await
+    .await;
+    finish_go_route_string_write_result(&state, result).await
 }
 
 /// Invoke: `switch_provider_preview` — read-only dialog summary (no writes).
@@ -191,7 +198,7 @@ pub async fn undo_switch_provider(
     let agent = parse_agent(&agent_id)?;
     let hub = state.hub_arc()?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
-    with_hub_blocking(hub, move |hub| {
+    let undone = with_hub_blocking(hub, move |hub| {
         let undone = hub
             .providers()
             .undo_switch(agent)
@@ -201,7 +208,8 @@ pub async fn undo_switch_provider(
         }
         Ok(undone)
     })
-    .await
+    .await;
+    finish_go_route_string_write_result(&state, undone).await
 }
 
 /// Invoke: `list_remote_openai_models` — GET {base}/v1/models (unsaved paste OK).

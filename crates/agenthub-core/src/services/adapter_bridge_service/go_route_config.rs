@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 use std::net::IpAddr;
 
@@ -38,6 +38,8 @@ impl fmt::Debug for GoRouteIsolatedConfig {
 struct GoRouteIsolatedEdge {
     id: String,
     ingress_key: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    ingress_keys: Vec<String>,
     surface: &'static str,
     dialect: &'static str,
     schedule_policy: &'static str,
@@ -67,6 +69,10 @@ impl AdapterBridgeService {
     /// a command/UI boundary.
     pub fn build_go_route_isolated_config(&self, pools: &[RoutePool]) -> Result<Vec<u8>> {
         let flags = self.route_pools.pair_adapter_flags();
+        let accepted_bearers = self
+            .route_pools
+            .list_accepted_local_bearers()
+            .map_err(|_| incompatible_go_config_error())?;
         let mut edges = Vec::with_capacity(pools.len());
         for pool in pools {
             let enabled_member_count = self
@@ -80,7 +86,7 @@ impl AdapterBridgeService {
             if enabled_member_count == 0 || spec.members.len() != enabled_member_count {
                 return Err(incompatible_go_config_error());
             }
-            edges.push(go_edge_from_spec(pool, &spec)?);
+            edges.push(go_edge_from_spec(pool, &spec, &accepted_bearers)?);
         }
         if edges.is_empty() {
             return Err(go_config_error(
@@ -96,10 +102,28 @@ impl AdapterBridgeService {
     }
 }
 
-fn go_edge_from_spec(pool: &RoutePool, spec: &BridgeStartSpec) -> Result<GoRouteIsolatedEdge> {
+fn go_edge_from_spec(
+    pool: &RoutePool,
+    spec: &BridgeStartSpec,
+    accepted_bearers: &[(String, String)],
+) -> Result<GoRouteIsolatedEdge> {
     if spec.local_token.trim().is_empty() {
         return Err(incompatible_go_config_error());
     }
+    // Keep the pool's primary key in the required compatibility field. Sort
+    // and deduplicate every persisted extra or historical same-pool projection
+    // in the aliases field. Stable ordering is important because the desktop
+    // hashes the complete serialized config.
+    let primary = spec.local_token.trim().to_owned();
+    let aliases = accepted_bearers
+        .iter()
+        .filter(|(_, pool_id)| pool_id == &pool.id)
+        .filter_map(|(bearer, _)| {
+            let bearer = bearer.trim();
+            (!bearer.is_empty() && bearer != primary).then(|| bearer.to_owned())
+        })
+        .collect::<BTreeSet<_>>();
+    let ingress_keys = aliases.into_iter().collect();
     let members = if let Some(index) = spec.route_index.as_ref() {
         let snapshots = index.capability_snapshots();
         spec.members
@@ -138,7 +162,8 @@ fn go_edge_from_spec(pool: &RoutePool, spec: &BridgeStartSpec) -> Result<GoRoute
 
     Ok(GoRouteIsolatedEdge {
         id: pool.id.clone(),
-        ingress_key: spec.local_token.clone(),
+        ingress_key: primary,
+        ingress_keys,
         surface: pool.downstream_surface.as_str(),
         dialect: pool.downstream_dialect.as_str(),
         schedule_policy: pool.schedule_policy.as_str(),

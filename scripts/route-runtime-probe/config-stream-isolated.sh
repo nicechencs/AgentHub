@@ -24,6 +24,9 @@ PRODUCT_PORT=43121
 INITIAL_INGRESS="ahb_stream_initial_ingress_synthetic"
 UPDATED_INGRESS="ahb_stream_updated_ingress_synthetic"
 INVALID_INGRESS="ahb_stream_invalid_ingress_must_not_log"
+INITIAL_ALIAS="ahb_stream_initial_alias_synthetic"
+UPDATED_ALIAS="ahb_stream_updated_alias_synthetic"
+INVALID_ALIAS="ahb_stream_invalid_alias_must_not_log"
 INITIAL_UPSTREAM="sk-member-header-messages-synthetic"
 UPDATED_UPSTREAM="sk-member-hi-synthetic"
 INVALID_UPSTREAM="sk-stream-invalid-upstream-must-not-log"
@@ -97,26 +100,26 @@ ADAPTERD_PID=$!
 exec {CONFIG_FD}>"${CONFIG_FIFO}"
 
 send_config_frame() {
-  local kind="$1" ingress="$2" upstream_key="$3" model="$4"
-  python3 - "${CONFIG_FD}" "${kind}" "${ingress}" "${upstream_key}" "${model}" "${UPSTREAM_PORT}" <<'PY'
+  local kind="$1" ingress="$2" ingress_alias="$3" upstream_key="$4" model="$5"
+  python3 - "${CONFIG_FD}" "${kind}" "${ingress}" "${ingress_alias}" "${upstream_key}" "${model}" "${UPSTREAM_PORT}" <<'PY'
 import hashlib
 import json
 import os
 import struct
 import sys
 
-fd, kind, ingress, upstream_key, model, port = sys.argv[1:]
-config = {
-    "version": "route-config.v0-isolated",
-    "edges": [{
-        "id": f"stream-{kind}",
-        "ingress_key": ingress,
-        "surface": "messages" if kind != "invalid" else "invalid-surface",
+fd, kind, ingress, ingress_alias, upstream_key, model, port = sys.argv[1:]
+def edge(edge_id, primary, aliases, member_id):
+    return {
+        "id": edge_id,
+        "ingress_key": primary,
+        "ingress_keys": aliases,
+        "surface": "messages",
         "dialect": "claude",
         "schedule_policy": "priority_failover",
         "fixture_model": model,
         "members": [{
-            "id": f"{kind}-member",
+            "id": member_id,
             "upstream_base_url": f"http://127.0.0.1:{port}/v1",
             "upstream_key": upstream_key,
             "upstream_auth": "x_api_key",
@@ -125,7 +128,17 @@ config = {
             "position": 0,
             "models": [model],
         }],
-    }],
+    }
+
+# Repeating the primary exercises same-edge de-duplication as well as the
+# additional entry Key used below.
+edges = [edge(f"stream-{kind}", ingress, [ingress, ingress_alias], f"{kind}-member")]
+if kind == "invalid":
+    # One accepted Key may never select more than one edge.
+    edges.append(edge("stream-conflict", ingress + "-other", [ingress_alias], "conflict-member"))
+config = {
+    "version": "route-config.v0-isolated",
+    "edges": edges,
 }
 payload = json.dumps(config, separators=(",", ":")).encode()
 frame = struct.pack(">I", len(payload)) + payload
@@ -137,7 +150,7 @@ PY
 }
 
 echo "== send initial full config =="
-INITIAL_HASH="$(send_config_frame initial "${INITIAL_INGRESS}" "${INITIAL_UPSTREAM}" "${INITIAL_MODEL}")"
+INITIAL_HASH="$(send_config_frame initial "${INITIAL_INGRESS}" "${INITIAL_ALIAS}" "${INITIAL_UPSTREAM}" "${INITIAL_MODEL}")"
 
 for _ in $(seq 1 100); do
   [[ -S "${SOCK}" && -f "${PID_FILE}" ]] && break
@@ -237,15 +250,26 @@ request_messages() {
   grep -F -q -- "${marker}" "${output}" || { echo "FAIL: unexpected Messages response" >&2; exit 1; }
 }
 
+request_messages_unauthorized() {
+  local ingress="$1" model="$2" output="$3" code
+  code="$(curl -sS -o "${output}" -w '%{http_code}' \
+    -H "Authorization: Bearer ${ingress}" -H 'Content-Type: application/json' \
+    --data-binary "{\"model\":\"${model}\",\"stream\":false}" \
+    "http://127.0.0.1:${LISTEN_PORT}/v1/messages")"
+  [[ "${code}" == "401" ]] || { echo "FAIL: retired entry Key returned HTTP ${code}" >&2; exit 1; }
+}
+
 echo "== verify initial config =="
 STATUS_INITIAL="$(get_status stream-status-initial)"
 assert_status "${STATUS_INITIAL}" 1 "${INITIAL_HASH}" none
 printf '%s\n' "${STATUS_INITIAL}" >>"${STATUS_LOG}"
 request_messages "${INITIAL_INGRESS}" "${INITIAL_MODEL}" \
   isolated-header-messages-ok "${SCRATCH}/initial-response.json"
+request_messages "${INITIAL_ALIAS}" "${INITIAL_MODEL}" \
+  isolated-header-messages-ok "${SCRATCH}/initial-alias-response.json"
 
 echo "== send and verify valid hot update =="
-UPDATED_HASH="$(send_config_frame updated "${UPDATED_INGRESS}" "${UPDATED_UPSTREAM}" "${UPDATED_MODEL}")"
+UPDATED_HASH="$(send_config_frame updated "${UPDATED_INGRESS}" "${UPDATED_ALIAS}" "${UPDATED_UPSTREAM}" "${UPDATED_MODEL}")"
 for _ in $(seq 1 100); do
   STATUS_UPDATED="$(get_status stream-status-updated)"
   if python3 - "${STATUS_UPDATED}" "${UPDATED_HASH}" <<'PY'
@@ -262,9 +286,15 @@ assert_status "${STATUS_UPDATED}" 2 "${UPDATED_HASH}" none
 printf '%s\n' "${STATUS_UPDATED}" >>"${STATUS_LOG}"
 request_messages "${UPDATED_INGRESS}" "${UPDATED_MODEL}" \
   isolated-member-hi "${SCRATCH}/updated-response.json"
+request_messages "${UPDATED_ALIAS}" "${UPDATED_MODEL}" \
+  isolated-member-hi "${SCRATCH}/updated-alias-response.json"
+request_messages_unauthorized "${INITIAL_INGRESS}" "${INITIAL_MODEL}" \
+  "${SCRATCH}/retired-primary-response.json"
+request_messages_unauthorized "${INITIAL_ALIAS}" "${INITIAL_MODEL}" \
+  "${SCRATCH}/retired-alias-response.json"
 
 echo "== send invalid update and verify last good config survives =="
-INVALID_HASH="$(send_config_frame invalid "${INVALID_INGRESS}" "${INVALID_UPSTREAM}" invalid-stream-model)"
+INVALID_HASH="$(send_config_frame invalid "${INVALID_INGRESS}" "${INVALID_ALIAS}" "${INVALID_UPSTREAM}" invalid-stream-model)"
 for _ in $(seq 1 100); do
   STATUS_REJECTED="$(get_status stream-status-rejected)"
   if python3 - "${STATUS_REJECTED}" <<'PY'
@@ -290,6 +320,7 @@ kill -0 "${ADAPTERD_PID}"
 }
 
 for secret in "${INITIAL_INGRESS}" "${UPDATED_INGRESS}" "${INVALID_INGRESS}" \
+  "${INITIAL_ALIAS}" "${UPDATED_ALIAS}" "${INVALID_ALIAS}" \
   "${INITIAL_UPSTREAM}" "${UPDATED_UPSTREAM}" "${INVALID_UPSTREAM}"; do
   if grep -F -q -- "${secret}" "${LOG_FILE}" "${ADAPTERD_STDOUT}" "${MOCK_LOG}" "${STATUS_LOG}" 2>/dev/null; then
     echo "FAIL: API Key leaked to logs or Status" >&2
@@ -313,6 +344,9 @@ with open(path, "w", encoding="utf-8") as fh:
         "rejected_hash": invalid_hash,
         "rejected_config_became_active": False,
         "last_good_config_after_rejection": "ok",
+        "primary_and_additional_entry_keys": "ok",
+        "retired_entry_keys_rejected_after_swap": "ok",
+        "cross_edge_entry_key_conflict_rejected": "ok",
         "api_key_scan": "ok",
     }, fh, indent=2)
     fh.write("\n")
