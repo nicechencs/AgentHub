@@ -7,26 +7,28 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, OpenOptions};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream};
+#[cfg(windows)]
+use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-#[cfg(any(unix, feature = "go-route-bind-probe"))]
+#[cfg(any(unix, windows, feature = "go-route-bind-probe"))]
 use std::sync::atomic::{AtomicU64, Ordering};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::sync::Condvar;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::sync::Weak;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 #[cfg(unix)]
 use std::{os::unix::fs::MetadataExt, os::unix::fs::OpenOptionsExt};
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use agenthub_core::error::AppError;
 use agenthub_core::AgentHub;
 
@@ -43,19 +45,19 @@ const CONFIG_STREAM_CAPABILITY: &str = "config.stdin_stream.atomic";
 const OAUTH_REFRESH_CAPABILITY: &str = "control.oauth_refresh.v1";
 const ISOLATED_LEASE_BUDGET_MS: i64 = 24 * 60 * 60 * 1_000;
 const OWNER_RENEW_INTERVAL: Duration = Duration::from_secs(30);
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const OAUTH_REFRESH_POLL_WAIT_MS: u64 = 1_000;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const OAUTH_REFRESH_CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const OAUTH_REFRESH_HANDLER_LIMIT: usize = 8;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const OAUTH_REFRESH_QUEUE_LIMIT: usize = 8;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const OAUTH_REFRESH_ACTION_GATE_LIMIT: usize = 4_096;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const OAUTH_REFRESH_COMPLETED_ID_LIMIT: usize = 4_096;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const OAUTH_REFRESH_COMPLETED_ID_TTL: Duration = Duration::from_secs(90);
 const START_STOP_WAIT: Duration = Duration::from_secs(10);
 const GRACEFUL_STOP_WAIT: Duration = Duration::from_secs(9);
@@ -74,17 +76,17 @@ const STABLE_RUN_RESET: Duration = Duration::from_secs(30);
 const ERROR_ISOLATED_UNAVAILABLE: &str = "Go route is unavailable in this build";
 const ERROR_START_FAILED: &str = "Go route could not start";
 const ERROR_CONTROL_UNAVAILABLE: &str = "Go route status is unavailable";
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const ERROR_REQUIRED_RELOAD_FAILED: &str = "go.route.required_reload_failed";
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const REQUIRED_RELOAD_STOPPED_MESSAGE: &str =
     "Go route configuration could not be updated; Go route was stopped";
 const MAX_RUNTIME_CONFIG_BYTES: usize = 8 * 1024 * 1024;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const SCRATCH_ROOT_PREFIX: &str = "agenthub-go-route-isolated-";
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const SCRATCH_OWNER_MARKER: &str = ".agenthub-go-route-owner-v1";
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const STALE_SCRATCH_MIN_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -140,7 +142,7 @@ pub struct GoRouteIsolatedHost {
     required_reload_ack_count: AtomicU64,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 impl Drop for GoRouteIsolatedHost {
     fn drop(&mut self) {
         let inner = self
@@ -162,7 +164,7 @@ struct Inner {
     stable_since: Option<Instant>,
     next_restart_at: Option<Instant>,
     committed_plan: Option<RuntimePlan>,
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     oauth_refresh_worker_session: Option<(String, i64)>,
 }
 
@@ -182,11 +184,35 @@ struct Session {
     next_owner_renewal: Instant,
     oauth_refresh_supported: bool,
     config_stdin: Arc<Mutex<ChildStdin>>,
-    adapterd: Child,
+    adapterd: AdapterdProcess,
+    #[cfg(windows)]
+    scratch_handles: Vec<OwnedHandle>,
+}
+
+struct AdapterdProcess {
+    child: Child,
+    stdout_reader: Option<std::thread::JoinHandle<()>>,
+    #[cfg(windows)]
+    _job: WindowsJob,
+}
+
+impl std::ops::Deref for AdapterdProcess {
+    type Target = Child;
+
+    fn deref(&self) -> &Self::Target {
+        &self.child
+    }
+}
+
+impl std::ops::DerefMut for AdapterdProcess {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.child
+    }
 }
 
 #[derive(Clone)]
 enum ControlEndpoint {
+    #[cfg(unix)]
     Unix(PathBuf),
     Tcp {
         address: SocketAddrV4,
@@ -194,35 +220,89 @@ enum ControlEndpoint {
     },
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 struct ResolvedAdapterd {
     path: PathBuf,
     package_version: &'static str,
+    #[cfg(windows)]
+    _verified_handles: Vec<fs::File>,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 struct ScratchHomeGuard {
     home: PathBuf,
     armed: bool,
+    #[cfg(windows)]
+    handles: Vec<OwnedHandle>,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
+struct CreatedScratchHome {
+    home: PathBuf,
+    #[cfg(windows)]
+    handles: Vec<OwnedHandle>,
+}
+
+#[cfg(any(unix, windows))]
 impl ScratchHomeGuard {
-    fn disarm(mut self) {
+    fn disarm(&mut self) {
         self.armed = false;
+    }
+
+    #[cfg(windows)]
+    fn take_handles(&mut self) -> Vec<OwnedHandle> {
+        std::mem::take(&mut self.handles)
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 impl Drop for ScratchHomeGuard {
     fn drop(&mut self) {
         if self.armed {
+            #[cfg(windows)]
+            self.handles.clear();
             cleanup_scratch_home(&self.home);
         }
     }
 }
 
-#[cfg(unix)]
+impl AdapterdProcess {
+    fn join_stdout_reader(&mut self) {
+        if let Some(reader) = self.stdout_reader.take() {
+            let _ = reader.join();
+        }
+    }
+}
+
+#[cfg(windows)]
+struct WindowsJob {
+    handle: OwnedHandle,
+}
+
+#[cfg(windows)]
+impl AdapterdProcess {
+    fn terminate_job(&self) {
+        use windows_sys::Win32::System::JobObjects::TerminateJobObject;
+
+        // SAFETY: the handle is an owned Job Object handle kept alive by this
+        // process wrapper for at least the duration of the call.
+        unsafe {
+            let _ = TerminateJobObject(self._job.handle.as_raw_handle() as _, 1);
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for AdapterdProcess {
+    fn drop(&mut self) {
+        self.terminate_job();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        self.join_stdout_reader();
+    }
+}
+
+#[cfg(any(unix, windows))]
 #[derive(Clone)]
 struct ControlSession {
     home: PathBuf,
@@ -265,7 +345,7 @@ fn unavailable_status() -> GoRouteIsolatedStatus {
 
 impl GoRouteIsolatedHost {
     pub fn new(hub: Option<Arc<AgentHub>>) -> Arc<Self> {
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         cleanup_stale_scratch_roots();
         let host = Arc::new(Self {
             hub,
@@ -278,16 +358,16 @@ impl GoRouteIsolatedHost {
                 stable_since: None,
                 next_restart_at: None,
                 committed_plan: None,
-                #[cfg(unix)]
+                #[cfg(any(unix, windows))]
                 oauth_refresh_worker_session: None,
             }),
             update_gate: Mutex::new(()),
             #[cfg(feature = "go-route-bind-probe")]
             required_reload_ack_count: AtomicU64::new(0),
         });
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         Self::spawn_monitor(Arc::downgrade(&host));
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         if let Some(hub) = host.hub.as_ref() {
             let weak_host = Arc::downgrade(&host);
             hub.accounts().set_oauth_access_publish(Arc::new(move || {
@@ -308,11 +388,11 @@ impl GoRouteIsolatedHost {
     }
 
     pub fn status(&self) -> GoRouteIsolatedStatus {
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         {
-            return unix_only_failed();
+            return platform_unavailable_status();
         }
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         {
             let control = {
                 let mut inner = self.lock();
@@ -441,11 +521,11 @@ impl GoRouteIsolatedHost {
     }
 
     pub fn start(&self) -> GoRouteIsolatedStatus {
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         {
-            return unix_only_failed();
+            return platform_unavailable_status();
         }
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         {
             let reload = {
                 let mut inner = self.lock();
@@ -478,11 +558,11 @@ impl GoRouteIsolatedHost {
     /// process. The previous committed snapshot remains the recovery source
     /// until Status acknowledges the exact new digest.
     pub fn reload(&self) -> GoRouteIsolatedStatus {
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         {
-            return unix_only_failed();
+            return platform_unavailable_status();
         }
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         {
             let _update = self
                 .update_gate
@@ -566,13 +646,13 @@ impl GoRouteIsolatedHost {
     /// committed runtime snapshot is discarded so stale configuration cannot
     /// be restored.
     pub fn reload_required_after_write(&self) -> GoRouteRequiredReloadResult {
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         {
             return GoRouteRequiredReloadResult::Skipped {
                 reason: GoRouteRequiredReloadSkipReason::Unavailable,
             };
         }
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         {
             let _update = self
                 .update_gate
@@ -711,19 +791,19 @@ impl GoRouteIsolatedHost {
     /// Fail closed when the blocking task that owns a required reload cannot
     /// return a result (for example, because its worker panicked).
     pub fn fail_required_reload_task(&self) -> GoRouteRequiredReloadResult {
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         {
             GoRouteRequiredReloadResult::Skipped {
                 reason: GoRouteRequiredReloadSkipReason::Unavailable,
             }
         }
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         {
             self.fail_required_reload()
         }
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn fail_required_reload(&self) -> GoRouteRequiredReloadResult {
         let mut inner = self.lock();
         let mut session = inner.session.take();
@@ -756,7 +836,7 @@ impl GoRouteIsolatedHost {
         }
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn fail_session(&self, control: &ControlSession) -> GoRouteIsolatedStatus {
         let mut inner = self.lock();
         let same_session = inner
@@ -774,14 +854,14 @@ impl GoRouteIsolatedHost {
         self.lock().status.clone()
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn status_with_reload_error(&self) -> GoRouteIsolatedStatus {
         let mut inner = self.lock();
         inner.status.last_error = Some("Go route configuration could not be updated".into());
         inner.status.clone()
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn finish_start(&self, recovering: bool) -> GoRouteIsolatedStatus {
         let existing_plan = self.lock().committed_plan.clone();
         let plan = existing_plan.map(Ok).unwrap_or_else(|| {
@@ -854,11 +934,11 @@ impl GoRouteIsolatedHost {
     }
 
     pub fn stop(&self) -> GoRouteIsolatedStatus {
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         {
-            return unix_only_failed();
+            return platform_unavailable_status();
         }
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         {
             {
                 let mut inner = self.lock();
@@ -909,7 +989,7 @@ impl GoRouteIsolatedHost {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn spawn_monitor(host: Weak<Self>) {
         std::thread::spawn(move || loop {
             std::thread::sleep(Duration::from_millis(500));
@@ -981,7 +1061,7 @@ impl GoRouteIsolatedHost {
         });
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn finish_owner_renewal(&self, control: ControlSession) {
         let result = renew_owner_and_status(&control);
         let mut inner = self.lock();
@@ -1012,7 +1092,7 @@ impl GoRouteIsolatedHost {
         }
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn spawn_oauth_refresh_worker(host: Weak<Self>, control: ControlSession) {
         let worker_session = (control.instance_epoch.clone(), control.owner_term);
         let fallback_host = host.clone();
@@ -1101,7 +1181,7 @@ fn file_contains_any(path: &Path, needles: &[&[u8]]) -> Result<bool, String> {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 struct OAuthRefreshEvent {
     refresh_id: String,
     instance_epoch: String,
@@ -1114,13 +1194,13 @@ struct OAuthRefreshEvent {
     refresh_kind: String,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 enum OAuthRefreshCompletion {
     ConfigApplied(String),
     NotRefreshed,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[derive(Default)]
 struct OAuthRefreshWorkerCounters {
     completed: AtomicU64,
@@ -1134,7 +1214,7 @@ struct OAuthRefreshWorkerCounters {
 /// action for late events from the same generation. Failed waves wake their
 /// current waiters without sealing the key, so a later event may retry. The
 /// registry evicts its oldest idle gates under bounded-memory pressure.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct OAuthRefreshActionKey {
     instance_epoch: String,
@@ -1145,7 +1225,7 @@ struct OAuthRefreshActionKey {
     refresh_kind: String,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 impl From<&OAuthRefreshEvent> for OAuthRefreshActionKey {
     fn from(event: &OAuthRefreshEvent) -> Self {
         Self {
@@ -1159,7 +1239,7 @@ impl From<&OAuthRefreshEvent> for OAuthRefreshActionKey {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[derive(Default)]
 struct OAuthRefreshActionState {
     running: bool,
@@ -1167,34 +1247,34 @@ struct OAuthRefreshActionState {
     generation: u64,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[derive(Default)]
 struct OAuthRefreshActionGate {
     state: Mutex<OAuthRefreshActionState>,
     completed: Condvar,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[derive(Default)]
 struct OAuthRefreshActionRegistry {
     gates: HashMap<OAuthRefreshActionKey, Arc<OAuthRefreshActionGate>>,
     fifo: VecDeque<OAuthRefreshActionKey>,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[derive(Default)]
 struct OAuthRefreshActionCoordinator {
     registry: Arc<Mutex<OAuthRefreshActionRegistry>>,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 enum OAuthRefreshActionRole {
     Sealed,
     Wait(u64),
     Lead(u64),
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 impl OAuthRefreshActionCoordinator {
     fn run_once(
         &self,
@@ -1277,7 +1357,7 @@ impl OAuthRefreshActionCoordinator {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn prune_oauth_refresh_action_gates(registry: &Arc<Mutex<OAuthRefreshActionRegistry>>) {
     let mut registry = registry
         .lock()
@@ -1302,7 +1382,7 @@ fn prune_oauth_refresh_action_gates(registry: &Arc<Mutex<OAuthRefreshActionRegis
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 struct OAuthRefreshActionLeader {
     gate: Arc<OAuthRefreshActionGate>,
     registry: Arc<Mutex<OAuthRefreshActionRegistry>>,
@@ -1310,7 +1390,7 @@ struct OAuthRefreshActionLeader {
     finished: bool,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 impl OAuthRefreshActionLeader {
     fn finish(&mut self, sealed: bool) {
         {
@@ -1330,7 +1410,7 @@ impl OAuthRefreshActionLeader {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 impl Drop for OAuthRefreshActionLeader {
     fn drop(&mut self) {
         if !self.finished {
@@ -1339,7 +1419,7 @@ impl Drop for OAuthRefreshActionLeader {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[derive(Default)]
 struct OAuthRefreshQueueState {
     events: VecDeque<OAuthRefreshEvent>,
@@ -1349,7 +1429,7 @@ struct OAuthRefreshQueueState {
     stopped: bool,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 impl OAuthRefreshQueueState {
     fn prune_completed_refresh_ids(&mut self, now: Instant) {
         loop {
@@ -1370,7 +1450,7 @@ impl OAuthRefreshQueueState {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[derive(Default)]
 struct OAuthRefreshWorkQueue {
     state: Mutex<OAuthRefreshQueueState>,
@@ -1378,7 +1458,7 @@ struct OAuthRefreshWorkQueue {
     space_ready: Condvar,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 impl OAuthRefreshWorkQueue {
     fn push_for_session(
         &self,
@@ -1484,7 +1564,7 @@ impl OAuthRefreshWorkQueue {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn oauth_refresh_worker(host: Weak<GoRouteIsolatedHost>, control: ControlSession) {
     let queue = Arc::new(OAuthRefreshWorkQueue::default());
     let counters = Arc::new(OAuthRefreshWorkerCounters::default());
@@ -1568,7 +1648,7 @@ fn oauth_refresh_worker(host: Weak<GoRouteIsolatedHost>, control: ControlSession
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn process_oauth_refresh_event(
     host: &Weak<GoRouteIsolatedHost>,
     control: &ControlSession,
@@ -1723,7 +1803,7 @@ fn process_oauth_refresh_event(
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn current_committed_hash(host: &GoRouteIsolatedHost, control: &ControlSession) -> Option<String> {
     let inner = host.lock();
     let session = inner.session.as_ref()?;
@@ -1740,13 +1820,13 @@ fn current_committed_hash(host: &GoRouteIsolatedHost, control: &ControlSession) 
         .map(|plan| plan.config_hash.clone())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 enum NextOAuthRefreshError {
     Transport,
     InvalidEvent,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn next_oauth_refresh(
     control: &ControlSession,
 ) -> Result<Option<OAuthRefreshEvent>, NextOAuthRefreshError> {
@@ -1776,7 +1856,7 @@ fn next_oauth_refresh(
         .ok_or(NextOAuthRefreshError::InvalidEvent)
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn parse_oauth_refresh_event(value: &Value) -> Option<OAuthRefreshEvent> {
     fn required_string(value: &Value, key: &str) -> Option<String> {
         let value = value.get(key)?.as_str()?;
@@ -1800,7 +1880,7 @@ fn parse_oauth_refresh_event(value: &Value) -> Option<OAuthRefreshEvent> {
     })
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn complete_oauth_refresh(
     control: &ControlSession,
     event: &OAuthRefreshEvent,
@@ -1847,19 +1927,19 @@ fn complete_oauth_refresh(
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 enum CompleteOAuthRefreshError {
     Transport,
     Rejected,
 }
 
-#[cfg(not(unix))]
-fn unix_only_failed() -> GoRouteIsolatedStatus {
+#[cfg(not(any(unix, windows)))]
+fn platform_unavailable_status() -> GoRouteIsolatedStatus {
     GoRouteIsolatedStatus {
         state: "failed".into(),
         listen_ready: false,
         port: None,
-        last_error: Some("unix control only".into()),
+        last_error: Some(ERROR_ISOLATED_UNAVAILABLE.into()),
         home: None,
         lifecycle: Some("failed".into()),
         in_flight_count: 0,
@@ -1870,7 +1950,7 @@ fn unix_only_failed() -> GoRouteIsolatedStatus {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn refresh_locked(inner: &mut Inner) {
     let Some(session) = inner.session.as_mut() else {
         return;
@@ -1896,7 +1976,7 @@ fn refresh_locked(inner: &mut Inner) {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn mark_runtime_unavailable(inner: &mut Inner) {
     inner.recovery_budget_used = inner.recovery_budget_used.saturating_add(1);
     inner.stable_since = None;
@@ -1909,7 +1989,7 @@ fn mark_runtime_unavailable(inner: &mut Inner) {
     inner.next_restart_at = Some(Instant::now() + restart_backoff(inner.recovery_budget_used));
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn reset_stable_recovery_budget(inner: &mut Inner) {
     let stable = inner
         .stable_since
@@ -1920,7 +2000,7 @@ fn reset_stable_recovery_budget(inner: &mut Inner) {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn stop_session(session: &mut Session) {
     let started = Instant::now();
     let _ = post_control_with_timeout(
@@ -1939,6 +2019,11 @@ fn stop_session(session: &mut Session) {
     while started.elapsed() < GRACEFUL_STOP_WAIT {
         match session.adapterd.try_wait() {
             Ok(Some(_)) => {
+                #[cfg(windows)]
+                session.adapterd.terminate_job();
+                session.adapterd.join_stdout_reader();
+                #[cfg(windows)]
+                session.scratch_handles.clear();
                 cleanup_scratch_home(&session.home);
                 return;
             }
@@ -1949,14 +2034,19 @@ fn stop_session(session: &mut Session) {
     terminate_session(session);
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn terminate_session(session: &mut Session) {
+    #[cfg(windows)]
+    session.adapterd.terminate_job();
     let _ = session.adapterd.kill();
     let _ = session.adapterd.wait();
+    session.adapterd.join_stdout_reader();
+    #[cfg(windows)]
+    session.scratch_handles.clear();
     cleanup_scratch_home(&session.home);
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn build_runtime_config(hub: &AgentHub) -> Result<Vec<u8>, String> {
     let pools = hub
         .route_pools()
@@ -1967,7 +2057,7 @@ fn build_runtime_config(hub: &AgentHub) -> Result<Vec<u8>, String> {
         .map_err(|error| error.to_string())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn build_runtime_plan(hub: &AgentHub) -> Result<RuntimePlan, String> {
     let config = build_runtime_config(hub)?;
     Ok(RuntimePlan {
@@ -1977,18 +2067,24 @@ fn build_runtime_plan(hub: &AgentHub) -> Result<RuntimePlan, String> {
     })
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
-    let home = create_scratch_home()?;
-    let scratch_guard = ScratchHomeGuard {
+    let scratch = create_scratch_home()?;
+    let home = scratch.home;
+    let mut scratch_guard = ScratchHomeGuard {
         home: home.clone(),
         armed: true,
+        #[cfg(windows)]
+        handles: scratch.handles,
     };
     if is_forbidden_user_home(&home) {
         return Err("refusing real user AGENTHUB_HOME".into());
     }
     if !is_scratch_home(&home) {
-        return Err("AGENTHUB_HOME must be an absolute scratch directory under /tmp".into());
+        return Err(
+            "AGENTHUB_HOME must be an absolute scratch directory under the operating-system temp directory"
+                .into(),
+        );
     }
 
     if plan.port == PRODUCT_DEFAULT_PORT {
@@ -2012,23 +2108,37 @@ fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
         .arg("--runtime-config-stdin-stream")
         .stdin(Stdio::piped())
         .env("AGENTHUB_HOME", &home)
-        .env_remove(LEGACY_CONTROL_TOKEN_ENV);
+        .env_remove(LEGACY_CONTROL_TOKEN_ENV)
+        .env_remove("AGENTHUB_ADAPTERD_CONTROL_SOCKET")
+        .env_remove("AGENTHUB_ADAPTERD_CONTROL_LISTEN")
+        .env_remove("AGENTHUB_ADAPTERD_LISTEN_PORT");
     if tcp_control {
         command
             .arg("--control-listen")
             .arg("127.0.0.1:0")
             .arg("--control-token-stdin");
     }
-    let (mut adapterd, endpoint_receiver) = if tcp_control {
-        let (child, receiver) = spawn_tcp_control_logged(&mut command, &adapterd_log)
-            .map_err(|err| format!("adapterd spawn failed: {err}"))?;
-        (child, Some(receiver))
-    } else {
-        (
-            spawn_logged(&mut command, &adapterd_log)
-                .map_err(|err| format!("adapterd spawn failed: {err}"))?,
-            None,
-        )
+    let (mut adapterd, endpoint_receiver) = {
+        #[cfg(windows)]
+        {
+            let (child, receiver) = spawn_tcp_control_logged(&mut command, &adapterd_log)
+                .map_err(|err| format!("adapterd spawn failed: {err}"))?;
+            (child, Some(receiver))
+        }
+        #[cfg(unix)]
+        {
+            if tcp_control {
+                let (child, receiver) = spawn_tcp_control_logged(&mut command, &adapterd_log)
+                    .map_err(|err| format!("adapterd spawn failed: {err}"))?;
+                (child, Some(receiver))
+            } else {
+                (
+                    spawn_logged(&mut command, &adapterd_log)
+                        .map_err(|err| format!("adapterd spawn failed: {err}"))?,
+                    None,
+                )
+            }
+        }
     };
     let Some(config_stdin) = adapterd.stdin.take() else {
         let _ = adapterd.kill();
@@ -2061,6 +2171,7 @@ fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
                 return Err("timed out waiting for TCP control listener".into());
             }
         },
+        #[cfg(unix)]
         (None, None) => ControlEndpoint::Unix(home.join("run/adapterd.sock")),
         _ => {
             let _ = adapterd.kill();
@@ -2075,24 +2186,28 @@ fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
         &plan.config_hash,
         bin.package_version,
     ) {
-        Ok(session) => Session {
-            home: session.home,
-            endpoint: session.endpoint,
-            owner_term: session.owner_term,
-            instance_epoch: session.instance_epoch,
-            port: session.port,
-            next_owner_renewal: Instant::now() + OWNER_RENEW_INTERVAL,
-            oauth_refresh_supported: session.oauth_refresh_supported,
-            config_stdin,
-            adapterd,
-        },
+        Ok(session) => {
+            scratch_guard.disarm();
+            Session {
+                home: session.home,
+                endpoint: session.endpoint,
+                owner_term: session.owner_term,
+                instance_epoch: session.instance_epoch,
+                port: session.port,
+                next_owner_renewal: Instant::now() + OWNER_RENEW_INTERVAL,
+                oauth_refresh_supported: session.oauth_refresh_supported,
+                config_stdin,
+                adapterd,
+                #[cfg(windows)]
+                scratch_handles: scratch_guard.take_handles(),
+            }
+        }
         Err(err) => {
             let _ = adapterd.kill();
             let _ = adapterd.wait();
             return Err(err);
         }
     };
-    scratch_guard.disarm();
     Ok(started)
 }
 
@@ -2114,7 +2229,14 @@ fn tcp_control_requested() -> Result<bool, String> {
     }
 }
 
-#[cfg(unix)]
+#[cfg(windows)]
+fn tcp_control_requested() -> Result<bool, String> {
+    // Windows has no Unix-domain control transport in this supervisor. TCP is
+    // mandatory and authenticated with the one-time bearer sent over stdin.
+    Ok(true)
+}
+
+#[cfg(any(unix, windows))]
 fn generate_control_bearer() -> Result<Arc<str>, String> {
     let mut raw = [0_u8; CONTROL_TOKEN_BYTES];
     getrandom::getrandom(&mut raw)
@@ -2126,7 +2248,7 @@ fn generate_control_bearer() -> Result<Arc<str>, String> {
     Ok(Arc::from(bearer))
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn write_control_token_prelude(writer: &mut impl Write, bearer: &str) -> Result<(), String> {
     if bearer.len() != CONTROL_TOKEN_ENCODED_BYTES {
         return Err("control authentication token is invalid".into());
@@ -2137,7 +2259,7 @@ fn write_control_token_prelude(writer: &mut impl Write, bearer: &str) -> Result<
         .map_err(|_| "control authentication token write failed".to_string())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn write_runtime_config_frame(writer: &mut impl Write, config: &[u8]) -> Result<(), String> {
     if config.is_empty() || config.len() > MAX_RUNTIME_CONFIG_BYTES {
         return Err("runtime config frame is invalid".into());
@@ -2151,7 +2273,7 @@ fn write_runtime_config_frame(writer: &mut impl Write, config: &[u8]) -> Result<
         .map_err(|_| "runtime config frame write failed".to_string())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn write_runtime_config_with_timeout(
     writer: Arc<Mutex<ChildStdin>>,
     config: Vec<u8>,
@@ -2175,7 +2297,7 @@ fn write_runtime_config_with_timeout(
         .map_err(|_| "runtime config frame write timed out".to_string())?
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn write_startup_input_with_timeout(
     writer: Arc<Mutex<ChildStdin>>,
     bearer: Option<Arc<str>>,
@@ -2204,7 +2326,7 @@ fn write_startup_input_with_timeout(
         .map_err(|_| "startup input write timed out".to_string())?
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
@@ -2218,7 +2340,7 @@ struct HandshakeMeta {
     oauth_refresh_supported: bool,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn handshake_start(
     home: &Path,
     endpoint: &ControlEndpoint,
@@ -2226,8 +2348,11 @@ fn handshake_start(
     expected_config_hash: &str,
     expected_package_version: &str,
 ) -> Result<HandshakeMeta, String> {
-    if let ControlEndpoint::Unix(socket) = endpoint {
-        wait_for_socket(socket, Duration::from_secs(8))?;
+    #[cfg(unix)]
+    {
+        if let ControlEndpoint::Unix(socket) = endpoint {
+            wait_for_socket(socket, Duration::from_secs(8))?;
+        }
     }
     let home_s = home.display().to_string();
     let hs = post_control(
@@ -2314,20 +2439,15 @@ fn handshake_start(
     {
         return Err(ERROR_START_FAILED.into());
     }
-    let port = status_payload
+    let raw_port = status_payload
         .get("port")
         .and_then(Value::as_u64)
-        .map(|n| n as u16)
-        .or_else(|| {
-            start_payload
-                .get("port")
-                .and_then(Value::as_u64)
-                .map(|n| n as u16)
-        })
-        .unwrap_or(fallback_port);
-    if port == PRODUCT_DEFAULT_PORT {
+        .or_else(|| start_payload.get("port").and_then(Value::as_u64))
+        .unwrap_or(u64::from(fallback_port));
+    let port = u16::try_from(raw_port).map_err(|_| ERROR_START_FAILED.to_string())?;
+    if port == 0 || port == PRODUCT_DEFAULT_PORT {
         return Err(format!(
-            "refusing product default listen port {PRODUCT_DEFAULT_PORT}"
+            "refusing invalid or product default listen port {port}"
         ));
     }
     Ok(HandshakeMeta {
@@ -2340,7 +2460,7 @@ fn handshake_start(
     })
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn pick_loopback_port() -> Result<u16, String> {
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|err| err.to_string())?;
     let port = listener.local_addr().map_err(|err| err.to_string())?.port();
@@ -2354,7 +2474,7 @@ fn pick_loopback_port() -> Result<u16, String> {
 }
 
 #[cfg(unix)]
-fn create_scratch_home() -> Result<PathBuf, String> {
+fn create_scratch_home() -> Result<CreatedScratchHome, String> {
     use std::os::unix::fs::PermissionsExt;
 
     // Keep the Unix-domain socket comfortably below the macOS path limit.
@@ -2416,7 +2536,7 @@ fn create_scratch_home() -> Result<PathBuf, String> {
         cleanup_scratch_home(&home);
         return Err("scratch home escaped the operating-system temp directory".into());
     }
-    Ok(home)
+    Ok(CreatedScratchHome { home })
 }
 
 #[cfg(unix)]
@@ -2571,7 +2691,521 @@ fn cleanup_stale_scratch_roots() {
     }
 }
 
-#[cfg(unix)]
+#[cfg(windows)]
+fn windows_wide(value: &std::ffi::OsStr) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+    value.encode_wide().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(windows)]
+fn windows_has_reparse_point(metadata: &fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(windows)]
+fn windows_has_single_link(handle: &impl AsRawHandle) -> bool {
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    };
+
+    let mut info = BY_HANDLE_FILE_INFORMATION::default();
+    (unsafe { GetFileInformationByHandle(handle.as_raw_handle() as _, &mut info) }) != 0
+        && info.nNumberOfLinks == 1
+}
+
+#[cfg(windows)]
+fn create_private_windows_directory(path: &Path) -> std::io::Result<()> {
+    use std::mem::size_of;
+    use windows_sys::Win32::Foundation::LocalFree;
+    use windows_sys::Win32::Security::Authorization::{
+        ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+    };
+    use windows_sys::Win32::Security::{PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES};
+    use windows_sys::Win32::Storage::FileSystem::CreateDirectoryW;
+
+    let sddl = windows_wide(std::ffi::OsStr::new("D:P(A;OICI;FA;;;OW)(A;OICI;FA;;;SY)"));
+    let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+    let converted = unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl.as_ptr(),
+            SDDL_REVISION_1,
+            &mut descriptor,
+            std::ptr::null_mut(),
+        )
+    };
+    if converted == 0 || descriptor.is_null() {
+        return Err(std::io::Error::last_os_error());
+    }
+    let attributes = SECURITY_ATTRIBUTES {
+        nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: descriptor,
+        bInheritHandle: 0,
+    };
+    let wide = windows_wide(path.as_os_str());
+    let created = unsafe { CreateDirectoryW(wide.as_ptr(), &attributes) };
+    let error = if created == 0 {
+        Some(std::io::Error::last_os_error())
+    } else {
+        None
+    };
+    unsafe {
+        let _ = LocalFree(descriptor as _);
+    }
+    if let Some(error) = error {
+        return Err(error);
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn verify_windows_protected_dacl(handle: &impl AsRawHandle) -> Result<(), String> {
+    use windows_sys::Win32::Foundation::{LocalFree, ERROR_SUCCESS};
+    use windows_sys::Win32::Security::Authorization::{GetSecurityInfo, SE_FILE_OBJECT};
+    use windows_sys::Win32::Security::{
+        AclSizeInformation, GetAclInformation, GetSecurityDescriptorControl,
+        GetSecurityDescriptorDacl, ACL_SIZE_INFORMATION, DACL_SECURITY_INFORMATION,
+        PSECURITY_DESCRIPTOR, SE_DACL_PROTECTED,
+    };
+
+    let expected_dacl = expected_windows_scratch_dacl()?;
+    let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+    let result = unsafe {
+        GetSecurityInfo(
+            handle.as_raw_handle() as _,
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut descriptor,
+        )
+    };
+    if result != ERROR_SUCCESS || descriptor.is_null() {
+        return Err("scratch directory security could not be verified".into());
+    }
+    let verified = (|| {
+        let mut control = 0_u16;
+        let mut revision = 0_u32;
+        if unsafe { GetSecurityDescriptorControl(descriptor, &mut control, &mut revision) } == 0
+            || control & SE_DACL_PROTECTED == 0
+        {
+            return false;
+        }
+        let mut present = 0;
+        let mut defaulted = 0;
+        let mut dacl = std::ptr::null_mut();
+        if unsafe { GetSecurityDescriptorDacl(descriptor, &mut present, &mut dacl, &mut defaulted) }
+            == 0
+            || present == 0
+            || defaulted != 0
+            || dacl.is_null()
+        {
+            return false;
+        }
+        let mut info = ACL_SIZE_INFORMATION::default();
+        let acl_valid = unsafe {
+            GetAclInformation(
+                dacl,
+                &mut info as *mut _ as _,
+                std::mem::size_of::<ACL_SIZE_INFORMATION>() as u32,
+                AclSizeInformation,
+            ) != 0
+        };
+        if !acl_valid || info.AceCount != 2 || info.AclBytesInUse as usize != expected_dacl.len() {
+            return false;
+        }
+        let actual =
+            unsafe { std::slice::from_raw_parts(dacl.cast::<u8>(), info.AclBytesInUse as usize) };
+        actual == expected_dacl.as_slice()
+    })();
+    unsafe {
+        let _ = LocalFree(descriptor as _);
+    }
+    if !verified {
+        return Err("scratch directory security could not be verified".into());
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn expected_windows_scratch_dacl() -> Result<Vec<u8>, String> {
+    use windows_sys::Win32::Foundation::LocalFree;
+    use windows_sys::Win32::Security::Authorization::{
+        ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+    };
+    use windows_sys::Win32::Security::{
+        AclSizeInformation, GetAclInformation, GetSecurityDescriptorDacl, ACL_SIZE_INFORMATION,
+        PSECURITY_DESCRIPTOR,
+    };
+
+    let sddl = windows_wide(std::ffi::OsStr::new("D:P(A;OICI;FA;;;OW)(A;OICI;FA;;;SY)"));
+    let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+    let converted = unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl.as_ptr(),
+            SDDL_REVISION_1,
+            &mut descriptor,
+            std::ptr::null_mut(),
+        )
+    };
+    if converted == 0 || descriptor.is_null() {
+        return Err("scratch directory security could not be verified".into());
+    }
+    let result = (|| {
+        let mut present = 0;
+        let mut defaulted = 0;
+        let mut dacl = std::ptr::null_mut();
+        if unsafe { GetSecurityDescriptorDacl(descriptor, &mut present, &mut dacl, &mut defaulted) }
+            == 0
+            || present == 0
+            || defaulted != 0
+            || dacl.is_null()
+        {
+            return Err("scratch directory security could not be verified".into());
+        }
+        let mut info = ACL_SIZE_INFORMATION::default();
+        if unsafe {
+            GetAclInformation(
+                dacl,
+                &mut info as *mut _ as _,
+                std::mem::size_of::<ACL_SIZE_INFORMATION>() as u32,
+                AclSizeInformation,
+            )
+        } == 0
+            || info.AclBytesInUse == 0
+        {
+            return Err("scratch directory security could not be verified".into());
+        }
+        Ok(unsafe {
+            std::slice::from_raw_parts(dacl.cast::<u8>(), info.AclBytesInUse as usize).to_vec()
+        })
+    })();
+    unsafe {
+        let _ = LocalFree(descriptor as _);
+    }
+    result
+}
+
+#[cfg(windows)]
+fn open_windows_path_no_reparse(path: &Path, directory: bool) -> Result<fs::File, String> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
+        FILE_READ_DATA, FILE_SHARE_READ, FILE_SHARE_WRITE, READ_CONTROL,
+    };
+
+    let flags = FILE_FLAG_OPEN_REPARSE_POINT
+        | if directory {
+            FILE_FLAG_BACKUP_SEMANTICS
+        } else {
+            0
+        };
+    let file = OpenOptions::new()
+        .access_mode(
+            FILE_READ_ATTRIBUTES | READ_CONTROL | if directory { 0 } else { FILE_READ_DATA },
+        )
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+        .custom_flags(flags)
+        .open(path)
+        .map_err(|error| error.to_string())?;
+    let metadata = file.metadata().map_err(|error| error.to_string())?;
+    if windows_has_reparse_point(&metadata)
+        || (directory && !metadata.is_dir())
+        || (!directory && !metadata.is_file())
+    {
+        return Err("scratch path is not a plain filesystem object".into());
+    }
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn windows_scratch_marker_contents(pid: u32, nanos: u128, nonce: &str) -> String {
+    format!("agenthub-go-route-owner-v1\npid={pid}\ncreated_unix_nanos={nanos}\nnonce={nonce}\n")
+}
+
+#[cfg(windows)]
+fn parse_windows_scratch_root_name(name: &str) -> Option<(u32, u128, String)> {
+    let mut parts = name.strip_prefix(SCRATCH_ROOT_PREFIX)?.split('-');
+    let pid = parts.next()?.parse::<u32>().ok()?;
+    let nanos = parts.next()?.parse::<u128>().ok()?;
+    let nonce = parts.next()?.to_owned();
+    if pid == 0
+        || nonce.len() != 32
+        || !nonce.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || parts.next().is_some()
+    {
+        return None;
+    }
+    Some((pid, nanos, nonce))
+}
+
+#[cfg(windows)]
+fn cleanup_empty_windows_scratch_root(root: &Path) {
+    // Used only before any child object exists. Non-recursive removal avoids
+    // following an attacker-controlled replacement if validation failed.
+    let _ = fs::remove_dir(root);
+}
+
+#[cfg(windows)]
+fn create_scratch_home() -> Result<CreatedScratchHome, String> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT;
+
+    let temp = fs::canonicalize(std::env::temp_dir()).map_err(|error| error.to_string())?;
+    if windows_has_reparse_point(&fs::symlink_metadata(&temp).map_err(|error| error.to_string())?) {
+        return Err("operating-system temp directory is a reparse point".into());
+    }
+    for _ in 0..16_u32 {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let mut random = [0_u8; 16];
+        getrandom::getrandom(&mut random)
+            .map_err(|_| "scratch directory randomness is unavailable".to_string())?;
+        let nonce = random
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let root = temp.join(format!(
+            "{SCRATCH_ROOT_PREFIX}{}-{nanos}-{nonce}",
+            std::process::id()
+        ));
+        match create_private_windows_directory(&root) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.to_string()),
+        }
+        let root_file = match open_windows_path_no_reparse(&root, true) {
+            Ok(file) => file,
+            Err(error) => {
+                cleanup_empty_windows_scratch_root(&root);
+                return Err(error);
+            }
+        };
+        if let Err(error) = verify_windows_protected_dacl(&root_file) {
+            drop(root_file);
+            cleanup_empty_windows_scratch_root(&root);
+            return Err(error);
+        }
+        let mut handles = vec![root_file.into()];
+        let marker_path = root.join(SCRATCH_OWNER_MARKER);
+        let marker_result = (|| {
+            let mut marker = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .share_mode(0)
+                .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+                .open(&marker_path)?;
+            marker.write_all(
+                windows_scratch_marker_contents(std::process::id(), nanos, &nonce).as_bytes(),
+            )?;
+            marker.sync_all()?;
+            if windows_has_reparse_point(&marker.metadata()?) {
+                return Err(std::io::Error::other("marker is a reparse point"));
+            }
+            Ok::<(), std::io::Error>(())
+        })();
+        if let Err(error) = marker_result {
+            // The verified root handle excludes root replacement while the
+            // incomplete marker is removed. The root is removed only after
+            // that handle is released, and only if it is empty.
+            let _ = fs::remove_file(&marker_path);
+            handles.clear();
+            cleanup_empty_windows_scratch_root(&root);
+            return Err(error.to_string());
+        }
+        for directory in ["home", "home/config", "home/run", "home/logs"] {
+            let path = root.join(directory);
+            if let Err(error) = create_private_windows_directory(&path) {
+                handles.clear();
+                cleanup_windows_scratch_root(&root);
+                return Err(error.to_string());
+            }
+            let file = match open_windows_path_no_reparse(&path, true) {
+                Ok(file) => file,
+                Err(error) => {
+                    handles.clear();
+                    cleanup_windows_scratch_root(&root);
+                    return Err(error);
+                }
+            };
+            if let Err(error) = verify_windows_protected_dacl(&file) {
+                handles.clear();
+                cleanup_windows_scratch_root(&root);
+                return Err(error);
+            }
+            handles.push(file.into());
+        }
+        let home = match fs::canonicalize(root.join("home")) {
+            Ok(home) => home,
+            Err(error) => {
+                handles.clear();
+                cleanup_windows_scratch_root(&root);
+                return Err(error.to_string());
+            }
+        };
+        if !is_scratch_home(&home) {
+            handles.clear();
+            cleanup_windows_scratch_root(&root);
+            return Err("scratch home escaped the operating-system temp directory".into());
+        }
+        return Ok(CreatedScratchHome { home, handles });
+    }
+    Err("could not create isolated runtime directory".into())
+}
+
+#[cfg(windows)]
+fn validate_windows_scratch_root(root: &Path) -> Option<(u32, SystemTime, OwnedHandle)> {
+    let temp = fs::canonicalize(std::env::temp_dir()).ok()?;
+    let resolved_root = fs::canonicalize(root).ok()?;
+    if resolved_root.parent() != Some(temp.as_path()) {
+        return None;
+    }
+    let (pid, nanos, nonce) =
+        parse_windows_scratch_root_name(resolved_root.file_name()?.to_str()?)?;
+    let file = open_windows_path_no_reparse(&resolved_root, true).ok()?;
+    let handle: OwnedHandle = file.into();
+    verify_windows_protected_dacl(&handle).ok()?;
+    let marker_path = resolved_root.join(SCRATCH_OWNER_MARKER);
+    let mut marker = open_windows_path_no_reparse(&marker_path, false).ok()?;
+    if marker.metadata().ok()?.len() > 256 {
+        return None;
+    }
+    let mut contents = String::new();
+    marker.read_to_string(&mut contents).ok()?;
+    if contents != windows_scratch_marker_contents(pid, nanos, &nonce) {
+        return None;
+    }
+    Some((pid, marker.metadata().ok()?.modified().ok()?, handle))
+}
+
+#[cfg(windows)]
+fn windows_tree_is_plain(root: &Path) -> bool {
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(path) = pending.pop() {
+        let Ok(metadata) = fs::symlink_metadata(&path) else {
+            return false;
+        };
+        if windows_has_reparse_point(&metadata) {
+            return false;
+        }
+        if metadata.is_dir() {
+            let Ok(entries) = fs::read_dir(path) else {
+                return false;
+            };
+            for entry in entries {
+                let Ok(entry) = entry else { return false };
+                pending.push(entry.path());
+            }
+        }
+    }
+    true
+}
+
+#[cfg(windows)]
+fn scratch_root_for_home(path: &Path) -> Option<PathBuf> {
+    let resolved = fs::canonicalize(path).ok()?;
+    if resolved.file_name().and_then(|name| name.to_str()) != Some("home") {
+        return None;
+    }
+    let root = resolved.parent()?.to_path_buf();
+    let (_, _, handle) = validate_windows_scratch_root(&root)?;
+    drop(handle);
+    Some(root)
+}
+
+#[cfg(windows)]
+fn is_scratch_home(path: &Path) -> bool {
+    scratch_root_for_home(path).is_some()
+}
+
+#[cfg(windows)]
+fn is_forbidden_user_home(path: &Path) -> bool {
+    let Ok(real) = agenthub_core::utils::paths::default_data_dir() else {
+        return false;
+    };
+    let real = fs::canonicalize(&real).unwrap_or(real);
+    let resolved = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    resolved == real || resolved.starts_with(&real)
+}
+
+#[cfg(windows)]
+fn cleanup_scratch_home(home: &Path) {
+    let Some(root) = scratch_root_for_home(home) else {
+        return;
+    };
+    cleanup_windows_scratch_root(&root);
+}
+
+#[cfg(windows)]
+fn cleanup_windows_scratch_root(root: &Path) {
+    if !windows_tree_is_plain(root) {
+        return;
+    }
+    let Some((_, _, handle)) = validate_windows_scratch_root(root) else {
+        return;
+    };
+    drop(handle);
+    if !windows_tree_is_plain(root) {
+        return;
+    }
+    let Some((_, _, handle)) = validate_windows_scratch_root(root) else {
+        return;
+    };
+    drop(handle);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(windows)]
+fn process_is_alive(pid: u32) -> bool {
+    use windows_sys::Win32::Foundation::STILL_ACTIVE;
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if handle.is_null() {
+        // Only ERROR_INVALID_PARAMETER proves the PID does not exist. Access
+        // denial or another transient error must fail closed as "alive".
+        return std::io::Error::last_os_error().raw_os_error() != Some(87);
+    }
+    // SAFETY: OpenProcess returned a unique owned handle.
+    let handle = unsafe { OwnedHandle::from_raw_handle(handle as _) };
+    let mut exit_code = 0_u32;
+    if unsafe { GetExitCodeProcess(handle.as_raw_handle() as _, &mut exit_code) } == 0 {
+        return true;
+    }
+    exit_code == STILL_ACTIVE as u32
+}
+
+#[cfg(windows)]
+fn cleanup_stale_scratch_roots() {
+    let Ok(temp) = fs::canonicalize(std::env::temp_dir()) else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(&temp) else {
+        return;
+    };
+    let now = SystemTime::now();
+    for entry in entries.flatten() {
+        let root = entry.path();
+        let Some((pid, created, handle)) = validate_windows_scratch_root(&root) else {
+            continue;
+        };
+        let old_enough = now
+            .duration_since(created)
+            .is_ok_and(|age| age >= STALE_SCRATCH_MIN_AGE);
+        drop(handle);
+        if old_enough && !process_is_alive(pid) {
+            cleanup_windows_scratch_root(&root);
+        }
+    }
+}
+
+#[cfg(any(unix, windows))]
 fn sha256_file(file: &mut fs::File) -> Result<String, String> {
     file.seek(SeekFrom::Start(0))
         .map_err(|_| "bundled Go route could not be verified".to_string())?;
@@ -2659,13 +3293,128 @@ fn bundled_adapterd(scratch_root: &Path) -> Result<ResolvedAdapterd, String> {
     })
 }
 
-#[cfg(unix)]
+#[cfg(windows)]
+fn bundled_adapterd(scratch_root: &Path) -> Result<ResolvedAdapterd, String> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::{FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_READ};
+
+    if BUNDLED_SHA256.len() != 64 || EMBEDDED_BUNDLED_VERSION != BUNDLED_PACKAGE_VERSION {
+        return Err("bundled Go route identity is unavailable".into());
+    }
+    let exe = std::env::current_exe()
+        .map_err(|_| "bundled Go route location is unavailable".to_string())?;
+    let directory = exe
+        .parent()
+        .ok_or_else(|| "bundled Go route location is unavailable".to_string())?;
+    let source_path = directory.join("agenthub-adapterd.exe");
+    let mut source = OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(&source_path)
+        .map_err(|_| "bundled Go route is unavailable".to_string())?;
+    let source_metadata = source
+        .metadata()
+        .map_err(|_| "bundled Go route is unavailable".to_string())?;
+    if !source_metadata.is_file()
+        || windows_has_reparse_point(&source_metadata)
+        || !windows_has_single_link(&source)
+    {
+        return Err("bundled Go route is unavailable".into());
+    }
+    if sha256_file(&mut source)? != BUNDLED_SHA256 {
+        return Err("bundled Go route integrity check failed".into());
+    }
+
+    let dest_dir = scratch_root.join("bin");
+    let dest_dir_handle = ensure_private_windows_directory(&dest_dir)
+        .map_err(|_| "bundled Go route staging failed".to_string())?;
+    let dest_path = dest_dir.join("agenthub-adapterd.exe");
+    let mut dest = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .share_mode(0)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(&dest_path)
+        .map_err(|_| "bundled Go route staging failed".to_string())?;
+    std::io::copy(&mut source, &mut dest)
+        .and_then(|_| dest.sync_all())
+        .map_err(|_| "bundled Go route staging failed".to_string())?;
+    let dest_metadata = dest
+        .metadata()
+        .map_err(|_| "bundled Go route staging failed".to_string())?;
+    if !dest_metadata.is_file()
+        || windows_has_reparse_point(&dest_metadata)
+        || !windows_has_single_link(&dest)
+        || dest_metadata.len() != source_metadata.len()
+        || sha256_file(&mut dest)? != BUNDLED_SHA256
+    {
+        return Err("bundled Go route staged integrity check failed".into());
+    }
+    drop(dest);
+    drop(source);
+    let mut verified = hold_verified_windows_executable(&dest_path)?;
+    let verified_metadata = verified
+        .metadata()
+        .map_err(|_| "bundled Go route staged integrity check failed".to_string())?;
+    if !windows_has_single_link(&verified)
+        || verified_metadata.len() != source_metadata.len()
+        || sha256_file(&mut verified)? != BUNDLED_SHA256
+    {
+        return Err("bundled Go route staged integrity check failed".into());
+    }
+    Ok(ResolvedAdapterd {
+        path: dest_path,
+        package_version: BUNDLED_PACKAGE_VERSION,
+        _verified_handles: vec![dest_dir_handle, verified],
+    })
+}
+
+#[cfg(windows)]
+fn ensure_private_windows_directory(path: &Path) -> Result<fs::File, String> {
+    match create_private_windows_directory(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error.to_string()),
+    }
+    let file = open_windows_path_no_reparse(path, true)?;
+    verify_windows_protected_dacl(&file)?;
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn hold_verified_windows_executable(path: &Path) -> Result<fs::File, String> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::{FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_READ};
+
+    let file = OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .map_err(|_| "bundled Go route staged integrity check failed".to_string())?;
+    let metadata = file
+        .metadata()
+        .map_err(|_| "bundled Go route staged integrity check failed".to_string())?;
+    if !metadata.is_file()
+        || windows_has_reparse_point(&metadata)
+        || !windows_has_single_link(&file)
+    {
+        return Err("bundled Go route staged integrity check failed".into());
+    }
+    Ok(file)
+}
+
+#[cfg(any(unix, windows))]
 fn resolve_adapterd_bin(_scratch_root: &Path) -> Result<ResolvedAdapterd, String> {
     #[cfg(debug_assertions)]
     if let Ok(raw) = std::env::var("AGENTHUB_ADAPTERD_BIN") {
         let path = PathBuf::from(raw);
         if path.is_file() {
             return Ok(ResolvedAdapterd {
+                #[cfg(windows)]
+                _verified_handles: vec![hold_verified_windows_executable(&path)?],
                 path,
                 package_version: ISOLATED_DEV_PACKAGE_VERSION,
             });
@@ -2688,28 +3437,40 @@ fn resolve_adapterd_bin(_scratch_root: &Path) -> Result<ResolvedAdapterd, String
     {
         let src = find_adapterd_src()?;
         let dest_dir = _scratch_root.join("bin");
+        #[cfg(unix)]
         fs::create_dir_all(&dest_dir).map_err(|err| err.to_string())?;
-        let dest = dest_dir.join("agenthub-adapterd");
-        let status = Command::new("go")
+        #[cfg(windows)]
+        let dest_dir_handle = ensure_private_windows_directory(&dest_dir)?;
+        let dest = dest_dir.join(if cfg!(windows) {
+            "agenthub-adapterd.exe"
+        } else {
+            "agenthub-adapterd"
+        });
+        let mut command = Command::new("go");
+        command
             .arg("build")
             .arg("-trimpath")
             .arg("-buildvcs=false")
             .arg("-o")
             .arg(&dest)
-            .current_dir(&src)
-            .status()
-            .map_err(|err| format!("go build: {err}"))?;
+            .current_dir(&src);
+        agenthub_core::utils::process::apply_no_window(&mut command);
+        let status = command.status().map_err(|err| format!("go build: {err}"))?;
         if !status.success() {
             return Err("go build agenthub-adapterd failed".into());
         }
+        #[cfg(windows)]
+        let verified = hold_verified_windows_executable(&dest)?;
         Ok(ResolvedAdapterd {
             path: dest,
             package_version: ISOLATED_DEV_PACKAGE_VERSION,
+            #[cfg(windows)]
+            _verified_handles: vec![dest_dir_handle, verified],
         })
     }
 }
 
-#[cfg(all(unix, debug_assertions))]
+#[cfg(all(any(unix, windows), debug_assertions))]
 fn find_adapterd_src() -> Result<PathBuf, String> {
     let mut candidates =
         vec![PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../go/agenthub-adapterd")];
@@ -2734,26 +3495,143 @@ fn find_adapterd_src() -> Result<PathBuf, String> {
 }
 
 #[cfg(unix)]
-fn spawn_logged(cmd: &mut Command, log_path: &Path) -> Result<Child, String> {
+fn spawn_logged(cmd: &mut Command, log_path: &Path) -> Result<AdapterdProcess, String> {
     let file = OpenOptions::new()
         .create(true)
         .append(true)
         .open(log_path)
         .map_err(|err| err.to_string())?;
     let err_file = file.try_clone().map_err(|err| err.to_string())?;
-    cmd.stdout(Stdio::from(file))
+    let child = cmd
+        .stdout(Stdio::from(file))
         .stderr(Stdio::from(err_file))
         .spawn()
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+    Ok(AdapterdProcess {
+        child,
+        stdout_reader: None,
+    })
 }
 
 #[cfg(unix)]
+fn spawn_adapterd_process(cmd: &mut Command) -> Result<AdapterdProcess, String> {
+    let child = cmd.spawn().map_err(|error| error.to_string())?;
+    Ok(AdapterdProcess {
+        child,
+        stdout_reader: None,
+    })
+}
+
+#[cfg(windows)]
+fn spawn_adapterd_process(cmd: &mut Command) -> Result<AdapterdProcess, String> {
+    use std::mem::size_of;
+    use std::os::windows::process::CommandExt;
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
+    };
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+    use windows_sys::Win32::System::Threading::{
+        OpenThread, ResumeThread, CREATE_NO_WINDOW, CREATE_SUSPENDED, THREAD_SUSPEND_RESUME,
+    };
+
+    // Start suspended so no adapter code or descendant can run before the
+    // process is attached to the kill-on-close Job Object.
+    let raw_job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+    if raw_job.is_null() {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    // SAFETY: CreateJobObjectW returned a unique owned handle.
+    let job = WindowsJob {
+        handle: unsafe { OwnedHandle::from_raw_handle(raw_job as _) },
+    };
+    let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    let configured = unsafe {
+        SetInformationJobObject(
+            job.handle.as_raw_handle() as _,
+            JobObjectExtendedLimitInformation,
+            &limits as *const _ as _,
+            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        )
+    };
+    if configured == 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+
+    cmd.creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED);
+    let mut child = cmd.spawn().map_err(|error| error.to_string())?;
+    let assigned = unsafe {
+        AssignProcessToJobObject(job.handle.as_raw_handle() as _, child.as_raw_handle() as _)
+    };
+    if assigned == 0 {
+        let error = std::io::Error::last_os_error();
+        unsafe {
+            let _ = TerminateJobObject(job.handle.as_raw_handle() as _, 1);
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error.to_string());
+    }
+
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+    if snapshot.is_null() || snapshot == INVALID_HANDLE_VALUE {
+        let error = std::io::Error::last_os_error();
+        unsafe {
+            let _ = TerminateJobObject(job.handle.as_raw_handle() as _, 1);
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error.to_string());
+    }
+    // SAFETY: the snapshot handle is unique and owned here.
+    let snapshot = unsafe { OwnedHandle::from_raw_handle(snapshot as _) };
+    let mut entry = THREADENTRY32 {
+        dwSize: size_of::<THREADENTRY32>() as u32,
+        ..THREADENTRY32::default()
+    };
+    let mut resumed = false;
+    let mut has_entry = unsafe { Thread32First(snapshot.as_raw_handle() as _, &mut entry) } != 0;
+    while has_entry {
+        if entry.th32OwnerProcessID == child.id() {
+            let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID) };
+            if !thread.is_null() {
+                // SAFETY: OpenThread returned an owned handle.
+                let thread = unsafe { OwnedHandle::from_raw_handle(thread as _) };
+                if unsafe { ResumeThread(thread.as_raw_handle() as _) } != u32::MAX {
+                    resumed = true;
+                    break;
+                }
+            }
+        }
+        has_entry = unsafe { Thread32Next(snapshot.as_raw_handle() as _, &mut entry) } != 0;
+    }
+    if !resumed {
+        unsafe {
+            let _ = TerminateJobObject(job.handle.as_raw_handle() as _, 1);
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("adapterd suspended process could not be resumed".into());
+    }
+    Ok(AdapterdProcess {
+        child,
+        stdout_reader: None,
+        _job: job,
+    })
+}
+
+#[cfg(any(unix, windows))]
 fn spawn_tcp_control_logged(
     cmd: &mut Command,
     log_path: &Path,
 ) -> Result<
     (
-        Child,
+        AdapterdProcess,
         std::sync::mpsc::Receiver<Result<SocketAddrV4, String>>,
     ),
     String,
@@ -2763,11 +3641,8 @@ fn spawn_tcp_control_logged(
         .append(true)
         .open(log_path)
         .map_err(|err| err.to_string())?;
-    let mut child = cmd
-        .stdout(Stdio::piped())
-        .stderr(Stdio::from(stderr_file))
-        .spawn()
-        .map_err(|err| err.to_string())?;
+    cmd.stdout(Stdio::piped()).stderr(Stdio::from(stderr_file));
+    let mut child = spawn_adapterd_process(cmd)?;
     let Some(stdout) = child.stdout.take() else {
         let _ = child.kill();
         let _ = child.wait();
@@ -2775,19 +3650,22 @@ fn spawn_tcp_control_logged(
     };
     let log_path = log_path.to_path_buf();
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-    if std::thread::Builder::new()
+    let reader = match std::thread::Builder::new()
         .name("agenthub-go-control-stdout".into())
         .spawn(move || drain_tcp_control_stdout(stdout, &log_path, sender))
-        .is_err()
     {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err("adapterd stdout reader could not start".into());
-    }
+        Ok(reader) => reader,
+        Err(_) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("adapterd stdout reader could not start".into());
+        }
+    };
+    child.stdout_reader = Some(reader);
     Ok((child, receiver))
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn drain_tcp_control_stdout(
     mut stdout: std::process::ChildStdout,
     log_path: &Path,
@@ -2868,7 +3746,7 @@ fn drain_tcp_control_stdout(
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn parse_tcp_control_listener_line(line: &[u8]) -> Result<Option<SocketAddrV4>, String> {
     let line = line.strip_suffix(b"\r").unwrap_or(line);
     let Ok(line) = std::str::from_utf8(line) else {
@@ -2901,18 +3779,19 @@ fn wait_for_socket(path: &Path, timeout: Duration) -> Result<(), String> {
     Err("timed out waiting for control socket".into())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn post_control(endpoint: &ControlEndpoint, body: &Value) -> Result<Value, String> {
     post_control_with_timeout(endpoint, body, Duration::from_secs(8))
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn post_control_with_timeout(
     endpoint: &ControlEndpoint,
     body: &Value,
     timeout: Duration,
 ) -> Result<Value, String> {
     match endpoint {
+        #[cfg(unix)]
         ControlEndpoint::Unix(socket) => post_unix_control(socket, body, timeout),
         ControlEndpoint::Tcp { address, bearer } => {
             post_tcp_control(*address, bearer, body, timeout)
@@ -2962,7 +3841,7 @@ fn post_unix_control(socket: &Path, body: &Value, timeout: Duration) -> Result<V
     parse_http_json(&buf)
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn post_tcp_control(
     address: SocketAddrV4,
     bearer: &str,
@@ -3078,7 +3957,7 @@ fn request_id(kind: &str) -> String {
     format!("gui-{kind}-{}-{nanos}-{sequence}", std::process::id())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn session_status(session: &ControlSession) -> Result<Value, String> {
     let reply = post_control(
         &session.endpoint,
@@ -3095,7 +3974,7 @@ fn session_status(session: &ControlSession) -> Result<Value, String> {
     Ok(require_ok(&reply)?.clone())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn required_reload_ack_matches(
     status: &Value,
     expected_hash: &str,
@@ -3108,7 +3987,7 @@ fn required_reload_ack_matches(
         && status.get("listen_ready").and_then(Value::as_bool) == Some(true)
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn renew_owner_and_status(session: &ControlSession) -> Result<Value, String> {
     let renewal = post_control(
         &session.endpoint,
@@ -3136,7 +4015,7 @@ fn owner_lease_valid(payload: &Value) -> bool {
     payload.get("owner_lease_valid").and_then(Value::as_bool) == Some(true)
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 impl From<&Session> for ControlSession {
     fn from(session: &Session) -> Self {
         Self {
@@ -3152,17 +4031,20 @@ fn status_with_supervisor(
     payload: Value,
     previous: &GoRouteIsolatedStatus,
 ) -> GoRouteIsolatedStatus {
-    let listen_ready = payload
+    let reported_ready = payload
         .get("listen_ready")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let port = payload
+        .get("port")
+        .and_then(Value::as_u64)
+        .and_then(|value| u16::try_from(value).ok())
+        .filter(|port| *port != 0 && *port != PRODUCT_DEFAULT_PORT);
+    let listen_ready = reported_ready && port.is_some();
     GoRouteIsolatedStatus {
         state: if listen_ready { "ready" } else { "failed" }.into(),
         listen_ready,
-        port: payload
-            .get("port")
-            .and_then(Value::as_u64)
-            .map(|value| value as u16),
+        port,
         last_error: (payload
             .get("last_error")
             .is_some_and(|value| !value.is_null())
