@@ -109,9 +109,19 @@ pub async fn plan_ticket(
     ticket_id: String,
     target_agent_id: String,
 ) -> Result<AdapterApplyPlan, GuiError> {
-    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    let target_agent_id = parse_agent(&target_agent_id).map_err(adapter_error_from_string)?;
+    plan_ticket_inner(&state, ticket_id, target_agent_id)
+        .await
+        .map_err(adapter_error_from_string)
+}
+
+pub(crate) async fn plan_ticket_inner(
+    state: &AppState,
+    ticket_id: String,
+    target_agent_id: AgentId,
+) -> Result<AdapterApplyPlan, String> {
+    let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        let target_agent_id = parse_agent(&target_agent_id)?;
         hub.tickets()
             .plan(&TicketPlanRequest {
                 ticket_id,
@@ -120,7 +130,6 @@ pub async fn plan_ticket(
             .map_err(|err| map_err_string("plan_ticket", err))
     })
     .await
-    .map_err(adapter_error_from_string)
 }
 
 /// List credential-free, persisted adapter profiles. All filters are optional.
@@ -155,13 +164,8 @@ pub async fn bind_ticket(
     ticket_id: String,
     target_agent_id: String,
 ) -> Result<TicketBinding, GuiError> {
-    let control = state.adapter_control().map_err(adapter_error_from_string)?;
     let target_agent_id = parse_agent(&target_agent_id).map_err(adapter_error_from_string)?;
-    let binding = control
-        .bind(ticket_id, target_agent_id)
-        .await
-        .map_err(adapter_error_from_string);
-    finish_go_route_write_result(&state, binding).await
+    bind_ticket_inner(&state, ticket_id, target_agent_id).await
 }
 
 /// Unbind a ticket from an Agent. Stops a bridge first, then restores previous
@@ -172,13 +176,34 @@ pub async fn unbind_ticket(
     ticket_id: String,
     agent_id: String,
 ) -> Result<(), GuiError> {
-    let control = state.adapter_control().map_err(adapter_error_from_string)?;
     let agent_id = parse_agent(&agent_id).map_err(adapter_error_from_string)?;
+    unbind_ticket_inner(&state, ticket_id, agent_id).await
+}
+
+pub(crate) async fn bind_ticket_inner(
+    state: &AppState,
+    ticket_id: String,
+    target_agent_id: AgentId,
+) -> Result<TicketBinding, GuiError> {
+    let control = state.adapter_control().map_err(adapter_error_from_string)?;
+    let binding = control
+        .bind(ticket_id, target_agent_id)
+        .await
+        .map_err(adapter_error_from_string);
+    finish_go_route_write_result(state, binding).await
+}
+
+pub(crate) async fn unbind_ticket_inner(
+    state: &AppState,
+    ticket_id: String,
+    agent_id: AgentId,
+) -> Result<(), GuiError> {
+    let control = state.adapter_control().map_err(adapter_error_from_string)?;
     let unbound = control
         .unbind(ticket_id, agent_id)
         .await
         .map_err(adapter_error_from_string);
-    finish_go_route_write_result(&state, unbound).await
+    finish_go_route_write_result(state, unbound).await
 }
 
 /// Thin compatibility delegate to [`bind_ticket`]. Prefer bind as the write API.

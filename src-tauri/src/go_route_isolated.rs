@@ -14,7 +14,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-#[cfg(unix)]
+#[cfg(any(unix, feature = "go-route-bind-probe"))]
 use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(unix)]
 use std::sync::Condvar;
@@ -126,6 +126,8 @@ pub struct GoRouteIsolatedHost {
     hub: Option<Arc<AgentHub>>,
     inner: Mutex<Inner>,
     update_gate: Mutex<()>,
+    #[cfg(feature = "go-route-bind-probe")]
+    required_reload_ack_count: AtomicU64,
 }
 
 #[cfg(unix)]
@@ -261,6 +263,8 @@ impl GoRouteIsolatedHost {
                 oauth_refresh_worker_session: None,
             }),
             update_gate: Mutex::new(()),
+            #[cfg(feature = "go-route-bind-probe")]
+            required_reload_ack_count: AtomicU64::new(0),
         });
         #[cfg(unix)]
         Self::spawn_monitor(Arc::downgrade(&host));
@@ -325,6 +329,25 @@ impl GoRouteIsolatedHost {
             }
             inner.status.clone()
         }
+    }
+
+    #[cfg(feature = "go-route-bind-probe")]
+    pub(crate) fn probe_config_hash(&self) -> Option<String> {
+        self.lock()
+            .committed_plan
+            .as_ref()
+            .map(|plan| plan.config_hash.clone())
+    }
+
+    #[cfg(feature = "go-route-bind-probe")]
+    pub(crate) fn probe_required_reload_ack_count(&self) -> u64 {
+        self.required_reload_ack_count.load(Ordering::SeqCst)
+    }
+
+    #[cfg(feature = "go-route-bind-probe")]
+    fn record_required_reload_ack(&self) {
+        self.required_reload_ack_count
+            .fetch_add(1, Ordering::SeqCst);
     }
 
     pub fn start(&self) -> GoRouteIsolatedStatus {
@@ -524,6 +547,8 @@ impl GoRouteIsolatedHost {
                             port,
                         ) =>
                     {
+                        #[cfg(feature = "go-route-bind-probe")]
+                        self.record_required_reload_ack();
                         GoRouteRequiredReloadResult::Skipped {
                             reason: GoRouteRequiredReloadSkipReason::Unchanged,
                         }
@@ -583,6 +608,8 @@ impl GoRouteIsolatedHost {
                 return self.fail_required_reload();
             }
 
+            #[cfg(feature = "go-route-bind-probe")]
+            self.record_required_reload_ack();
             GoRouteRequiredReloadResult::Reloaded {
                 config_hash,
                 instance_epoch: control.instance_epoch,

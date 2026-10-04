@@ -10,9 +10,18 @@ default-run = "agenthub-gui"
 name = "agenthub_gui_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = []
+go-route-bind-probe = []
+
 [[bin]]
 name = "agenthub-gui"
 path = "src/main.rs"
+
+[[example]]
+name = "go_route_bind_e2e_probe"
+path = "examples/go_route_bind_e2e_probe.rs"
+required-features = ["go-route-bind-probe"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

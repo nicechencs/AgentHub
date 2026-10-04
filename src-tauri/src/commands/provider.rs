@@ -11,6 +11,7 @@ use agenthub_core::models::{
     ProviderSwitchResult, SwitchConfirmPreview,
 };
 use agenthub_core::presets;
+use agenthub_core::services::adapter_projection::generated_provider_is_adapter_owned;
 use agenthub_core::services::provider_identity::{normalize_base_url, normalize_provider_base_url};
 use agenthub_core::utils::redact::{api_key_secret, mask_secret_tail};
 use agenthub_core::utils::secret_merge::merge_preserving_secrets;
@@ -149,10 +150,18 @@ pub async fn import_provider_live(
     name: Option<String>,
 ) -> Result<Provider, String> {
     let agent = parse_agent(&agent_id)?;
+    import_provider_live_state_inner(&state, agent, name).await
+}
+
+pub(crate) async fn import_provider_live_state_inner(
+    state: &AppState,
+    agent: AgentId,
+    name: Option<String>,
+) -> Result<Provider, String> {
     let hub = state.hub_arc()?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     let provider = with_hub_blocking(hub, move |hub| {
-        import_provider_live_inner(hub, &agent_id, name.as_deref())
+        import_provider_live_inner(hub, agent.as_str(), name.as_deref())
     })
     .await;
     finish_go_route_string_write_result(&state, provider).await
@@ -166,10 +175,18 @@ pub async fn switch_provider(
     id_or_name: String,
 ) -> Result<ProviderSwitchResult, String> {
     let agent = parse_agent(&agent_id)?;
+    switch_provider_state_inner(&state, agent, id_or_name).await
+}
+
+pub(crate) async fn switch_provider_state_inner(
+    state: &AppState,
+    agent: AgentId,
+    id_or_name: String,
+) -> Result<ProviderSwitchResult, String> {
     let hub = state.hub_arc()?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     let result = with_hub_blocking(hub, move |hub| {
-        switch_provider_inner(hub, &agent_id, &id_or_name)
+        switch_provider_inner(hub, agent.as_str(), &id_or_name)
     })
     .await;
     finish_go_route_string_write_result(&state, result).await
@@ -325,6 +342,14 @@ fn import_provider_live_inner(
     name: Option<&str>,
 ) -> Result<Provider, String> {
     let agent = parse_agent(agent_id)?;
+    import_provider_live_for_agent_inner(hub, agent, name)
+}
+
+fn import_provider_live_for_agent_inner(
+    hub: &AgentHub,
+    agent: AgentId,
+    name: Option<&str>,
+) -> Result<Provider, String> {
     let item = hub
         .providers()
         .import_live(agent, name)
@@ -338,9 +363,38 @@ fn switch_provider_inner(
     id_or_name: &str,
 ) -> Result<ProviderSwitchResult, String> {
     let agent = parse_agent(agent_id)?;
-    let result = hub
-        .providers()
-        .switch(id_or_name, agent)
+    switch_provider_for_agent_inner(hub, agent, id_or_name)
+}
+
+fn switch_provider_for_agent_inner(
+    hub: &AgentHub,
+    agent: AgentId,
+    id_or_name: &str,
+) -> Result<ProviderSwitchResult, String> {
+    let providers = hub.providers();
+    let guard = providers
+        .begin_live_saga(agent)
+        .map_err(|e| map_err_string("switch_provider", e))?;
+    let target = providers
+        .get(id_or_name, Some(agent))
+        .map_err(|e| map_err_string("switch_provider", e))?;
+    if generated_provider_is_adapter_owned(&target) {
+        let current = providers
+            .get_current(agent)
+            .map_err(|e| map_err_string("switch_provider", e))?;
+        if let Some(previous) = current.as_ref().filter(|row| row.id != target.id) {
+            providers
+                .persist_first_bind_restore_meta_with_guard(
+                    &guard,
+                    &target,
+                    Some(&previous.id),
+                    None,
+                )
+                .map_err(|e| map_err_string("switch_provider", e))?;
+        }
+    }
+    let result = providers
+        .switch_with_guard(&guard, &target.id, agent)
         .map_err(|e| map_err_string("switch_provider", e))?;
     invalidate_runtime_catalogs(hub);
     Ok(result.redacted())

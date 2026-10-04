@@ -7,6 +7,8 @@ mod chat_shortcuts;
 mod commands;
 mod exit_coordinator;
 mod file_manager;
+#[cfg(feature = "go-route-bind-probe")]
+pub mod go_route_bind_probe;
 mod go_route_isolated;
 mod shell_open_chat;
 mod skill_watch;
