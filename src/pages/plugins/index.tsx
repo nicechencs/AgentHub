@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Puzzle } from 'lucide-react';
 import { AgentTabStrip, type AgentTabId } from '@/components/layout/AgentTabStrip';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -22,20 +22,27 @@ import {
   enablePlugin,
   installPlugin,
   listPluginInventory,
+  refreshPluginMarketplace,
   uninstallPlugin,
+  updatePiPlugins,
+  updatePlugin,
 } from '@/lib/api/plugins';
 import { openPathInFileManager } from '@/lib/api/skill';
 import type { PluginEntry, PluginInventory } from '@/lib/backend/contracts/plugin-types';
 import type { AgentKey } from '@/lib/types';
 import { canInstallListedPlugin } from './can-install';
+import { canRefreshPluginMarketplace, canUpdateAllPlugins } from './can-update';
+import { createExclusiveActionGate, createLatestRequestGate } from './latest-request';
 import { PluginDetailPanel } from './PluginDetailPanel';
 import { PluginInstallDialog } from './PluginInstallDialog';
 import { PluginPackList } from './PluginPackList';
 import { PluginUninstallDialog } from './PluginUninstallDialog';
+import { PluginUpdateDialog, type PluginUpdateTarget } from './PluginUpdateDialog';
 import { pluginEmptyCopy, pluginScanFailedAgents } from './plugin-empty';
 import { StorageKey } from '@/lib/ui-preferences';
 
 const PLUGINS_PREVIEW_WIDTH_KEY = StorageKey.pluginsPreviewWidth;
+type PluginMutation = 'install' | 'uninstall' | 'toggle' | 'marketplace' | 'update';
 
 function agentName(id: AgentKey): string {
   return agentDisplayName(id);
@@ -50,33 +57,59 @@ export default function PluginsPage() {
   const [error, setError] = useState<Error | string | null>(null);
   const [filterAgent, setFilterAgent] = useState<AgentTabId>('all');
   const [installOpen, setInstallOpen] = useState(false);
-  const [installBusy, setInstallBusy] = useState(false);
   const [installError, setInstallError] = useState<unknown>(null);
   const [uninstallTarget, setUninstallTarget] = useState<PluginEntry | null>(null);
-  const [uninstallBusy, setUninstallBusy] = useState(false);
   const [uninstallError, setUninstallError] = useState<unknown>(null);
+  const [updateTarget, setUpdateTarget] = useState<PluginUpdateTarget | null>(null);
+  const [updateError, setUpdateError] = useState<unknown>(null);
+  const [busyAction, setBusyAction] = useState<PluginMutation | null>(null);
+  const mutationGate = useRef(createExclusiveActionGate());
+  const loadGate = useRef(createLatestRequestGate());
   const inspect = useSideSplit<PluginEntry>({ storageKey: PLUGINS_PREVIEW_WIDTH_KEY });
+  const mutationBusy = busyAction !== null;
+  const installBusy = busyAction === 'install';
+  const uninstallBusy = busyAction === 'uninstall';
+  const marketBusy = busyAction === 'marketplace';
+  const updateBusy = busyAction === 'update';
   const showInstall = filterAgent === 'all' || canInstallListedPlugin(filterAgent);
+  const showMarketplaceRefresh =
+    filterAgent !== 'all' && canRefreshPluginMarketplace(filterAgent);
+  const showUpdateAll = filterAgent !== 'all' && canUpdateAllPlugins(filterAgent);
 
   const load = useCallback(async (): Promise<PluginInventory | null> => {
+    const generation = loadGate.current.begin();
     setLoading(true);
     setError(null);
     try {
       const inv = await listPluginInventory();
+      if (!loadGate.current.isCurrent(generation)) return null;
       setData(inv);
       return inv;
     } catch (e) {
+      if (!loadGate.current.isCurrent(generation)) return null;
       setError(e instanceof Error ? e : String(e));
       setData(null);
       return null;
     } finally {
-      setLoading(false);
+      if (loadGate.current.isCurrent(generation)) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void load();
+    return () => loadGate.current.invalidate();
   }, [load]);
+
+  const beginMutation = useCallback((action: PluginMutation): boolean => {
+    if (!mutationGate.current.begin()) return false;
+    setBusyAction(action);
+    return true;
+  }, []);
+
+  const endMutation = useCallback((action: PluginMutation) => {
+    mutationGate.current.end();
+    setBusyAction((current) => (current === action ? null : current));
+  }, []);
 
   useEffect(() => {
     if (filterAgent === 'all') return;
@@ -146,7 +179,7 @@ export default function PluginsPage() {
   }
 
   async function runInstall(agent: AgentKey, source: string, confirmed: boolean) {
-    setInstallBusy(true);
+    if (!beginMutation('install')) return;
     setInstallError(null);
     try {
       await installPlugin(agent, source, { confirmed });
@@ -156,12 +189,12 @@ export default function PluginsPage() {
     } catch (e) {
       setInstallError(e instanceof Error ? e : String(e));
     } finally {
-      setInstallBusy(false);
+      endMutation('install');
     }
   }
 
   async function runUninstall(plugin: PluginEntry, keepData: boolean) {
-    setUninstallBusy(true);
+    if (!beginMutation('uninstall')) return;
     setUninstallError(null);
     try {
       await uninstallPlugin(plugin.agent, plugin.name, plugin.marketplace, { keepData });
@@ -172,11 +205,12 @@ export default function PluginsPage() {
     } catch (e) {
       setUninstallError(e instanceof Error ? e : String(e));
     } finally {
-      setUninstallBusy(false);
+      endMutation('uninstall');
     }
   }
 
   async function togglePlugin(plugin: PluginEntry, enabled: boolean) {
+    if (!beginMutation('toggle')) return;
     try {
       if (enabled) {
         await enablePlugin(plugin.agent, plugin.name, plugin.marketplace);
@@ -196,6 +230,54 @@ export default function PluginsPage() {
         description: e instanceof Error ? e.message : String(e),
         variant: 'danger',
       });
+    } finally {
+      endMutation('toggle');
+    }
+  }
+
+  async function refreshMarketplace() {
+    if (filterAgent === 'all' || !canRefreshPluginMarketplace(filterAgent)) return;
+    if (!beginMutation('marketplace')) return;
+    try {
+      await refreshPluginMarketplace(filterAgent);
+      await load();
+      toast({ title: t('plugins.marketplace.ok'), variant: 'success' });
+    } catch (e) {
+      toast({
+        title: t('plugins.marketplace.failed'),
+        description: e instanceof Error ? e.message : String(e),
+        variant: 'danger',
+      });
+    } finally {
+      endMutation('marketplace');
+    }
+  }
+
+  async function runUpdate(target: PluginUpdateTarget) {
+    if (!beginMutation('update')) return;
+    setUpdateError(null);
+    try {
+      if (target.kind === 'pi-all') {
+        await updatePiPlugins({ confirmed: true });
+      } else {
+        await updatePlugin(
+          target.plugin.agent,
+          target.plugin.name,
+          target.plugin.marketplace,
+          target.plugin.scope,
+          { confirmed: true },
+        );
+      }
+      const inspectedId = inspect.target?.id ?? null;
+      const inv = await load();
+      const next = inv?.plugins.find((row) => row.id === inspectedId);
+      if (next) inspect.open(next);
+      setUpdateTarget(null);
+      toast({ title: t('plugins.update.ok'), variant: 'success' });
+    } catch (e) {
+      setUpdateError(e instanceof Error ? e : String(e));
+    } finally {
+      endMutation('update');
     }
   }
 
@@ -206,6 +288,11 @@ export default function PluginsPage() {
       onClose={() => inspect.close()}
       onLocate={locateSource}
       onToggle={togglePlugin}
+      disabled={mutationBusy || loading}
+      onUpdate={(plugin) => {
+        setUpdateError(null);
+        setUpdateTarget({ kind: 'plugin', plugin });
+      }}
       onUninstall={(plugin) => {
         setUninstallError(null);
         setUninstallTarget(plugin);
@@ -247,9 +334,33 @@ export default function PluginsPage() {
           aria-label={t('plugins.page.filterAria')}
         />
         <div className={pageRhythm.chromeActions}>
+          {showMarketplaceRefresh ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={mutationBusy || loading}
+              onClick={() => void refreshMarketplace()}
+            >
+              {marketBusy ? t('plugins.marketplace.refreshing') : t('plugins.marketplace.button')}
+            </Button>
+          ) : null}
+          {showUpdateAll ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={mutationBusy || loading}
+              onClick={() => {
+                setUpdateError(null);
+                setUpdateTarget({ kind: 'pi-all' });
+              }}
+            >
+              {t('plugins.update.piButton')}
+            </Button>
+          ) : null}
           {showInstall ? (
             <Button
               size="sm"
+              disabled={mutationBusy || loading}
               onClick={() => {
                 setInstallError(null);
                 setInstallOpen(true);
@@ -260,6 +371,7 @@ export default function PluginsPage() {
           ) : null}
           <PageRefreshButton
             loading={loading}
+            disabled={mutationBusy}
             onClick={() => void load()}
             label={t('plugins.page.refresh')}
           />
@@ -279,6 +391,7 @@ export default function PluginsPage() {
               <Button
                 size="sm"
                 className="mt-2"
+                disabled={mutationBusy || loading}
                 onClick={() => {
                   setInstallError(null);
                   setInstallOpen(true);
@@ -287,7 +400,13 @@ export default function PluginsPage() {
                 <Plus className="h-3.5 w-3.5" /> {t('plugins.install.button')}
               </Button>
             ) : emptyCopy.showRefresh ? (
-              <Button size="sm" variant="outline" className="mt-2" onClick={() => void load()}>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                disabled={mutationBusy || loading}
+                onClick={() => void load()}
+              >
                 {t('plugins.empty.refresh')}
               </Button>
             ) : undefined
@@ -330,6 +449,17 @@ export default function PluginsPage() {
           setUninstallError(null);
         }}
         onUninstall={runUninstall}
+      />
+      <PluginUpdateDialog
+        target={updateTarget}
+        busy={updateBusy}
+        error={updateError}
+        onClose={() => {
+          if (updateBusy) return;
+          setUpdateTarget(null);
+          setUpdateError(null);
+        }}
+        onConfirm={runUpdate}
       />
     </WorkbenchSplitPage>
   );

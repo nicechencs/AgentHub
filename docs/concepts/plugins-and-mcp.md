@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: product, frontend, and core contributors
 source-of-truth: SkillService, mcp_inventory.rs, mcp_manage.rs, plugin_inventory.rs, plugin_apply.rs, vendor plugin CLIs, and linked reference pages
-updated: 2026-09-29
+updated: 2026-10-04
 ---
 
 # 插件、MCP 与技能
@@ -16,7 +16,7 @@ AgentHub 里有三类“扩展”，名字容易混。用户说的**插件**是�
 
 | 界面叫法 | 是什么 | AgentHub 现在能做什么 |
 |---|---|---|
-| **插件**（`/plugins`） | 可安装的包，常带 skills、commands、agents、hooks，有时附带 MCP | 列出 Claude / Grok / Pi 已装的包；Claude / Grok 可安装、卸载、启用、停用。Codex 为 Planned；其余不支持。没有 `Capability::Plugins` |
+| **插件**（`/plugins`） | 可安装的包，常带 skills、commands、agents、hooks，有时附带 MCP | 列出 Claude / Grok / Pi 已装的包；Claude / Grok 可安装、卸载、启用、停用、刷新市场和更新用户范围的已装包；Pi 可更新符合条件的已装扩展。Codex 为 Planned；其余不支持。没有 `Capability::Plugins` |
 | **MCP**（`/mcp`） | Agent 作为客户端去连的 MCP server 条目 | 盘点各家配置文件；Claude / Codex / Grok / Cursor / WorkBuddy 可探测并写入、启用、关闭（无 OAuth），`Capability::Mcp` 对这五家是 Partial |
 | **技能**（`/skills`） | 带 `SKILL.md` 的技能目录 | 用户技能共享库 `~/.agents/skills/`，再同步到各 Agent 自己的目录；项目技能在所选工作区的 `.agents/skills/` |
 
@@ -29,9 +29,11 @@ AgentHub 里有三类“扩展”，名字容易混。用户说的**插件**是�
 - **插件**：
   - Claude / Grok 优先读官方 CLI 的 JSON，否则读本机目录（`~/.claude/plugins/` + `enabledPlugins`，`~/.grok/plugins/`）。
   - 安装要先确认：Grok 从官方市场、git 或本地路径装，确认后才带 `--trust` 调 `grok plugin install`；Claude 安装 `name@marketplace`，确认后带 `-y`。卸载默认保留插件数据目录。
-  - Pi 没有列表 JSON，读 `~/.pi/agent/settings.json` 的 `packages`（及 npm/git 安装目录），对比本机版本与配置里的指定版本；不查线上最新版。Pi 装上即加载，没有包级启用，也不能从本页安装。
+  - 刷新市场与更新已装包是两个动作：Claude / Grok 分别调用官方 marketplace update 和 plugin update；单包更新只对用户范围开放，避免把项目或本地范围误更新成用户范围；Grok trust 不当作版本状态。
+  - Pi 没有列表 JSON，读 `~/.pi/agent/settings.json` 的 `packages`（及 npm/git 安装目录），对比本机版本与配置选择器或 git ref；不查线上最新版。本页在隔离目录调用 `pi update --extensions --no-approve`。只有 `npm:包@1.2.3` 这类完整语义版本会跳过；`@1.2` 和 git ref 仍参与更新。Pi 装上即加载，没有包级启用，也不能从本页安装、卸载或启停。
+  - 官方 CLI 失败时会恢复调用前的配置文件；CLI 已经改过的包目录或 cache 不保证回滚。
   - 设置「显示插件页面」只控制侧栏入口。附带的 MCP 只作为包内组件显示。
-  - 更新和 Codex / Pi 写入仍是[提案](../proposals/plugin-management.md)。
+  - Codex / Pi 单包安装写入仍是[提案](../proposals/plugin-management.md)。
 
 ## 谁拥有真实状态
 

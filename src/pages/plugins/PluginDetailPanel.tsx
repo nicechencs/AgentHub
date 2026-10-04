@@ -11,6 +11,7 @@ import type { PluginComponent, PluginEntry } from '@/lib/backend/contracts/plugi
 import type { TranslateFn } from '@/lib/i18n';
 import { canUninstallListedPlugin } from './can-install';
 import { canToggleListedPlugin } from './can-toggle';
+import { canUpdateListedPlugin } from './can-update';
 import { pluginVersionView } from './plugin-version-model';
 
 function kindLabel(kind: string, t: TranslateFn): string {
@@ -76,6 +77,8 @@ export function PluginDetailPanel({
   onLocate,
   onToggle,
   onUninstall,
+  onUpdate,
+  disabled = false,
 }: {
   plugin: PluginEntry;
   width: number;
@@ -83,11 +86,14 @@ export function PluginDetailPanel({
   onLocate: (path: string) => void;
   onToggle?: (plugin: PluginEntry, enabled: boolean) => Promise<void>;
   onUninstall?: (plugin: PluginEntry) => void;
+  onUpdate?: (plugin: PluginEntry) => void;
+  disabled?: boolean;
 }) {
   const { t } = useI18n();
   const [busy, setBusy] = useState<'enable' | 'disable' | null>(null);
   const canToggle = canToggleListedPlugin(plugin.agent) && Boolean(onToggle);
   const canUninstall = canUninstallListedPlugin(plugin.agent) && Boolean(onUninstall);
+  const canUpdate = canUpdateListedPlugin(plugin.agent, plugin.scope) && Boolean(onUpdate);
   const enabled = plugin.enabled === true;
   const description = plugin.description?.trim() || undefined;
   const version = pluginVersionView(plugin);
@@ -95,15 +101,10 @@ export function PluginDetailPanel({
     version.listBadge === 'notInstalled'
       ? t('plugins.list.notInstalled')
       : version.installed;
-  const showRequested =
-    Boolean(version.requested) &&
-    (version.kind === 'pinned' ||
-      version.kind === 'mismatch' ||
-      version.kind === 'missing' ||
-      version.kind === 'git');
+  const showRequested = plugin.agent === 'pi' && Boolean(version.requested);
 
   async function toggle(next: boolean) {
-    if (!onToggle || busy || next === enabled) return;
+    if (disabled || !onToggle || busy || next === enabled) return;
     setBusy(next ? 'enable' : 'disable');
     try {
       await onToggle(plugin, next);
@@ -112,23 +113,38 @@ export function PluginDetailPanel({
     }
   }
 
-  const actions = canToggle ? (
+  const actions = canToggle || canUpdate ? (
     <div className="flex items-center gap-2">
-      <span className="text-meta text-secondary">
-        {busy === 'enable'
-          ? t('plugins.actions.enabling')
-          : busy === 'disable'
-            ? t('plugins.actions.disabling')
-            : enabled
-              ? t('plugins.actions.enabled')
-              : t('plugins.actions.disabled')}
-      </span>
-      <Switch
-        checked={enabled}
-        disabled={busy !== null}
-        aria-label={t('plugins.actions.toggle')}
-        onCheckedChange={(next) => void toggle(next)}
-      />
+      {canUpdate ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={disabled || busy !== null}
+          onClick={() => onUpdate?.(plugin)}
+        >
+          {t('plugins.update.button')}
+        </Button>
+      ) : null}
+      {canToggle ? (
+        <>
+          <span className="text-meta text-secondary">
+            {busy === 'enable'
+              ? t('plugins.actions.enabling')
+              : busy === 'disable'
+                ? t('plugins.actions.disabling')
+                : enabled
+                  ? t('plugins.actions.enabled')
+                  : t('plugins.actions.disabled')}
+          </span>
+          <Switch
+            checked={enabled}
+            disabled={disabled || busy !== null}
+            aria-label={t('plugins.actions.toggle')}
+            onCheckedChange={(next) => void toggle(next)}
+          />
+        </>
+      ) : null}
     </div>
   ) : undefined;
 
@@ -149,7 +165,7 @@ export function PluginDetailPanel({
             type="button"
             size="sm"
             variant="dangerOutline"
-            disabled={busy !== null}
+            disabled={disabled || busy !== null}
             onClick={() => onUninstall?.(plugin)}
           >
             {t('plugins.uninstall.button')}

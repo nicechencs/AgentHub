@@ -17,12 +17,18 @@ export type PluginVersionView = {
   hintKey: MessageKey | null;
 };
 
-const PINNED_NPM_VERSION =
-  /^(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?(?:[-+].+)?$/;
+const EXACT_NPM_SEMVER =
+  /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
 export function isPinnedNpmVersion(raw?: string | null): boolean {
-  if (!raw?.trim()) return false;
-  return PINNED_NPM_VERSION.test(raw.trim().replace(/^[vV]/, ''));
+  const value = raw?.trim() ?? '';
+  const match = value.match(EXACT_NPM_SEMVER);
+  if (!match) return false;
+  const prerelease = match[4];
+  if (!prerelease) return true;
+  return prerelease
+    .split('.')
+    .every((part) => !/^\d+$/.test(part) || part === '0' || !part.startsWith('0'));
 }
 
 function normalizeVersion(raw: string): string {

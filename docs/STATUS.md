@@ -118,7 +118,7 @@ updated: 2026-10-04
 
 - **Skills**：分用户技能、项目技能和市场。用户技能在共享目录 `~/.agents/skills/`，可启用到各工具；项目技能读写该项目的 `.agents/skills/`（也列出 `.claude/skills` 等已有目录）。安装支持本地目录、zip、git 地址（需含 `SKILL.md`），只写入目标库、不自动启用。切换前自动备份。
 - **MCP**：可扫描本机 MCP；对 Claude / Codex / Grok / Cursor / WorkBuddy 支持目录模板 → 探测 → 写入 / 启用（无 OAuth），`Capability::Mcp` 为 Partial，其余 Planned。Codex 关闭即删条目，Grok 关闭写 `enabled = false`。见 [MCP inventory](reference/mcp-inventory.md)。
-- **插件**（`/plugins`）：列出 Claude / Grok / Pi 的包。Claude / Grok 可启用/停用/安装/卸载（卸载默认保留数据目录；Grok 确认后才带 `--trust`），Linux 真窗已验。Pi 只列已装包并标出与配置版本不一致的。不查线上最新版本；没有 `Capability::Plugins`。见 [插件、MCP 与技能](concepts/plugins-and-mcp.md)。
+- **插件**（`/plugins`）：列出 Claude / Grok / Pi 的包。Claude / Grok 可启用/停用/安装/卸载，并分开刷新市场和更新用户范围的已装包（卸载默认保留数据目录；Grok 确认安装后才带 `--trust`）；Pi 可更新符合条件的已装扩展，只有完整 npm 语义版本钉死的包正常跳过，短版本选择器与 git ref 仍参与。不查线上最新版本；没有 `Capability::Plugins`。见 [插件、MCP 与技能](concepts/plugins-and-mcp.md)。
 
 ## 各 Agent 的已知细节
 
@@ -143,7 +143,7 @@ updated: 2026-10-04
 - **Codex Computer Use**：Linux 不可用，官方只在 macOS / Windows 桌面端提供。不做假接线，不宣称支持。
 - **本机同口授权池**：已默认开启。每个目标 Agent 一个默认池，共用本机入口和令牌；默认 `priority_failover`，可改 `round_robin`；官方直连不自动入池。能力矩阵写 `multi_account=false` 时，已入索引的 `v2_pool` 仍允许多成员，这是已授权行为。配额类冷却按 Retry-After 或重置提示，否则配额约 15 分钟、额度约 30 分钟（上限 1 小时）。混合供应商复合路由和 Codex↔Grok 双向 Responses 仍是实验开关、默认关闭。保存的本机入口和格式必须和当前端点一致，否则启动失败，不会悄悄直通。见 [本机 Routes API](reference/local-route-api.md)，设计稿见 [归档](archive/unified-loopback-pool.md)。
 - **路由决策**：`AdapterRouteService::plan()` 是唯一决策者；`adapter-capability-contract.json` 是它的只读快照，Rust 测试保证二者一致。浏览器 mock 只查表，未命中一律 unsupported。见 [Adapter 路线内核](architecture/adapter-route-kernel.md)。
-- **未实施**：live/default `agenthub-adapterd` sidecar（隔离运行已能由 core 把保存结果中的 loopback 路由生成内存配置，经 stdin 交给 Go；支持多入口的 Messages、Responses、Chat Completions、连接池调度、状态、退出排空和有限次数恢复，见 `go/agenthub-adapterd`、四个 `scripts/route-runtime-probe/*-isolated.sh` 与开发态看板「Go 路由」条；仍使用临时目录和非默认端口，未写真实 Agent 配置，未接官方登录刷新和非 loopback 上游，不是现行网关）；托盘低内存后台模式；插件包更新与 Codex/Pi 插件安装（见 [插件管理](proposals/plugin-management.md)）；其余 Agent 的 MCP 与 OAuth Connector。
+- **未实施**：live/default `agenthub-adapterd` sidecar（隔离运行已能由 core 把保存结果中的 loopback 路由和官方 Anthropic API Key 的 Messages 路由生成内存配置，经 stdin 交给 Go；支持多入口的 Messages、Responses、Chat Completions、连接池调度、状态、退出排空和有限次数恢复；该 Messages 上游只放行 Anthropic 官方 HTTPS 地址且不跟随重定向，但未访问真实 Anthropic 服务。另一条隔离 probe 只在 scratch Claude 目录用合成登录运行 core bind/unbind 与持久化失败补偿，覆盖真实文件写入，不覆盖 Tauri 监督器、Go 进程、桌面端到端或真实上游。目前也未接官方登录刷新、Codex/Grok 外网上游和 Windows 控制通道；仍使用临时目录和非默认端口，不是现行网关）；托盘低内存后台模式；Codex/Pi 插件单包安装（见 [插件管理](proposals/plugin-management.md)）；其余 Agent 的 MCP 与 OAuth Connector。
 - **构建**：不用 sccache，不拆 `agenthub-core`；CI 用 `Swatinem/rust-cache`；Windows worktree 不得共享 `target/`。
 - **范围外**：凭据落盘加密、国产 OAuth 适配、OAuth 转 API。见 [产品边界](decisions/product-boundaries.md)。
 

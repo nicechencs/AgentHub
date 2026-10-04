@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-09-29
+updated: 2026-10-04
 ---
 
 # UI Page Patterns
@@ -268,13 +268,14 @@ Full-height workbenches with a left list and an optional right preview.
 ### Plugins (插件)
 
 - Lists installed packs for Claude, Grok, and Pi. A row shows name, on-disk version when known, one line of description, and exception badges (disabled / untrusted / not installed / version mismatch). Clicking a row opens details.
-- Details lead with pack components (bundled MCP is a component, not a row), then version, marketplace, scope, and path. Pi also shows a pinned version and how upgrades are judged.
-- Claude and Grok packs can be installed, uninstalled, enabled, or disabled here (disable is not uninstall). Pi is list-only.
+- Details lead with pack components (bundled MCP is a component, not a row), then version, marketplace, scope, and path. Pi also shows its configured npm selector or git ref and how updates are judged.
+- Claude and Grok packs can be installed, uninstalled, enabled, or disabled here (disable is not uninstall); user-scope packs can also be updated. Marketplace refresh and installed-pack update stay separate. Pi updates eligible extensions: only a complete npm semantic-version pin is skipped; short selectors and git refs still participate.
+- If an official update command fails, AgentHub restores its configuration file only; package directories and caches already changed by that command are not guaranteed to roll back.
 - Empty copy depends on the Agent filter: wired-but-empty, planned, or unsupported. Scan sources are not shown in the list.
 
 **Agent touchpoints:** each Agent's official plugin CLI. There is no `Capability::Plugins`, and this is not `Capability::Mcp`.
 
-**Not:** pack updates (still a [proposal](../proposals/plugin-management.md)) or Codex / Pi install.
+**Not:** Codex / Pi single-pack install, a dynamic plugin ABI, or a shared cross-Agent marketplace.
 
 ## 10. Agents and MCP
 

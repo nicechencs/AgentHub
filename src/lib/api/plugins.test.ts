@@ -7,7 +7,10 @@ import {
   listAvailablePlugins,
   listPluginInventory,
   previewPluginInstall,
+  refreshPluginMarketplace,
   uninstallPlugin,
+  updatePiPlugins,
+  updatePlugin,
 } from '@/lib/api/plugins';
 
 describe('plugin inventory and enable/disable (browser mock)', () => {
@@ -20,6 +23,7 @@ describe('plugin inventory and enable/disable (browser mock)', () => {
     expect(inv.plugins.map((p) => p.name).sort()).toEqual([
       'demo',
       'gdrive',
+      'git-tools',
       'missing-pack',
       'old-notes',
       'pi-subagents',
@@ -31,7 +35,7 @@ describe('plugin inventory and enable/disable (browser mock)', () => {
     expect(grok?.components.some((c) => c.kind === 'mcp' && c.name === 'gdrive')).toBe(true);
     expect(inv.agents.find((a) => a.agent === 'claude')?.support).toBe('listed');
     expect(inv.agents.find((a) => a.agent === 'pi')?.support).toBe('listed');
-    expect(inv.plugins.find((p) => p.name === 'old-notes')?.requestedVersion).toBe('1.4.0');
+    expect(inv.plugins.find((p) => p.name === 'old-notes')?.requestedVersion).toBe('1.4');
     expect(inv.plugins.find((p) => p.name === 'missing-pack')?.path).toBeFalsy();
     expect(inv.agents.find((a) => a.agent === 'codex')?.support).toBe('planned');
     expect(inv.sources?.some((s) => s.agent === 'cursor' && s.sourceKind === 'skills')).toBe(true);
@@ -94,5 +98,39 @@ describe('plugin inventory and enable/disable (browser mock)', () => {
     await expect(installPlugin('codex', 'anything', { confirmed: true })).rejects.toThrow(
       /Claude and Grok/,
     );
+  });
+
+  it('keeps marketplace refresh separate from installed-pack updates', async () => {
+    await expect(refreshPluginMarketplace('claude')).resolves.toBeUndefined();
+    await expect(refreshPluginMarketplace('grok')).resolves.toBeUndefined();
+    await expect(refreshPluginMarketplace('pi')).rejects.toThrow(/Claude and Grok/);
+
+    await expect(
+      updatePlugin('claude', 'demo', 'official', 'user', { confirmed: false }),
+    ).rejects.toThrow(/confirmation/);
+    await expect(
+      updatePlugin('claude', 'demo', 'official', 'project', { confirmed: true }),
+    ).rejects.toThrow(/user-scope/);
+    await expect(
+      updatePlugin('grok', '--debug', null, 'user', { confirmed: true }),
+    ).rejects.toThrow(/invalid plugin name/);
+    await expect(
+      updatePlugin('grok', 'bad\nname', null, 'user', { confirmed: true }),
+    ).rejects.toThrow(/invalid plugin name/);
+    await updatePlugin('claude', 'demo', 'official', 'user', { confirmed: true });
+    const inv = await listPluginInventory();
+    expect(inv.plugins.find((p) => p.agent === 'claude')?.version).toBe('1.2.0-updated');
+  });
+
+  it('updates only unpinned Pi extensions', async () => {
+    await expect(updatePiPlugins({ confirmed: false })).rejects.toThrow(/confirmation/);
+    await updatePiPlugins({ confirmed: true });
+    const inv = await listPluginInventory();
+    expect(inv.plugins.find((p) => p.name === 'pi-subagents')?.version).toBe(
+      '0.64.0-updated',
+    );
+    expect(inv.plugins.find((p) => p.name === 'old-notes')?.version).toBe('1.0.0-updated');
+    expect(inv.plugins.find((p) => p.name === 'missing-pack')?.version).toBe('2.0.0');
+    expect(inv.plugins.find((p) => p.name === 'git-tools')?.version).toBe('0.5.0-updated');
   });
 });

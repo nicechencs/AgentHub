@@ -16,13 +16,32 @@ function pack(overrides: Partial<PluginEntry> & Pick<PluginEntry, 'agent' | 'nam
 }
 
 describe('plugin version judgment', () => {
-  it('treats x.y / x.y.z as a Pi npm pin, not latest or a range', () => {
+  it('only treats an exact x.y.z npm semver as a Pi pin', () => {
     expect(isPinnedNpmVersion('1.2.3')).toBe(true);
     expect(isPinnedNpmVersion('v0.64.0')).toBe(true);
+    expect(isPinnedNpmVersion('V0.64.0')).toBe(false);
     expect(isPinnedNpmVersion('1.2.3-beta.1')).toBe(true);
+    expect(isPinnedNpmVersion('1.2.3-beta.1+build.7')).toBe(true);
+    expect(isPinnedNpmVersion('1.2.3-01')).toBe(false);
+    expect(isPinnedNpmVersion('1.2')).toBe(false);
     expect(isPinnedNpmVersion('latest')).toBe(false);
     expect(isPinnedNpmVersion('^1.2.3')).toBe(false);
     expect(isPinnedNpmVersion('v1')).toBe(false);
+  });
+
+  it('keeps partial npm versions eligible for update', () => {
+    const view = pluginVersionView(
+      pack({
+        agent: 'pi',
+        name: 'old-notes',
+        marketplace: 'npm',
+        version: '1.0.0',
+        requestedVersion: '1.2',
+        path: '~/.pi/agent/npm/node_modules/old-notes',
+      }),
+    );
+    expect(view.kind).toBe('current');
+    expect(view.hintKey).toBe('plugins.detail.versionHintUnpinned');
   });
 
   it('matches versions ignoring a leading v, but not a different prerelease', () => {
@@ -84,7 +103,7 @@ describe('plugin version judgment', () => {
     expect(view.listBadge).toBeNull();
   });
 
-  it('treats an unpinned Pi npm pack as installed, not upgradable on this page', () => {
+  it('treats an unpinned Pi npm pack as installed and eligible for the page update', () => {
     const view = pluginVersionView(
       pack({
         agent: 'pi',
@@ -177,6 +196,7 @@ describe('plugin version judgment', () => {
       }),
     );
     expect(view.kind).toBe('git');
+    expect(view.requested).toBe('v1');
     expect(view.versionLabel).toBe('9.0.0');
     expect(view.listBadge).toBeNull();
     expect(view.hintKey).toBe('plugins.detail.versionHintGit');

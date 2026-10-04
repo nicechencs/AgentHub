@@ -3734,7 +3734,7 @@ export const en = {
       title: 'Plugins',
       description: 'Installed plugin packs',
       descriptionTip:
-        'Plugins are each tool’s extension packs, not MCP and not skills. Packs already installed in Claude, Grok, and Pi are listed here. You can install, uninstall, enable, or disable Claude and Grok packs using each tool’s official command.',
+        'Plugins are each tool’s extension packs, not MCP and not skills. Packs already installed in Claude, Grok, and Pi are listed here. Claude and Grok user packs can be installed, uninstalled, enabled, disabled, or updated using each tool’s official command. Pi can update eligible installed extensions.',
       descriptionCount: '{n} plugin packs',
       refresh: 'Refresh',
       countAll: '{n} plugin packs',
@@ -3771,6 +3771,26 @@ export const en = {
       disabled: 'Disabled',
       enableFailed: "Couldn't enable",
       disableFailed: "Couldn't disable",
+    },
+    marketplace: {
+      button: 'Refresh marketplace',
+      refreshing: 'Refreshing marketplace…',
+      ok: 'Marketplace refreshed',
+      failed: "Couldn't refresh marketplace",
+    },
+    update: {
+      button: 'Update',
+      piButton: 'Update installed plugins',
+      title: 'Update plugin pack',
+      description:
+        'Calls this tool’s official command to update this pack. Having no newer version is also a successful result. On failure, only the configuration file is restored; package folders and caches may already have changed.',
+      piTitle: 'Update Pi plugins',
+      piDescription:
+        'Updates eligible Pi extensions. Only npm packages pinned to a complete semantic version such as 1.2.3 are skipped; 1.2 selectors and git refs still participate. On failure, only the configuration file is restored; package folders and caches may already have changed.',
+      confirm: 'Update',
+      updating: 'Updating…',
+      ok: 'Plugin update finished',
+      failed: "Couldn't update",
     },
     install: {
       button: 'Install',
@@ -3813,14 +3833,14 @@ export const en = {
       agent: 'Agent',
       marketplace: 'Marketplace',
       version: 'Version',
-      requestedVersion: 'Specified version',
+      requestedVersion: 'Configured selector / ref',
       versionHintPinned:
-        'A version is specified. Pi skips this pack when updating extensions; that is expected.',
+        'This npm package is pinned to a complete semantic version. Pi skips it during extension updates; that is expected.',
       versionHintUnpinned:
-        'No version is specified. This page shows the copy on this computer and does not check whether a newer one exists. Update extensions in Pi.',
+        'This package is not pinned to a complete npm semantic version. Its selector participates when you use “Update installed plugins”.',
       versionHintMismatch: 'The copy on this computer does not match the specified version.',
       versionHintMissing: 'This pack is listed in Pi settings, but it is not on this computer.',
-      versionHintGit: 'This pack comes from git. This page only shows the local version.',
+      versionHintGit: 'This pack comes from git. Its configured ref participates when Pi checks and updates extensions.',
       versionHintLocal: 'This is a local pack. Update it in Pi.',
       scope: 'Scope',
       scopeUser: 'User',

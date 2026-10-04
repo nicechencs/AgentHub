@@ -12,7 +12,7 @@ export interface PluginEntry {
   name: string;
   marketplace?: string | null;
   version?: string | null;
-  /** Pi spec pin / git ref (`npm:pkg@1.2.3`). Unpinned specs omit this. */
+  /** Pi configured npm selector or git ref. Only an exact npm semver is a pin. */
   requestedVersion?: string | null;
   scope?: string | null;
   enabled?: boolean | null;
@@ -61,6 +61,10 @@ export interface PluginUninstallOptions {
   keepData: boolean;
 }
 
+export interface PluginUpdateOptions {
+  confirmed: boolean;
+}
+
 export interface PluginPort {
   listInventory(): Promise<PluginInventory>;
   listAvailable(agent: AgentKey): Promise<PluginEntry[]>;
@@ -74,4 +78,13 @@ export interface PluginPort {
   ): Promise<void>;
   enable(agent: AgentKey, name: string, marketplace?: string | null): Promise<void>;
   disable(agent: AgentKey, name: string, marketplace?: string | null): Promise<void>;
+  refreshMarketplace(agent: AgentKey): Promise<void>;
+  update(
+    agent: AgentKey,
+    name: string,
+    marketplace: string | null | undefined,
+    scope: string | null | undefined,
+    options: PluginUpdateOptions,
+  ): Promise<void>;
+  updatePi(options: PluginUpdateOptions): Promise<void>;
 }

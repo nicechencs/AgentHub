@@ -4,7 +4,7 @@ description: 各内置 Agent 在厂商侧的 MCP、Plugin 包与技能目录，�
 type: reference
 audience: contributor
 status: current
-updated: 2026-09-29
+updated: 2026-10-04
 ---
 
 # Agent 插件表面
@@ -23,10 +23,10 @@ updated: 2026-09-29
 
 | Agent | 厂商插件系统 | 判定依据 | AgentHub |
 |---|---|---|---|
-| Claude | **有** | `/plugin`、`claude plugin`；`~/.claude/plugins/`；`enabledPlugins` | 列表 + 安装/卸载/启用/停用 |
-| Grok | **有** | `grok plugin`；`~/.grok/plugins/`；启用与 trust 分开 | 列表 + 安装/卸载/启用/停用 |
+| Claude | **有** | `/plugin`、`claude plugin`；`~/.claude/plugins/`；`enabledPlugins` | 列表 + 安装/卸载/启用/停用/刷新市场/用户范围更新 |
+| Grok | **有** | `grok plugin`；`~/.grok/plugins/`；启用与 trust 分开 | 列表 + 安装/卸载/启用/停用/刷新市场/用户范围更新 |
 | Codex | **有** | `/plugins`、`codex plugin`；`~/.codex/plugins/cache/` | 未接线（Planned） |
-| Pi | **有**（叫 package / extension） | `pi install` / `pi remove` / `pi update --extensions` | 只读 list |
+| Pi | **有**（叫 package / extension） | `pi install` / `pi remove` / `pi update --extensions` | 列表 + 更新符合条件的已装扩展；不支持安装/卸载/启停 |
 | DSH | **另一套**（Cordis） | `cordis.patch.yml` 插件树，不是 `name@marketplace` 包 | 关闭，不硬转 |
 | Cursor | **无** | AgentHub 管 `cursor-agent` CLI；VS Code/Cursor IDE 扩展市场不算 | 不支持 |
 | Kimi | **无已验证契约** | 无官方 plugin CLI / 目录 | 不支持 |
@@ -34,7 +34,7 @@ updated: 2026-09-29
 | ZCode | **未验证** | 无稳定 plugin CLI | 不支持 |
 | Kiro | **未验证** | 第一波只认 `kiro-cli`；无已验证 plugin CLI | 不支持 |
 
-后续（更新、Codex / Pi 写入）见 [插件管理提案](../proposals/plugin-management.md)。
+后续（Codex / Pi 单包安装写入）见 [插件管理提案](../proposals/plugin-management.md)。
 
 ## 总览
 
@@ -145,7 +145,7 @@ updated: 2026-09-29
 
 - 安装：`pi install npm:<pkg>` / `git:github.com/…` / 本地路径。
 - 卸载：`pi remove`。
-- 更新：`pi update --extensions`；钉死 `npm:pkg@1.2.3` 的包跳过更新，不是失败。
+- 更新：在隔离目录执行 `pi update --extensions --no-approve`；钉死到完整语义版本的 `npm:pkg@1.2.3` 跳过，不是失败。`npm:pkg@1.2` 与 git ref 仍参与检查和更新。
 - 装上即加载，改完 `/reload`。扩展可执行任意代码，安装前审查源码。
 - 包格式（`package.json` 的 `pi` 键）与 Claude `name@marketplace` **不是**同一套，插件页不要硬转。
 
@@ -226,12 +226,12 @@ Skills 已有完整写入面。插件管理应抄它的**纪律**（staging、�
 
 **插件包**与 **MCP server** 不是同一套检测。
 
-插件包：刷新 marketplace catalog，再 `plugin update` / `pi update --extensions`。钉死版本不是失败。
+插件包：刷新 marketplace catalog，再 `plugin update` / `pi update --extensions --no-approve`。只有完整 npm 语义版本钉死的 Pi 包跳过；短版本选择器与 git ref 仍参与。
 
 MCP server 没有跨 Agent 的统一「有新版本」协议。实际出现的是四类：
 
 1. **每次启动拉包**：`npx -y pkg@latest` / `uvx` 浮动标签。
-2. **钉死版本**：改 config 里的包名或 git ref。
+2. **配置选择器 / ref**：完整 npm 语义版本是钉死；短版本选择器与 git ref 仍参与 Pi 更新。
 3. **Plugin 市场刷新**：Claude / Codex / Grok 的 marketplace update；升级的是包，可能连带 MCP。
 4. **连通性诊断**：Grok `mcp doctor`、Codex/Claude `/mcp` 状态。这是 handshake，不是版本号。
 

@@ -5,8 +5,10 @@ use agenthub_core::services::{
     install_plugin as install_plugin_impl, list_available_plugins as list_available_plugins_impl,
     list_plugin_inventory as list_plugin_inventory_impl,
     preview_plugin_install as preview_plugin_install_impl,
-    uninstall_plugin as uninstall_plugin_impl, PluginEntry, PluginInstallOptions, PluginInventory,
-    PluginUninstallOptions,
+    refresh_plugin_marketplace as refresh_plugin_marketplace_impl,
+    uninstall_plugin as uninstall_plugin_impl, update_pi_plugins as update_pi_plugins_impl,
+    update_plugin as update_plugin_impl, PluginEntry, PluginInstallOptions, PluginInventory,
+    PluginUninstallOptions, PluginUpdateOptions,
 };
 
 use super::parse_agent;
@@ -103,4 +105,48 @@ pub async fn uninstall_plugin(
     })
     .await
     .map_err(|e| format!("uninstall_plugin join error: {e}"))?
+}
+
+/// Invoke: `refresh_plugin_marketplace` — refresh Claude/Grok catalogs only.
+#[tauri::command]
+pub async fn refresh_plugin_marketplace(agent: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let agent = parse_agent(&agent)?;
+        refresh_plugin_marketplace_impl(agent)
+    })
+    .await
+    .map_err(|e| format!("refresh_plugin_marketplace join error: {e}"))?
+}
+
+/// Invoke: `update_plugin` — update one installed Claude/Grok pack after confirm.
+#[tauri::command]
+pub async fn update_plugin(
+    agent: String,
+    name: String,
+    marketplace: Option<String>,
+    scope: Option<String>,
+    confirmed: bool,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let agent = parse_agent(&agent)?;
+        update_plugin_impl(
+            agent,
+            &name,
+            marketplace.as_deref(),
+            scope.as_deref(),
+            PluginUpdateOptions { confirmed },
+        )
+    })
+    .await
+    .map_err(|e| format!("update_plugin join error: {e}"))?
+}
+
+/// Invoke: `update_pi_plugins` — update eligible Pi extensions after confirm.
+#[tauri::command]
+pub async fn update_pi_plugins(confirmed: bool) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        update_pi_plugins_impl(PluginUpdateOptions { confirmed })
+    })
+    .await
+    .map_err(|e| format!("update_pi_plugins join error: {e}"))?
 }

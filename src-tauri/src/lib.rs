@@ -214,6 +214,9 @@ pub fn run() {
             commands::plugins::preview_plugin_install,
             commands::plugins::install_plugin,
             commands::plugins::uninstall_plugin,
+            commands::plugins::refresh_plugin_marketplace,
+            commands::plugins::update_plugin,
+            commands::plugins::update_pi_plugins,
             // Provider
             commands::provider::list_provider_presets,
             commands::provider::list_providers,

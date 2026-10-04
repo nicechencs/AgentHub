@@ -22,7 +22,7 @@ const DEMO: PluginInventory = {
       agent: 'pi',
       support: 'listed',
       source: 'live',
-      pluginCount: 3,
+      pluginCount: 4,
     },
     { agent: 'cursor', support: 'unsupported', errorCode: 'unsupported-cursor', pluginCount: 0 },
     { agent: 'kimi', support: 'unsupported', errorCode: 'unsupported-no-cli', pluginCount: 0 },
@@ -151,7 +151,7 @@ const DEMO: PluginInventory = {
       name: 'old-notes',
       marketplace: 'npm',
       version: '1.0.0',
-      requestedVersion: '1.4.0',
+      requestedVersion: '1.4',
       scope: 'user',
       path: '~/.pi/agent/npm/node_modules/old-notes',
       description: 'Notes helper that is behind its specified version',
@@ -169,6 +169,19 @@ const DEMO: PluginInventory = {
       description: 'Listed in Pi settings but not on disk',
       source: 'live',
       components: [],
+    },
+    {
+      id: 'pi:git-tools@git',
+      agent: 'pi',
+      name: 'git-tools',
+      marketplace: 'git',
+      version: '0.5.0',
+      requestedVersion: 'main',
+      scope: 'user',
+      path: '~/.pi/agent/git/github.com/example/git-tools',
+      description: 'Pi extension following a git ref',
+      source: 'live',
+      components: [{ kind: 'commands', name: 'git-tools' }],
     },
   ],
 };
@@ -215,6 +228,30 @@ function assertInstallAgent(agent: AgentKey): void {
   if (agent !== 'claude' && agent !== 'grok') {
     throw new Error('install is only available for listed Claude and Grok plugin packs');
   }
+}
+
+function assertUpdateAgent(agent: AgentKey): void {
+  if (agent !== 'claude' && agent !== 'grok') {
+    throw new Error('individual update is only available for Claude and Grok plugin packs');
+  }
+}
+
+function isSafePluginIdentifier(value: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value) && value !== 'mcpServers';
+}
+
+function isExactNpmSemver(value?: string | null): boolean {
+  const match = (value?.trim() ?? '').match(
+    /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/,
+  );
+  if (!match) return false;
+  const prerelease = match[4];
+  return (
+    !prerelease ||
+    prerelease
+      .split('.')
+      .every((part) => !/^\d+$/.test(part) || part === '0' || !part.startsWith('0'))
+  );
 }
 
 function setEnabled(agent: AgentKey, name: string, marketplace: string | null | undefined, enabled: boolean) {
@@ -306,6 +343,38 @@ export function createMockPluginPort(): PluginPort {
     async disable(agent, name, marketplace) {
       await delay(40);
       setEnabled(agent, name, marketplace, false);
+    },
+    async refreshMarketplace(agent) {
+      await delay(40);
+      assertUpdateAgent(agent);
+    },
+    async update(agent, name, marketplace, scope, options) {
+      await delay(40);
+      assertUpdateAgent(agent);
+      if (!options.confirmed) throw new Error('update needs confirmation');
+      if (scope !== 'user') throw new Error('only user-scope plugin packs can be updated here');
+      if (!isSafePluginIdentifier(name)) throw new Error('invalid plugin name');
+      const row = inventory.plugins.find(
+        (plugin) =>
+          plugin.agent === agent &&
+          plugin.name === name &&
+          (marketplace == null || marketplace === '' || plugin.marketplace === marketplace),
+      );
+      if (!row) throw new Error('plugin not listed');
+      row.version = row.version ? `${row.version}-updated` : 'updated';
+    },
+    async updatePi(options) {
+      await delay(40);
+      if (!options.confirmed) throw new Error('update needs confirmation');
+      for (const row of inventory.plugins) {
+        if (
+          row.agent !== 'pi' ||
+          (row.marketplace === 'npm' && isExactNpmSemver(row.requestedVersion))
+        ) {
+          continue;
+        }
+        row.version = row.version ? `${row.version}-updated` : 'updated';
+      }
     },
   };
 }

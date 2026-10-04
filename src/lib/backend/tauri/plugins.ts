@@ -4,6 +4,7 @@ import type {
   PluginInstallOptions,
   PluginInventory,
   PluginUninstallOptions,
+  PluginUpdateOptions,
 } from '@/lib/backend/contracts/plugin-types';
 import type { AgentKey } from '@/lib/types';
 import { logger } from '@/lib/logger';
@@ -88,6 +89,42 @@ export function createTauriPluginPort(): PluginPort {
         });
       } catch (e) {
         log.error('disable failed', e);
+        throw e;
+      }
+    },
+    async refreshMarketplace(agent: AgentKey) {
+      try {
+        await invoke<void>('refresh_plugin_marketplace', { agent });
+      } catch (e) {
+        log.error('refreshMarketplace failed', e);
+        throw e;
+      }
+    },
+    async update(
+      agent: AgentKey,
+      name: string,
+      marketplace: string | null | undefined,
+      scope: string | null | undefined,
+      options: PluginUpdateOptions,
+    ) {
+      try {
+        await invoke<void>('update_plugin', {
+          agent,
+          name,
+          marketplace: marketplace ?? null,
+          scope: scope ?? null,
+          confirmed: options.confirmed,
+        });
+      } catch (e) {
+        log.error('update failed', e);
+        throw e;
+      }
+    },
+    async updatePi(options: PluginUpdateOptions) {
+      try {
+        await invoke<void>('update_pi_plugins', { confirmed: options.confirmed });
+      } catch (e) {
+        log.error('updatePi failed', e);
         throw e;
       }
     },

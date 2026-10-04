@@ -3,12 +3,12 @@ title: 插件（extension / plugin）管理
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-10-03
+updated: 2026-10-04
 ---
 
 # 插件（extension / plugin）管理
 
-> 状态：proposed。列表、启停、安装/卸载已落地；更新和 Codex / Pi 写入仍是提案。现行行为见 [STATUS](../STATUS.md) 与 [页面模式](../ui/page-patterns.md)。
+> 状态：proposed。列表、启停、安装/卸载、更新已落地；Codex / Pi 单包安装写入仍是提案。现行行为见 [STATUS](../STATUS.md) 与 [页面模式](../ui/page-patterns.md)。
 
 产品对象是各家的 plugin / extension 包，不是 MCP server，也不是随应用交付的 Go 路由程序。`/plugins` 与[Go 路由替换](modularity.md#8-功能模块与-go-路由程序)不是同一对象。`/mcp` 保持只读 MCP 清单，不改名。
 
@@ -20,29 +20,29 @@ updated: 2026-10-03
 | 已落地 | `/plugins` 左右分栏；设置 → 功能「显示插件页面」只藏入口（新安装默认关），开关打开时排在「历史」（`/projects`）下 | `src/pages/plugins/`；`SidebarContext.tsx` 的 `pluginsNavVisible` |
 | 已落地 | Claude / Grok 启用/停用，写前备份 | `services/plugin_apply.rs`（`enable_plugin` / `disable_plugin`） |
 | 已落地 | Claude / Grok 安装/卸载：预览 → 确认 → 官方 CLI → 刷新；Grok 未勾选信任不传 `--trust`；卸载默认 `--keep-data` | `plugin_apply.rs`（`preview_plugin_install`、`install_plugin`、`uninstall_plugin`） |
-| 未做 | 更新（市场刷新、已装包升级） | `plugin_apply.rs` 无 update 入口 |
+| 已落地 | Claude / Grok 分开刷新市场和更新用户范围的已装包；Pi 只做 `pi update --extensions --no-approve`，仅完整 npm 语义版本钉死的包由 Pi 跳过 | `plugin_apply.rs`（`refresh_plugin_marketplace`、`update_plugin`、`update_pi_plugins`） |
 | 未做 | Codex 列表与写入 | `plugin_inventory.rs` 中 Codex 为 `planned` |
-| 未做 | Pi 安装/卸载/启停 | 同上，Pi 只读 |
+| 未做 | Pi 安装/卸载/启停 | Pi 除全量更新外仍为只读 |
 | 关闭 | Cursor、Kimi、WorkBuddy、ZCode、DSH、Kiro | 标 Unsupported，不伪造商店 |
 
 各家是否支持以 [Agent 插件表面](../reference/agent-plugin-surfaces.md#厂商插件系统plugin--extension-包) 为准。
 
-## 2. 剩余目标
+## 2. 已交付切片与剩余目标
 
-### 更新（原 PR-5）
+### 已落地：更新（原 PR-5）
 
 没有跨厂商协议。界面必须分开三件事：
 
-1. **市场目录有新包**：`claude plugin marketplace update`、`grok plugin marketplace update`、Codex marketplace upgrade。
-2. **已装包可升级**：`plugin update`、`pi update --extensions`。钉死版本的 Pi 包显示「已钉死」，不算失败。
+1. **市场目录有新包**：`claude plugin marketplace update`、`grok plugin marketplace update`。
+2. **已装包可升级**：`plugin update`、`pi update --extensions --no-approve`。只有 `npm:包@1.2.3` 这类完整语义版本会跳过；`@1.2` 和 git ref 仍参与更新。
 3. **信任 / 健康**：Grok 未 trust 时 hooks/MCP 被挡，这不是版本问题。
 
 不用 MCP `doctor` 或进程是否在跑代表插件更新。没有新版本 = 已是最新，不是错误。
 
-### Codex 与 Pi 写入（原 PR-6）
+### 剩余：Codex 与 Pi 单包安装写入（原 PR-6）
 
 - Codex：`codex plugin list --json` 列表，`codex plugin add/remove`，启停走 `config.toml`。
-- Pi：`pi install` / `pi remove` / `pi update --extensions`。不把 npm/git 包硬转成 Claude 的 `name@marketplace`。
+- Pi：`pi install` / `pi remove`。符合条件的扩展更新 `pi update --extensions --no-approve` 已落地；不把 npm/git 包硬转成 Claude 的 `name@marketplace`。
 
 ## 3. 同类怎么管（2026-08 对照）
 
@@ -57,7 +57,7 @@ updated: 2026-10-03
 ## 4. 约束
 
 - 能调官方 CLI 就不自己改 cache 目录；CLI 不可用时 fail-closed。
-- 启停与卸载分开；改本机配置前备份，失败还原。
+- 启停与卸载分开；改本机配置前备份，失败还原配置文件。官方 CLI 已经改过的包目录或 cache 不保证回滚。
 - 详情里列包内组件（skills、commands、agents、hooks、附带 MCP），附带 MCP 不当列表主键。
 - 默认不扫项目级未信任目录里的插件源。
 - 非 Tauri 生产页写入显示 unavailable。

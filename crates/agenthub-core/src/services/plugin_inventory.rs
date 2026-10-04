@@ -42,7 +42,7 @@ pub struct PluginEntry {
     pub marketplace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
-    /// Pi spec pin / git ref (`npm:pkg@1.2.3`). Unpinned specs omit this.
+    /// Pi configured npm selector or git ref. Only an exact npm semver is a pin.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requested_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -507,9 +507,10 @@ fn scan_wired_agent(
                 Vec::new(),
             );
         } else if !run.success() {
-            let detail = first_line(&run.stderr)
-                .unwrap_or_else(|| format!("exit {}", run.exit_code.unwrap_or(-1)));
-            return (fail_status(agent, "cli-failed", &detail), Vec::new());
+            return (
+                fail_status(agent, "cli-failed", "official plugin list failed"),
+                Vec::new(),
+            );
         } else {
             match parse_cli_plugin_list(agent, &run.stdout, user_home) {
                 Ok(rows) => {
@@ -609,13 +610,6 @@ fn run_cli(program: &Path, args: &[&str], timeout: Duration) -> CliRun {
             spawn_error: Some(e.to_string()),
         },
     }
-}
-
-fn first_line(s: &str) -> Option<String> {
-    s.lines()
-        .map(str::trim)
-        .find(|l| !l.is_empty())
-        .map(ToString::to_string)
 }
 
 fn extract_json_value(raw: &str) -> Result<JsonValue, String> {

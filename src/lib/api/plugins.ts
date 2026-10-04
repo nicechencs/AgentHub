@@ -4,6 +4,7 @@ import type {
   PluginInstallOptions,
   PluginInventory,
   PluginUninstallOptions,
+  PluginUpdateOptions,
 } from '@/lib/backend/contracts/plugin-types';
 import type { AgentKey } from '@/lib/types';
 
@@ -57,4 +58,25 @@ export async function disablePlugin(
   marketplace?: string | null,
 ): Promise<void> {
   return getBackend().plugins.disable(agent, name, marketplace);
+}
+
+/** Refresh Claude or Grok marketplace catalogs. This does not update installed packs. */
+export async function refreshPluginMarketplace(agent: AgentKey): Promise<void> {
+  return getBackend().plugins.refreshMarketplace(agent);
+}
+
+/** Update one installed Claude or Grok plugin pack after confirmation. */
+export async function updatePlugin(
+  agent: AgentKey,
+  name: string,
+  marketplace: string | null | undefined,
+  scope: string | null | undefined,
+  options: PluginUpdateOptions,
+): Promise<void> {
+  return getBackend().plugins.update(agent, name, marketplace, scope, options);
+}
+
+/** Update eligible Pi extensions after confirmation. */
+export async function updatePiPlugins(options: PluginUpdateOptions): Promise<void> {
+  return getBackend().plugins.updatePi(options);
 }
