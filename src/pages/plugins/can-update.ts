@@ -1,6 +1,6 @@
-/** Marketplace catalogs are vendor concepts exposed only by Claude and Grok. */
+/** Marketplace catalogs are vendor concepts exposed by Claude, Codex, and Grok. */
 export function canRefreshPluginMarketplace(agent: string): boolean {
-  return agent === 'claude' || agent === 'grok';
+  return agent === 'claude' || agent === 'codex' || agent === 'grok';
 }
 
 /** Individual package updates are supported only by Claude and Grok. */

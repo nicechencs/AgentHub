@@ -19,6 +19,8 @@ export interface PluginEntry {
   trusted?: boolean | null;
   path?: string | null;
   description?: string | null;
+  /** Exact vendor CLI source used to install/remove this pack. Required for Pi removal. */
+  installSource?: string | null;
   /** cli | live */
   source: string;
   components: PluginComponent[];
@@ -57,7 +59,7 @@ export interface PluginInstallOptions {
 }
 
 export interface PluginUninstallOptions {
-  /** Default true: keep the vendor plugin data directory. */
+  /** Default true where the vendor exposes separate plugin-data removal. */
   keepData: boolean;
 }
 
@@ -74,6 +76,7 @@ export interface PluginPort {
     agent: AgentKey,
     name: string,
     marketplace: string | null | undefined,
+    installSource: string | null | undefined,
     options: PluginUninstallOptions,
   ): Promise<void>;
   enable(agent: AgentKey, name: string, marketplace?: string | null): Promise<void>;

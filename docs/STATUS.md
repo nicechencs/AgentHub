@@ -118,7 +118,7 @@ updated: 2026-10-04
 
 - **Skills**：分用户技能、项目技能和市场。用户技能在共享目录 `~/.agents/skills/`，可启用到各工具；项目技能读写该项目的 `.agents/skills/`（也列出 `.claude/skills` 等已有目录）。安装支持本地目录、zip、git 地址（需含 `SKILL.md`），只写入目标库、不自动启用。切换前自动备份。
 - **MCP**：可扫描本机 MCP；对 Claude / Codex / Grok / Cursor / WorkBuddy 支持目录模板 → 探测 → 写入 / 启用（无 OAuth），`Capability::Mcp` 为 Partial，其余 Planned。Codex 关闭即删条目，Grok 关闭写 `enabled = false`。见 [MCP inventory](reference/mcp-inventory.md)。
-- **插件**（`/plugins`）：列出 Claude / Grok / Pi 的包。Claude / Grok 可启用/停用/安装/卸载，并分开刷新市场和更新用户范围的已装包（卸载默认保留数据目录；Grok 确认安装后才带 `--trust`）；Pi 可更新符合条件的已装扩展，只有完整 npm 语义版本钉死的包正常跳过，短版本选择器与 git ref 仍参与。不查线上最新版本；没有 `Capability::Plugins`。见 [插件、MCP 与技能](concepts/plugins-and-mcp.md)。
+- **插件**（`/plugins`）：列出 Claude / Codex / Grok / Pi 的包，四者都可用各自官方命令安装和卸载。Claude / Codex / Grok 可启用/停用并刷新市场；只有 Grok 安装需显式信任。单包更新仍只支持 Claude / Grok 的用户范围包；Codex 只做市场整体升级，Pi 只做符合条件的全量扩展更新。Pi 安装保留完整 npm、git 或本地目录来源；本地目录必须是绝对路径，`~/…` 由后端展开。卸载时把原来源交回 `pi remove`；Pi 没有市场列表或包级启停。不查线上最新版本；没有 `Capability::Plugins`。见 [插件、MCP 与技能](concepts/plugins-and-mcp.md)。
 
 ## 各 Agent 的已知细节
 
@@ -143,7 +143,7 @@ updated: 2026-10-04
 - **Codex Computer Use**：Linux 不可用，官方只在 macOS / Windows 桌面端提供。不做假接线，不宣称支持。
 - **本机同口授权池**：已默认开启。每个目标 Agent 一个默认池，共用本机入口和令牌；默认 `priority_failover`，可改 `round_robin`；官方直连不自动入池。能力矩阵写 `multi_account=false` 时，已入索引的 `v2_pool` 仍允许多成员，这是已授权行为。配额类冷却按 Retry-After 或重置提示，否则配额约 15 分钟、额度约 30 分钟（上限 1 小时）。混合供应商复合路由和 Codex↔Grok 双向 Responses 仍是实验开关、默认关闭。保存的本机入口和格式必须和当前端点一致，否则启动失败，不会悄悄直通。见 [本机 Routes API](reference/local-route-api.md)，设计稿见 [归档](archive/unified-loopback-pool.md)。
 - **路由决策**：`AdapterRouteService::plan()` 是唯一决策者；`adapter-capability-contract.json` 是它的只读快照，Rust 测试保证二者一致。浏览器 mock 只查表，未命中一律 unsupported。见 [Adapter 路线内核](architecture/adapter-route-kernel.md)。
-- **未实施**：live/default `agenthub-adapterd` sidecar（隔离运行已能由 core 把保存结果中的 loopback 路由和官方 Anthropic API Key 的 Messages 路由生成内存配置，经长度帧流交给 Go；支持多入口的 Messages、Responses、Chat Completions、Responses 到 OpenAI 兼容 Chat 的转换、连接池调度、同一进程和端口的原子全量配置更新、确认后提交的崩溃恢复快照、状态、退出排空和有限次数恢复；该 Messages 上游只放行 Anthropic 官方 HTTPS 地址且不跟随重定向，Responses 到 Chat 仍只放行 loopback，均未访问真实外网服务。另一条隔离 probe 只在 scratch Claude 目录用合成登录运行 core bind/unbind 与持久化失败补偿，覆盖真实文件写入，不覆盖桌面到测试 Agent 的完整链路或真实上游。目前也未接官方登录刷新、Codex/Grok 外网上游和 Windows 控制通道；仍使用临时目录和非默认端口，不是现行网关）；托盘低内存后台模式；Codex/Pi 插件单包安装（见 [插件管理](proposals/plugin-management.md)）；其余 Agent 的 MCP 与 OAuth Connector。
+- **未实施**：live/default `agenthub-adapterd` sidecar（隔离运行已能由 core 把保存结果中的 loopback 路由和官方 Anthropic API Key 的 Messages 路由生成内存配置，经长度帧流交给 Go；支持多入口的 Messages、Responses、Chat Completions、Responses 到 OpenAI 兼容 Chat 的转换、连接池调度、同一进程和端口的原子全量配置更新、确认后提交的崩溃恢复快照、状态、退出排空和有限次数恢复；符合条件的 Go 池成员能在上游 401 后请求桌面端刷新官方登录、热更新配置并只重试一次。该 Messages 上游只放行 Anthropic 官方 HTTPS 地址且不跟随重定向，Responses 到 Chat 仍只放行 loopback，均未访问真实外网服务。另一条隔离 probe 只在 scratch Claude 目录用合成登录运行 core bind/unbind 与持久化失败补偿，覆盖真实文件写入，不覆盖桌面到测试 Agent 的完整链路或真实上游。Codex/Grok 外网上游和 Windows 控制通道仍未接通；当前仍使用临时目录和非默认端口，不是现行网关）；托盘低内存后台模式；其余 Agent 的 MCP 与 OAuth Connector。
 - **构建**：不用 sccache，不拆 `agenthub-core`；CI 用 `Swatinem/rust-cache`；Windows worktree 不得共享 `target/`。
 - **范围外**：凭据落盘加密、国产 OAuth 适配、OAuth 转 API。见 [产品边界](decisions/product-boundaries.md)。
 

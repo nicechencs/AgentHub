@@ -1,0 +1,9 @@
+{
+  "name": "agenthub-pi-probe-package",
+  "version": "0.0.1",
+  "private": true,
+  "keywords": ["pi-package"],
+  "pi": {
+    "skills": ["./skills"]
+  }
+}

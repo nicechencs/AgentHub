@@ -1,6 +1,6 @@
-/** Claude and Grok can install/uninstall via official CLI. Other agents must not show a fake button. */
+/** These four Agents can install/uninstall packs through their own official CLI. */
 export function canInstallListedPlugin(agent: string): boolean {
-  return agent === 'claude' || agent === 'grok';
+  return agent === 'claude' || agent === 'codex' || agent === 'grok' || agent === 'pi';
 }
 
 export function canUninstallListedPlugin(agent: string): boolean {

@@ -38,6 +38,7 @@ export function PluginUninstallDialog({
   }, [plugin]);
 
   const open = plugin !== null;
+  const canDeleteData = plugin?.agent === 'claude' || plugin?.agent === 'grok';
 
   return (
     <Dialog
@@ -63,27 +64,29 @@ export function PluginUninstallDialog({
                 {plugin.components.map((item) => item.name).join(' · ')}
               </p>
             ) : null}
-            <label className="flex items-start gap-2 text-body">
-              <input
-                type="checkbox"
-                className="mt-0.5"
-                checked={deleteData}
-                disabled={busy}
-                onChange={(e) => setDeleteData(e.target.checked)}
-              />
-              <span>
-                <span className="block font-medium">{t('plugins.uninstall.deleteData')}</span>
-                <span className="block text-meta text-muted">
-                  {t('plugins.uninstall.deleteDataHint')}
+            {canDeleteData ? (
+              <label className="flex items-start gap-2 text-body">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={deleteData}
+                  disabled={busy}
+                  onChange={(e) => setDeleteData(e.target.checked)}
+                />
+                <span>
+                  <span className="block font-medium">{t('plugins.uninstall.deleteData')}</span>
+                  <span className="block text-meta text-muted">
+                    {t('plugins.uninstall.deleteDataHint')}
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+            ) : null}
             {error ? (
               <ErrorState
                 compact
                 error={error}
                 title={t('plugins.uninstall.failed')}
-                onRetry={() => void onUninstall(plugin, !deleteData)}
+                onRetry={() => void onUninstall(plugin, canDeleteData ? !deleteData : true)}
               />
             ) : null}
           </div>
@@ -97,7 +100,7 @@ export function PluginUninstallDialog({
             variant="danger"
             disabled={busy || !plugin}
             onClick={() => {
-              if (plugin) void onUninstall(plugin, !deleteData);
+              if (plugin) void onUninstall(plugin, canDeleteData ? !deleteData : true);
             }}
           >
             {busy ? t('plugins.uninstall.uninstalling') : t('plugins.uninstall.confirm')}

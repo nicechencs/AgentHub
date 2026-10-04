@@ -106,7 +106,9 @@ formats.
 
 ## Out of scope
 
-Official-login refresh, non-allowlisted external upstreams, live/default
-gateway cutover, real `~/.agenthub` reads/writes, combined desktop-to-Agent
-configuration write/recovery, Windows control transport, plugin SDK/ABI, and
-stages E/F. No probe calls the real Anthropic service or uses a real API Key.
+Non-allowlisted external upstreams, live/default gateway cutover, real
+`~/.agenthub` reads/writes, combined desktop-to-Agent configuration
+write/recovery, Windows control transport, plugin SDK/ABI, and stages E/F.
+Eligible Go members can request an official-login refresh from the desktop
+controller and retry once, but the isolated probes use synthetic logins and do
+not call a real external service or use a real API Key.

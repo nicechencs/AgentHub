@@ -27,6 +27,7 @@ describe('plugin inventory and enable/disable (browser mock)', () => {
       'missing-pack',
       'old-notes',
       'pi-subagents',
+      'workflows',
     ]);
     expect(inv.plugins.every((p) => p.name !== 'filesystem' && p.name !== 'mcpServers')).toBe(
       true,
@@ -37,17 +38,22 @@ describe('plugin inventory and enable/disable (browser mock)', () => {
     expect(inv.agents.find((a) => a.agent === 'pi')?.support).toBe('listed');
     expect(inv.plugins.find((p) => p.name === 'old-notes')?.requestedVersion).toBe('1.4');
     expect(inv.plugins.find((p) => p.name === 'missing-pack')?.path).toBeFalsy();
-    expect(inv.agents.find((a) => a.agent === 'codex')?.support).toBe('planned');
+    expect(inv.agents.find((a) => a.agent === 'codex')?.support).toBe('listed');
+    expect(inv.plugins.find((p) => p.name === 'pi-subagents')?.installSource).toBe(
+      'npm:pi-subagents',
+    );
     expect(inv.sources?.some((s) => s.agent === 'cursor' && s.sourceKind === 'skills')).toBe(true);
     expect(inv.sources?.some((s) => s.agent === 'dsh' && s.sourceKind === 'cordis')).toBe(true);
   });
 
-  it('round-trips enable then disable for listed Claude and Grok packs', async () => {
+  it('round-trips enable then disable for listed Claude, Codex, and Grok packs', async () => {
     await disablePlugin('claude', 'demo', 'official');
+    await disablePlugin('codex', 'workflows', 'openai-curated');
     await enablePlugin('grok', 'gdrive', 'xAI Official');
     let inv = await listPluginInventory();
     expect(inv.plugins.find((p) => p.agent === 'claude')?.enabled).toBe(false);
     expect(inv.plugins.find((p) => p.agent === 'grok')?.enabled).toBe(true);
+    expect(inv.plugins.find((p) => p.agent === 'codex')?.enabled).toBe(false);
 
     await enablePlugin('claude', 'demo', 'official');
     await disablePlugin('grok', 'gdrive', 'xAI Official');
@@ -57,15 +63,23 @@ describe('plugin inventory and enable/disable (browser mock)', () => {
   });
 
   it('rejects enable/disable for planned and unsupported agents', async () => {
-    await expect(enablePlugin('codex', 'anything')).rejects.toThrow(/Claude and Grok/);
-    await expect(enablePlugin('pi', 'pi-subagents')).rejects.toThrow(/Claude and Grok/);
-    await expect(disablePlugin('cursor', 'anything')).rejects.toThrow(/Claude and Grok/);
+    await expect(enablePlugin('pi', 'pi-subagents')).rejects.toThrow(/Claude, Codex, and Grok/);
+    await expect(disablePlugin('cursor', 'anything')).rejects.toThrow(
+      /Claude, Codex, and Grok/,
+    );
   });
 
   it('lists marketplace packs separately from installed inventory', async () => {
     const available = await listAvailablePlugins('grok');
     expect(available.map((p) => p.name)).toEqual(['superpowers']);
     expect(available[0]?.source).toBe('available');
+    expect(available[0]?.installSource).toBe('superpowers');
+    const codexAvailable = await listAvailablePlugins('codex');
+    expect(codexAvailable.map((p) => p.installSource)).toEqual([
+      'release-tools@openai-curated',
+      'team-tools@team',
+    ]);
+    await expect(listAvailablePlugins('pi')).resolves.toEqual([]);
     const inv = await listPluginInventory();
     expect(inv.plugins.some((p) => p.name === 'superpowers')).toBe(false);
   });
@@ -85,25 +99,48 @@ describe('plugin inventory and enable/disable (browser mock)', () => {
     let inv = await listPluginInventory();
     expect(inv.plugins.some((p) => p.agent === 'grok' && p.name === 'superpowers')).toBe(true);
 
-    await uninstallPlugin('grok', 'superpowers', 'xAI Official', { keepData: true });
+    await uninstallPlugin('grok', 'superpowers', 'xAI Official', 'superpowers', {
+      keepData: true,
+    });
     inv = await listPluginInventory();
     expect(inv.plugins.some((p) => p.name === 'superpowers')).toBe(false);
     expect(inv.plugins.some((p) => p.name === 'gdrive')).toBe(true);
   });
 
-  it('rejects install for Pi and Codex', async () => {
-    await expect(installPlugin('pi', 'anything', { confirmed: true })).rejects.toThrow(
-      /Claude and Grok/,
+  it('installs Codex and removes Pi with the stable install source', async () => {
+    await expect(previewPluginInstall('codex', 'release-tools')).rejects.toThrow(
+      /configured Codex marketplace/,
     );
-    await expect(installPlugin('codex', 'anything', { confirmed: true })).rejects.toThrow(
-      /Claude and Grok/,
+    await expect(previewPluginInstall('pi', 'new-pack')).rejects.toThrow(
+      /npm:, git, or a local path/,
     );
+    await expect(previewPluginInstall('pi', './relative-pack')).rejects.toThrow(
+      /npm:, git, or a local path/,
+    );
+    await expect(previewPluginInstall('pi', '~/src/local-pack')).resolves.toMatchObject({
+      installSource: '~/src/local-pack',
+    });
+    await installPlugin('codex', 'release-tools@openai-curated', { confirmed: true });
+    await installPlugin('pi', 'npm:new-pack@1.2', { confirmed: true });
+    let inv = await listPluginInventory();
+    expect(inv.plugins.find((p) => p.agent === 'codex' && p.name === 'release-tools')).toBeTruthy();
+    expect(inv.plugins.find((p) => p.name === 'new-pack')?.installSource).toBe(
+      'npm:new-pack@1.2',
+    );
+
+    await expect(
+      uninstallPlugin('pi', 'new-pack', null, null, { keepData: true }),
+    ).rejects.toThrow(/exact install source/);
+    await uninstallPlugin('pi', 'new-pack', null, 'npm:new-pack@1.2', { keepData: true });
+    inv = await listPluginInventory();
+    expect(inv.plugins.some((p) => p.name === 'new-pack')).toBe(false);
   });
 
   it('keeps marketplace refresh separate from installed-pack updates', async () => {
     await expect(refreshPluginMarketplace('claude')).resolves.toBeUndefined();
+    await expect(refreshPluginMarketplace('codex')).resolves.toBeUndefined();
     await expect(refreshPluginMarketplace('grok')).resolves.toBeUndefined();
-    await expect(refreshPluginMarketplace('pi')).rejects.toThrow(/Claude and Grok/);
+    await expect(refreshPluginMarketplace('pi')).rejects.toThrow(/Claude, Codex, and Grok/);
 
     await expect(
       updatePlugin('claude', 'demo', 'official', 'user', { confirmed: false }),

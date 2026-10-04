@@ -13,7 +13,7 @@ const t = ((key: string, params?: { name?: string | number; names?: string }) =>
 const agents: PluginAgentStatus[] = [
   { agent: 'claude', support: 'listed', pluginCount: 0 },
   { agent: 'pi', support: 'listed', source: 'live', pluginCount: 0 },
-  { agent: 'codex', support: 'planned', errorCode: 'planned', pluginCount: 0 },
+  { agent: 'codex', support: 'listed', source: 'cli', pluginCount: 0 },
   { agent: 'cursor', support: 'unsupported', errorCode: 'unsupported-cursor', pluginCount: 0 },
   { agent: 'dsh', support: 'unsupported', errorCode: 'unsupported-dsh', pluginCount: 0 },
   { agent: 'zcode', support: 'unsupported', errorCode: 'unsupported-zcode', pluginCount: 0 },
@@ -54,13 +54,18 @@ describe('pluginEmptyCopy', () => {
     });
     expect(pluginEmptyCopy('pi', agents, 'Pi', t)).toEqual({
       title: 'plugins.empty.title',
-      description: 'plugins.empty.agentListOnly:Pi',
+      description: 'plugins.empty.agentInstall:Pi',
       showRefresh: true,
     });
   });
 
-  it('explains planned tools instead of pretending packs are missing', () => {
-    const copy = pluginEmptyCopy('codex', agents, 'Codex', t);
+  it('explains a planned status instead of pretending packs are missing', () => {
+    const planned = agents.map((row) =>
+      row.agent === 'codex'
+        ? { ...row, support: 'planned', errorCode: 'planned' }
+        : row,
+    );
+    const copy = pluginEmptyCopy('codex', planned, 'Codex', t);
     expect(copy.title).toBe('plugins.empty.plannedTitle');
     expect(copy.description).toBe('plugins.support.planned');
     expect(copy.showRefresh).toBe(false);

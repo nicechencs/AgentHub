@@ -17,7 +17,12 @@ const DEMO: PluginInventory = {
       source: 'live',
       pluginCount: 1,
     },
-    { agent: 'codex', support: 'planned', errorCode: 'planned', pluginCount: 0 },
+    {
+      agent: 'codex',
+      support: 'listed',
+      source: 'cli',
+      pluginCount: 1,
+    },
     {
       agent: 'pi',
       support: 'listed',
@@ -49,6 +54,15 @@ const DEMO: PluginInventory = {
       sourceKind: 'plugin-tree',
       itemCount: 1,
       label: 'Grok plugins',
+    },
+    {
+      agent: 'codex',
+      path: '~/.codex/plugins/cache',
+      exists: true,
+      readable: true,
+      sourceKind: 'plugin-tree',
+      itemCount: 1,
+      label: 'Codex plugins',
     },
     {
       agent: 'pi',
@@ -107,6 +121,7 @@ const DEMO: PluginInventory = {
       enabled: true,
       path: '~/.claude/plugins/cache/demo/1.2.0',
       description: 'Example Claude plugin pack',
+      installSource: 'demo@official',
       source: 'cli',
       components: [
         { kind: 'skills', name: 'ship', description: 'Ship a release' },
@@ -124,11 +139,26 @@ const DEMO: PluginInventory = {
       trusted: true,
       path: '~/.grok/plugins/gdrive',
       description: 'Google Drive pack',
+      installSource: 'gdrive',
       source: 'live',
       components: [
         { kind: 'skills', name: 'search' },
         { kind: 'mcp', name: 'gdrive' },
       ],
+    },
+    {
+      id: 'codex:workflows@openai-curated',
+      agent: 'codex',
+      name: 'workflows',
+      marketplace: 'openai-curated',
+      version: '2.1.0',
+      scope: 'user',
+      enabled: true,
+      path: '~/.codex/plugins/cache/openai-curated/workflows/2.1.0',
+      description: 'Curated Codex workflow pack',
+      installSource: 'workflows@openai-curated',
+      source: 'cli',
+      components: [{ kind: 'skills', name: 'review' }],
     },
     {
       id: 'pi:pi-subagents@npm',
@@ -139,6 +169,7 @@ const DEMO: PluginInventory = {
       scope: 'user',
       path: '~/.pi/agent/npm/node_modules/pi-subagents',
       description: 'Pi extension for single-agent delegation',
+      installSource: 'npm:pi-subagents',
       source: 'live',
       components: [
         { kind: 'skills', name: 'search' },
@@ -155,6 +186,7 @@ const DEMO: PluginInventory = {
       scope: 'user',
       path: '~/.pi/agent/npm/node_modules/old-notes',
       description: 'Notes helper that is behind its specified version',
+      installSource: 'npm:old-notes@1.4',
       source: 'live',
       components: [{ kind: 'skills', name: 'note' }],
     },
@@ -167,6 +199,7 @@ const DEMO: PluginInventory = {
       requestedVersion: '2.0.0',
       scope: 'user',
       description: 'Listed in Pi settings but not on disk',
+      installSource: 'npm:missing-pack@2.0.0',
       source: 'live',
       components: [],
     },
@@ -180,6 +213,7 @@ const DEMO: PluginInventory = {
       scope: 'user',
       path: '~/.pi/agent/git/github.com/example/git-tools',
       description: 'Pi extension following a git ref',
+      installSource: 'git:github.com/example/git-tools@main',
       source: 'live',
       components: [{ kind: 'commands', name: 'git-tools' }],
     },
@@ -193,6 +227,7 @@ const AVAILABLE: PluginEntry[] = [
     name: 'superpowers',
     marketplace: 'xAI Official',
     description: 'Core skills library for software development',
+    installSource: 'superpowers',
     source: 'available',
     components: [
       { kind: 'skills', name: 'tdd', description: 'Test-driven development' },
@@ -205,8 +240,29 @@ const AVAILABLE: PluginEntry[] = [
     name: 'demo-available',
     marketplace: 'official',
     description: 'Example Claude marketplace pack',
+    installSource: 'demo-available@official',
     source: 'available',
     components: [{ kind: 'commands', name: 'hello' }],
+  },
+  {
+    id: 'codex:release-tools@openai-curated',
+    agent: 'codex',
+    name: 'release-tools',
+    marketplace: 'openai-curated',
+    description: 'Release workflows for Codex',
+    installSource: 'release-tools@openai-curated',
+    source: 'available',
+    components: [{ kind: 'skills', name: 'release' }],
+  },
+  {
+    id: 'codex:team-tools@team',
+    agent: 'codex',
+    name: 'team-tools',
+    marketplace: 'team',
+    description: 'Example team marketplace pack',
+    installSource: 'team-tools@team',
+    source: 'available',
+    components: [{ kind: 'commands', name: 'team-check' }],
   },
 ];
 
@@ -219,14 +275,22 @@ export function resetMockPlugins(): void {
 }
 
 function assertListedAgent(agent: AgentKey): void {
-  if (agent !== 'claude' && agent !== 'grok') {
-    throw new Error('enable/disable is only available for listed Claude and Grok plugin packs');
+  if (agent !== 'claude' && agent !== 'codex' && agent !== 'grok') {
+    throw new Error(
+      'enable/disable is only available for listed Claude, Codex, and Grok plugin packs',
+    );
   }
 }
 
 function assertInstallAgent(agent: AgentKey): void {
-  if (agent !== 'claude' && agent !== 'grok') {
-    throw new Error('install is only available for listed Claude and Grok plugin packs');
+  if (agent !== 'claude' && agent !== 'codex' && agent !== 'grok' && agent !== 'pi') {
+    throw new Error('install is only available for listed Claude, Codex, Grok, and Pi plugin packs');
+  }
+}
+
+function assertMarketplaceAgent(agent: AgentKey): void {
+  if (agent !== 'claude' && agent !== 'codex' && agent !== 'grok') {
+    throw new Error('marketplace refresh is only available for Claude, Codex, and Grok');
   }
 }
 
@@ -251,6 +315,30 @@ function isExactNpmSemver(value?: string | null): boolean {
     prerelease
       .split('.')
       .every((part) => !/^\d+$/.test(part) || part === '0' || !part.startsWith('0'))
+  );
+}
+
+function previewName(agent: AgentKey, source: string): string {
+  if (agent !== 'pi') return source.split('@')[0] || source;
+  if (source.startsWith('npm:')) {
+    const packageSpec = source.slice(4);
+    const versionAt = packageSpec.lastIndexOf('@');
+    return versionAt > 0 ? packageSpec.slice(0, versionAt) : packageSpec;
+  }
+  const withoutRef = source.split('#')[0]?.replace(/@[^/]+$/, '') ?? source;
+  return withoutRef.split(/[\\/]/).filter(Boolean).at(-1) ?? source;
+}
+
+function isPiInstallSource(source: string): boolean {
+  return (
+    /^npm:\S+$/.test(source) ||
+    /^(?:git:|https?:\/\/|ssh:\/\/|git@)\S+$/.test(source) ||
+    source.startsWith('/') ||
+    source.startsWith('~/') ||
+    source === '~' ||
+    source.startsWith('~\\') ||
+    source.startsWith('\\\\') ||
+    /^[A-Za-z]:[\\/]/.test(source)
   );
 }
 
@@ -286,14 +374,23 @@ export function createMockPluginPort(): PluginPort {
       const fromCatalog = available.find(
         (row) =>
           row.agent === agent &&
-          (row.name === trimmed ||
-            (row.marketplace ? `${row.name}@${row.marketplace}` : row.name) === trimmed),
+          (row.installSource === trimmed ||
+            (agent !== 'codex' &&
+              (row.name === trimmed ||
+                (row.marketplace ? `${row.name}@${row.marketplace}` : row.name) === trimmed))),
       );
       if (fromCatalog) return structuredClone(fromCatalog);
+      if (agent === 'codex') {
+        throw new Error('plugin is not available from a configured Codex marketplace');
+      }
+      if (agent === 'pi' && !isPiInstallSource(trimmed)) {
+        throw new Error('Pi install source must be npm:, git, or a local path');
+      }
       return {
         id: `${agent}:${trimmed}`,
         agent,
-        name: trimmed,
+        name: previewName(agent, trimmed),
+        installSource: trimmed,
         source: 'available',
         components: [],
       };
@@ -313,20 +410,31 @@ export function createMockPluginPort(): PluginPort {
         id: `${agent}:${preview.name}${preview.marketplace ? `@${preview.marketplace}` : ''}`,
         enabled: true,
         source: 'cli',
-        path: agent === 'grok' ? `~/.grok/plugins/${preview.name}` : `~/.claude/plugins/cache/${preview.name}/1.0.0`,
+        path:
+          agent === 'grok'
+            ? `~/.grok/plugins/${preview.name}`
+            : agent === 'codex'
+              ? `~/.codex/plugins/cache/${preview.marketplace ?? 'unknown'}/${preview.name}/1.0.0`
+              : agent === 'pi'
+                ? `~/.pi/agent/packages/${preview.name}`
+                : `~/.claude/plugins/cache/${preview.name}/1.0.0`,
         version: preview.version ?? '1.0.0',
         scope: 'user',
       });
       const status = inventory.agents.find((row) => row.agent === agent);
       if (status) status.pluginCount = inventory.plugins.filter((p) => p.agent === agent).length;
     },
-    async uninstall(agent, name, marketplace, _options) {
+    async uninstall(agent, name, marketplace, installSource, _options) {
       await delay(40);
       assertInstallAgent(agent);
+      if (agent === 'pi' && !installSource) {
+        throw new Error('Pi uninstall requires the exact install source');
+      }
       const index = inventory.plugins.findIndex(
         (p) =>
           p.agent === agent &&
           p.name === name &&
+          (agent !== 'pi' || p.installSource === installSource) &&
           (marketplace == null || marketplace === '' || p.marketplace === marketplace),
       );
       if (index < 0) {
@@ -346,7 +454,7 @@ export function createMockPluginPort(): PluginPort {
     },
     async refreshMarketplace(agent) {
       await delay(40);
-      assertUpdateAgent(agent);
+      assertMarketplaceAgent(agent);
     },
     async update(agent, name, marketplace, scope, options) {
       await delay(40);

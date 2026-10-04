@@ -16,7 +16,7 @@ AgentHub 里有三类“扩展”，名字容易混。用户说的**插件**是�
 
 | 界面叫法 | 是什么 | AgentHub 现在能做什么 |
 |---|---|---|
-| **插件**（`/plugins`） | 可安装的包，常带 skills、commands、agents、hooks，有时附带 MCP | 列出 Claude / Grok / Pi 已装的包；Claude / Grok 可安装、卸载、启用、停用、刷新市场和更新用户范围的已装包；Pi 可更新符合条件的已装扩展。Codex 为 Planned；其余不支持。没有 `Capability::Plugins` |
+| **插件**（`/plugins`） | 可安装的包，常带 skills、commands、agents、hooks，有时附带 MCP | 列出 Claude / Codex / Grok / Pi 已装的包，四者可安装和卸载；Claude / Codex / Grok 可启停和刷新市场；Claude / Grok 可单包更新，Pi 可全量更新符合条件的已装扩展。其余不支持。没有 `Capability::Plugins` |
 | **MCP**（`/mcp`） | Agent 作为客户端去连的 MCP server 条目 | 盘点各家配置文件；Claude / Codex / Grok / Cursor / WorkBuddy 可探测并写入、启用、关闭（无 OAuth），`Capability::Mcp` 对这五家是 Partial |
 | **技能**（`/skills`） | 带 `SKILL.md` 的技能目录 | 用户技能共享库 `~/.agents/skills/`，再同步到各 Agent 自己的目录；项目技能在所选工作区的 `.agents/skills/` |
 
@@ -27,13 +27,12 @@ AgentHub 里有三类“扩展”，名字容易混。用户说的**插件**是�
 - **技能**：`Capability::Skills` 由 adapter 声明。Kimi 是 Partial：它直接读共享库，AgentHub 不再同步一份。项目技能按「历史」页已识别的工作区选择。
 - **MCP**：列出 server 名、传输方式、命令/地址和来源文件。Codex 关闭即删除条目；Grok 关闭写 `enabled = false`。不含 OAuth，也不等于插件已安装。扫描范围见 [MCP inventory](../reference/mcp-inventory.md)。
 - **插件**：
-  - Claude / Grok 优先读官方 CLI 的 JSON，否则读本机目录（`~/.claude/plugins/` + `enabledPlugins`，`~/.grok/plugins/`）。
-  - 安装要先确认：Grok 从官方市场、git 或本地路径装，确认后才带 `--trust` 调 `grok plugin install`；Claude 安装 `name@marketplace`，确认后带 `-y`。卸载默认保留插件数据目录。
-  - 刷新市场与更新已装包是两个动作：Claude / Grok 分别调用官方 marketplace update 和 plugin update；单包更新只对用户范围开放，避免把项目或本地范围误更新成用户范围；Grok trust 不当作版本状态。
-  - Pi 没有列表 JSON，读 `~/.pi/agent/settings.json` 的 `packages`（及 npm/git 安装目录），对比本机版本与配置选择器或 git ref；不查线上最新版。本页在隔离目录调用 `pi update --extensions --no-approve`。只有 `npm:包@1.2.3` 这类完整语义版本会跳过；`@1.2` 和 git ref 仍参与更新。Pi 装上即加载，没有包级启用，也不能从本页安装、卸载或启停。
+  - Claude / Codex / Grok 优先读官方 CLI 的 JSON；官方命令缺失或无法启动时，才按各家的本机配置或目录降级。命令超时、退出失败或 JSON 无法解析会明确报错，不用降级结果掩盖故障。Pi 读 `~/.pi/agent/settings.json` 的 `packages` 及 npm/git 安装目录。
+  - 安装要先预览并确认。Claude 和 Codex 使用 `name@marketplace`；Grok 可用市场名、git 或本地路径，只有 Grok 在确认后带 `--trust`；Pi 接受完整 `npm:`、git/HTTPS/SSH 或本地目录来源，不把它们伪装成 marketplace。Pi 本地目录必须是绝对路径，`~/…` 由后端展开，不能依赖隔离命令的工作目录。卸载 Pi 时必须使用扫描得到的完整安装来源。
+  - 刷新市场与更新已装包是两个动作：Claude / Grok 调 marketplace update，Codex 调 marketplace upgrade；单包更新仍只对 Claude / Grok 的用户范围包开放。Grok trust 不当作版本状态。
+  - Pi 不查线上最新版，也没有市场列表或包级启停。本页在隔离目录调用 `pi update --extensions --no-approve`；只有 `npm:包@1.2.3` 这类完整语义版本会跳过，`@1.2` 和 git ref 仍参与更新。
   - 官方 CLI 失败时会恢复调用前的配置文件；CLI 已经改过的包目录或 cache 不保证回滚。
   - 设置「显示插件页面」只控制侧栏入口。附带的 MCP 只作为包内组件显示。
-  - Codex / Pi 单包安装写入仍是[提案](../proposals/plugin-management.md)。
 
 ## 谁拥有真实状态
 

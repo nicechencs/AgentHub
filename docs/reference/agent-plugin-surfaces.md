@@ -25,16 +25,14 @@ updated: 2026-10-04
 |---|---|---|---|
 | Claude | **有** | `/plugin`、`claude plugin`；`~/.claude/plugins/`；`enabledPlugins` | 列表 + 安装/卸载/启用/停用/刷新市场/用户范围更新 |
 | Grok | **有** | `grok plugin`；`~/.grok/plugins/`；启用与 trust 分开 | 列表 + 安装/卸载/启用/停用/刷新市场/用户范围更新 |
-| Codex | **有** | `/plugins`、`codex plugin`；`~/.codex/plugins/cache/` | 未接线（Planned） |
-| Pi | **有**（叫 package / extension） | `pi install` / `pi remove` / `pi update --extensions` | 列表 + 更新符合条件的已装扩展；不支持安装/卸载/启停 |
+| Codex | **有** | `/plugins`、`codex plugin`；`~/.codex/plugins/cache/` | 列表 + 安装/卸载/启用/停用/刷新市场；无单包更新 |
+| Pi | **有**（叫 package / extension） | `pi install` / `pi remove` / `pi update --extensions` | 列表 + 安装/卸载 + 符合条件的全量更新；无市场或启停 |
 | DSH | **另一套**（Cordis） | `cordis.patch.yml` 插件树，不是 `name@marketplace` 包 | 关闭，不硬转 |
 | Cursor | **无** | AgentHub 管 `cursor-agent` CLI；VS Code/Cursor IDE 扩展市场不算 | 不支持 |
 | Kimi | **无已验证契约** | 无官方 plugin CLI / 目录 | 不支持 |
 | WorkBuddy | **未验证** | 无稳定 plugin CLI | 不支持 |
 | ZCode | **未验证** | 无稳定 plugin CLI | 不支持 |
 | Kiro | **未验证** | 第一波只认 `kiro-cli`；无已验证 plugin CLI | 不支持 |
-
-后续（Codex / Pi 单包安装写入）见 [插件管理提案](../proposals/plugin-management.md)。
 
 ## 总览
 
@@ -91,6 +89,7 @@ updated: 2026-10-04
 - 安装缓存：`~/.codex/plugins/cache/$MARKETPLACE/$PLUGIN/$VERSION/`。本机还有 `~/.codex/plugins/.remote-plugin-install-staging`。
 - 市场索引：官方目录 + 仓库 `$REPO/.agents/plugins/marketplace.json` + 个人 `~/.agents/plugins/marketplace.json`。
 - 启用写在 `config.toml`；Space 切换 enabled。市场升级是 marketplace upgrade，不是单条 MCP doctor。
+- AgentHub 列表优先读官方 CLI JSON；官方命令缺失或无法启动时才读用户 `config.toml` 的 `[plugins]`，命令执行或解析失败则明确报错。安装/卸载必须用 `name@marketplace`，启停原子写入该条目的 `enabled`。刷新市场调用整体 `marketplace upgrade`，不提供虚假的单包更新。
 
 **技能**
 
@@ -143,11 +142,12 @@ updated: 2026-10-04
 
 **Plugin 包**
 
-- 安装：`pi install npm:<pkg>` / `git:github.com/…` / 本地路径。
+- 安装：`pi install npm:<pkg>` / `git:github.com/…` / 本地绝对路径；`~/…` 由 AgentHub 后端展开。相对目录在隔离命令的工作目录中没有稳定含义，拒绝安装。
 - 卸载：`pi remove`。
 - 更新：在隔离目录执行 `pi update --extensions --no-approve`；钉死到完整语义版本的 `npm:pkg@1.2.3` 跳过，不是失败。`npm:pkg@1.2` 与 git ref 仍参与检查和更新。
 - 装上即加载，改完 `/reload`。扩展可执行任意代码，安装前审查源码。
 - 包格式（`package.json` 的 `pi` 键）与 Claude `name@marketplace` **不是**同一套，插件页不要硬转。
+- AgentHub 没有给 Pi 伪造市场列表或启停。安装先预览来源再调用官方命令；inventory 保存 `settings.json` 中的完整 selector/ref/path，卸载时把它原样交给 `pi remove`。
 
 **MCP**
 
@@ -226,13 +226,13 @@ Skills 已有完整写入面。插件管理应抄它的**纪律**（staging、�
 
 **插件包**与 **MCP server** 不是同一套检测。
 
-插件包：刷新 marketplace catalog，再 `plugin update` / `pi update --extensions --no-approve`。只有完整 npm 语义版本钉死的 Pi 包跳过；短版本选择器与 git ref 仍参与。
+插件包：Claude / Grok 刷新 marketplace catalog 后可做单包 `plugin update`；Codex 只做 marketplace 整体 upgrade；Pi 用 `pi update --extensions --no-approve` 全量更新符合条件的扩展。只有完整 npm 语义版本钉死的 Pi 包跳过；短版本选择器与 git ref 仍参与。
 
 MCP server 没有跨 Agent 的统一「有新版本」协议。实际出现的是四类：
 
 1. **每次启动拉包**：`npx -y pkg@latest` / `uvx` 浮动标签。
 2. **配置选择器 / ref**：完整 npm 语义版本是钉死；短版本选择器与 git ref 仍参与 Pi 更新。
-3. **Plugin 市场刷新**：Claude / Codex / Grok 的 marketplace update；升级的是包，可能连带 MCP。
+3. **Plugin 市场刷新**：Claude / Grok 的 marketplace update 与 Codex marketplace upgrade；升级的是包，可能连带 MCP。
 4. **连通性诊断**：Grok `mcp doctor`、Codex/Claude `/mcp` 状态。这是 handshake，不是版本号。
 
 AgentHub 若做检测，应先分清「配置变更 / 进程可达 / 包版本」，不要用 doctor 输出冒充 marketplace 升级。

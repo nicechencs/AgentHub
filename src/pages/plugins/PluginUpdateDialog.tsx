@@ -60,7 +60,7 @@ export function PluginUpdateDialog({
           />
         ) : null}
         <DialogFooter>
-          <Button variant="outline" disabled={busy} onClick={onClose}>
+          <Button variant="secondary" disabled={busy} onClick={onClose}>
             {t('common.cancel')}
           </Button>
           <Button disabled={busy || !target} onClick={() => target && void onConfirm(target)}>

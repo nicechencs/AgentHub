@@ -8,12 +8,12 @@ import type {
 } from '@/lib/backend/contracts/plugin-types';
 import type { AgentKey } from '@/lib/types';
 
-/** Scan of vendor plugin / extension packs (not MCP). Claude, Grok, and Pi. */
+/** Scan of vendor plugin / extension packs (not MCP). Claude, Codex, Grok, and Pi. */
 export async function listPluginInventory(): Promise<PluginInventory> {
   return getBackend().plugins.listInventory();
 }
 
-/** Marketplace packs that can be installed. Not the installed inventory. */
+/** Vendor-listed packs that can be installed. Pi has no marketplace list. */
 export async function listAvailablePlugins(agent: AgentKey): Promise<PluginEntry[]> {
   return getBackend().plugins.listAvailable(agent);
 }
@@ -23,7 +23,7 @@ export async function previewPluginInstall(agent: AgentKey, source: string): Pro
   return getBackend().plugins.previewInstall(agent, source);
 }
 
-/** Official install after UI confirm. Grok `--trust` / Claude `-y`. */
+/** Official install after UI confirm. Only Grok maps confirmation to `--trust`. */
 export async function installPlugin(
   agent: AgentKey,
   source: string,
@@ -32,17 +32,18 @@ export async function installPlugin(
   return getBackend().plugins.install(agent, source, options);
 }
 
-/** Official uninstall. Default keeps the plugin data directory. */
+/** Vendor uninstall. Claude/Grok keep their separate plugin data directory by default. */
 export async function uninstallPlugin(
   agent: AgentKey,
   name: string,
   marketplace: string | null | undefined,
+  installSource: string | null | undefined,
   options: PluginUninstallOptions,
 ): Promise<void> {
-  return getBackend().plugins.uninstall(agent, name, marketplace, options);
+  return getBackend().plugins.uninstall(agent, name, marketplace, installSource, options);
 }
 
-/** Turn on a listed Claude or Grok pack via the official command. */
+/** Turn on a listed Claude, Codex, or Grok pack through that Agent's supported command/config. */
 export async function enablePlugin(
   agent: AgentKey,
   name: string,
@@ -51,7 +52,7 @@ export async function enablePlugin(
   return getBackend().plugins.enable(agent, name, marketplace);
 }
 
-/** Turn off a listed Claude or Grok pack via the official command. */
+/** Turn off a listed Claude, Codex, or Grok pack through that Agent's supported command/config. */
 export async function disablePlugin(
   agent: AgentKey,
   name: string,
@@ -60,7 +61,7 @@ export async function disablePlugin(
   return getBackend().plugins.disable(agent, name, marketplace);
 }
 
-/** Refresh Claude or Grok marketplace catalogs. This does not update installed packs. */
+/** Refresh Claude, Codex, or Grok marketplace catalogs. This does not update installed packs. */
 export async function refreshPluginMarketplace(agent: AgentKey): Promise<void> {
   return getBackend().plugins.refreshMarketplace(agent);
 }

@@ -209,7 +209,17 @@ export function PluginDetailPanel({
         {showRequested ? (
           <Field label={t('plugins.detail.requestedVersion')} value={version.requested} />
         ) : null}
-        <Field label={t('plugins.detail.marketplace')} value={plugin.marketplace} />
+        <Field
+          label={
+            plugin.agent === 'pi'
+              ? t('plugins.detail.sourceType')
+              : t('plugins.detail.marketplace')
+          }
+          value={plugin.marketplace}
+        />
+        {plugin.agent === 'pi' ? (
+          <Field label={t('plugins.detail.installSource')} value={plugin.installSource} />
+        ) : null}
         <Field
           label={t('plugins.detail.scope')}
           value={plugin.scope ? scopeLabel(plugin.scope, t) : null}

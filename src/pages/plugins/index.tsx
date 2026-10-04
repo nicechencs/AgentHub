@@ -197,7 +197,13 @@ export default function PluginsPage() {
     if (!beginMutation('uninstall')) return;
     setUninstallError(null);
     try {
-      await uninstallPlugin(plugin.agent, plugin.name, plugin.marketplace, { keepData });
+      await uninstallPlugin(
+        plugin.agent,
+        plugin.name,
+        plugin.marketplace,
+        plugin.installSource,
+        { keepData },
+      );
       inspect.close();
       setUninstallTarget(null);
       await load();

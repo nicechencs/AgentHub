@@ -1,9 +1,10 @@
 //! Read-only vendor plugin / extension pack inventory.
 //!
-//! Lists Claude, Grok, and Pi **plugin packages**, not MCP servers. Claude and
-//! Grok prefer official CLI `--json`; if that CLI is missing, read verified live
-//! files. Pi has no list JSON — read user `settings.json` `packages`. Never treat
-//! `mcpServers` as plugin rows. This does not install, enable, or write.
+//! Lists Claude, Codex, Grok, and Pi **plugin packages**, not MCP servers.
+//! Claude, Codex, and Grok prefer official CLI `--json`; if that CLI is missing,
+//! read verified live files. Pi has no list JSON — read user `settings.json`
+//! `packages`. Never treat `mcpServers` as plugin rows. This does not install,
+//! enable, or write.
 
 use std::fs;
 use std::io;
@@ -38,6 +39,10 @@ pub struct PluginEntry {
     pub id: String,
     pub agent: AgentId,
     pub name: String,
+    /// Stable value accepted by the owning CLI for install/remove. In
+    /// particular, Pi keeps the complete configured selector/ref/path here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub marketplace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -55,12 +60,12 @@ pub struct PluginEntry {
     pub path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    /// cli | live
+    /// cli | live | available
     pub source: String,
     pub components: Vec<PluginComponent>,
 }
 
-/// Per-agent list attempt (Claude/Grok/Pi) or a closed/planned cell.
+/// Per-agent list attempt (Claude/Codex/Grok/Pi) or a closed/planned cell.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginAgentStatus {
@@ -114,6 +119,14 @@ pub struct PluginScanContext<'a> {
     pub runner: &'a dyn PluginCliRunner,
 }
 
+/// Optional Codex wiring added without changing the legacy injectable scan
+/// context used by existing callers.
+pub struct PluginScanContextV2<'a> {
+    pub base: PluginScanContext<'a>,
+    pub codex_home: PathBuf,
+    pub codex_bin: Option<PathBuf>,
+}
+
 /// Runs official `plugin` subcommands without AgentHub writing vendor cache.
 pub trait PluginCliRunner: Send + Sync {
     fn run_list_json(&self, program: &Path) -> CliRun;
@@ -124,6 +137,18 @@ pub trait PluginCliRunner: Send + Sync {
     fn run_plugin_with_timeout(&self, program: &Path, args: &[&str], timeout: Duration) -> CliRun {
         let _ = timeout;
         self.run_plugin(program, args)
+    }
+    /// Run from an isolated neutral directory. The default keeps legacy fake
+    /// runners source-compatible while the system runner enforces the cwd.
+    fn run_plugin_with_timeout_in_cwd(
+        &self,
+        program: &Path,
+        args: &[&str],
+        timeout: Duration,
+        cwd: &Path,
+    ) -> CliRun {
+        let _ = cwd;
+        self.run_plugin_with_timeout(program, args, timeout)
     }
 }
 
@@ -157,9 +182,19 @@ impl PluginCliRunner for SystemPluginCliRunner {
     fn run_plugin_with_timeout(&self, program: &Path, args: &[&str], timeout: Duration) -> CliRun {
         run_cli(program, args, timeout)
     }
+
+    fn run_plugin_with_timeout_in_cwd(
+        &self,
+        program: &Path,
+        args: &[&str],
+        timeout: Duration,
+        cwd: &Path,
+    ) -> CliRun {
+        run_cli_in_cwd(program, args, timeout, cwd)
+    }
 }
 
-/// Scan Claude + Grok + Pi plugin packs using official CLI when present.
+/// Scan Claude + Codex + Grok + Pi plugin packs using official CLI when present.
 pub fn list_plugin_inventory() -> PluginInventory {
     let user_home = home_dir().unwrap_or_else(|_| PathBuf::from("/"));
     let claude_home = agent_home(AgentId::Claude).unwrap_or_else(|_| user_home.join(".claude"));
@@ -171,6 +206,7 @@ pub fn list_plugin_inventory() -> PluginInventory {
         .filter(|agent| !matches!(agent, AgentId::Claude | AgentId::Grok))
         .filter_map(|agent| agent_home(agent).ok().map(|home| (agent, home)))
         .collect();
+    let codex_home = agent_home(AgentId::Codex).unwrap_or_else(|_| user_home.join(".codex"));
     let ctx = PluginScanContext {
         user_home,
         claude_home,
@@ -181,10 +217,25 @@ pub fn list_plugin_inventory() -> PluginInventory {
         grok_bin: which::which("grok").ok(),
         runner: &SystemPluginCliRunner,
     };
-    list_plugin_inventory_with(&ctx)
+    list_plugin_inventory_with_v2(&PluginScanContextV2 {
+        base: ctx,
+        codex_home,
+        codex_bin: which::which("codex").ok(),
+    })
 }
 
 pub fn list_plugin_inventory_with(ctx: &PluginScanContext<'_>) -> PluginInventory {
+    list_plugin_inventory_impl(ctx, None)
+}
+
+pub fn list_plugin_inventory_with_v2(ctx: &PluginScanContextV2<'_>) -> PluginInventory {
+    list_plugin_inventory_impl(&ctx.base, Some((&ctx.codex_home, ctx.codex_bin.as_deref())))
+}
+
+fn list_plugin_inventory_impl(
+    ctx: &PluginScanContext<'_>,
+    codex: Option<(&Path, Option<&Path>)>,
+) -> PluginInventory {
     let mut agents = Vec::new();
     let mut plugins = Vec::new();
 
@@ -220,14 +271,28 @@ pub fn list_plugin_inventory_with(ctx: &PluginScanContext<'_>) -> PluginInventor
                 plugins.extend(rows);
                 agents.push(status);
             }
-            AgentId::Codex => agents.push(PluginAgentStatus {
-                agent,
-                support: "planned".into(),
-                source: None,
-                error_code: Some("planned".into()),
-                error: None,
-                plugin_count: 0,
-            }),
+            AgentId::Codex => {
+                let Some((codex_home, codex_bin)) = codex else {
+                    agents.push(PluginAgentStatus {
+                        agent,
+                        support: "planned".into(),
+                        source: None,
+                        error_code: Some("planned".into()),
+                        error: None,
+                        plugin_count: 0,
+                    });
+                    continue;
+                };
+                let (status, rows) = scan_wired_agent(
+                    AgentId::Codex,
+                    codex_bin,
+                    ctx.runner,
+                    &ctx.user_home,
+                    || scan_codex_live(codex_home, &ctx.user_home),
+                );
+                plugins.extend(rows);
+                agents.push(status);
+            }
             AgentId::Cursor => agents.push(closed_status(agent, "unsupported-cursor")),
             AgentId::Dsh => agents.push(closed_status(agent, "unsupported-dsh")),
             AgentId::Zcode => agents.push(closed_status(agent, "unsupported-zcode")),
@@ -612,6 +677,31 @@ fn run_cli(program: &Path, args: &[&str], timeout: Duration) -> CliRun {
     }
 }
 
+fn run_cli_in_cwd(program: &Path, args: &[&str], timeout: Duration, cwd: &Path) -> CliRun {
+    use crate::models::{RunSpec, RunStatus};
+    use crate::utils::process::{ProcessRunner, SystemProcessRunner};
+
+    let result = SystemProcessRunner.run(
+        &RunSpec {
+            agent: AgentId::Pi,
+            program: program.to_path_buf(),
+            args: args.iter().map(|arg| (*arg).to_string()).collect(),
+            cwd: Some(cwd.to_path_buf()),
+            env: Vec::new(),
+        },
+        timeout,
+        64 * 1024,
+    );
+    CliRun {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exit_code: result.exit_code,
+        timed_out: result.status == RunStatus::Timeout,
+        spawn_error: (result.status == RunStatus::Failed && result.exit_code.is_none())
+            .then(|| "spawn failed".into()),
+    }
+}
+
 fn extract_json_value(raw: &str) -> Result<JsonValue, String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -666,6 +756,9 @@ pub fn parse_cli_available_plugin_list(
         match json_status(item) {
             Some("installed") | Some("enabled") | Some("disabled") => continue,
             _ => {}
+        }
+        if bool_field(item, &["installed"]) == Some(true) {
+            continue;
         }
         if let Some(entry) = plugin_from_json(agent, item, "available", user_home) {
             out.push(entry);
@@ -751,7 +844,10 @@ fn is_mcp_only_object(map: &JsonMap<String, JsonValue>) -> bool {
 }
 
 fn looks_like_plugin_object(map: &JsonMap<String, JsonValue>) -> bool {
-    map.contains_key("name") || map.contains_key("plugin") || map.contains_key("id")
+    map.contains_key("name")
+        || map.contains_key("plugin")
+        || map.contains_key("pluginId")
+        || map.contains_key("id")
 }
 
 fn json_status(item: &JsonValue) -> Option<&str> {
@@ -764,29 +860,58 @@ fn plugin_from_json(
     source: &str,
     user_home: &Path,
 ) -> Option<PluginEntry> {
-    let name = string_field(item, &["name", "plugin", "pluginName", "id"])?;
+    let raw_plugin_id = string_field(item, &["pluginId"]);
+    let name = string_field(item, &["name", "plugin", "pluginName", "pluginId", "id"])?;
     if name.is_empty() || name == "mcpServers" {
         return None;
     }
     let (name, marketplace_from_id) = split_name_marketplace(&name);
     let marketplace = json_marketplace(item).or(marketplace_from_id);
-    let version = string_field(item, &["version"]);
+    let mut version = string_field(item, &["version"]);
     let scope = string_field(item, &["scope"]);
-    let description = string_field(item, &["description"]);
-    let path = string_field(item, &["path", "installPath", "directory", "location"])
-        .map(|p| redact_home_path(&p, user_home));
+    let mut description = string_field(item, &["description"]);
+    let raw_path = json_install_path(item);
+    let path = raw_path.as_ref().map(|p| redact_home_path(p, user_home));
     let enabled = bool_field(item, &["enabled", "isEnabled"]).or_else(|| match json_status(item) {
         Some("disabled") => Some(false),
         Some("enabled") | Some("installed") => Some(true),
         _ => None,
     });
     let trusted = bool_field(item, &["trusted", "isTrusted", "trust"]);
-    let components = components_from_json(item);
+    let mut components = components_from_json(item);
+    if agent == AgentId::Codex {
+        if let Some(dir) = raw_path
+            .as_deref()
+            .map(Path::new)
+            .filter(|path| path.is_dir())
+        {
+            if let Some(manifest) = read_plugin_manifest(dir) {
+                version = version.or_else(|| string_field(&manifest, &["version"]));
+                description = description.or_else(|| string_field(&manifest, &["description"]));
+                merge_components(&mut components, components_from_json(&manifest));
+            }
+            merge_components(&mut components, discover_components(dir));
+        }
+    }
+    let install_source = match agent {
+        AgentId::Codex => raw_plugin_id.or_else(|| {
+            marketplace
+                .as_deref()
+                .map(|market| format!("{name}@{market}"))
+        }),
+        AgentId::Claude => marketplace
+            .as_deref()
+            .map(|market| format!("{name}@{market}")),
+        AgentId::Grok => string_field(item, &["installSource", "source"])
+            .filter(|source| looks_like_install_origin(source)),
+        _ => string_field(item, &["installSource"]),
+    };
     let id = plugin_id(agent, &name, marketplace.as_deref(), path.as_deref());
     Some(PluginEntry {
         id,
         agent,
         name,
+        install_source,
         marketplace,
         version,
         requested_version: None,
@@ -823,6 +948,16 @@ fn json_marketplace(item: &JsonValue) -> Option<String> {
     } else {
         Some(source)
     }
+}
+
+fn json_install_path(item: &JsonValue) -> Option<String> {
+    string_field(item, &["path", "installPath", "directory", "location"]).or_else(|| {
+        item.get("source")
+            .filter(|source| source.is_object())
+            .and_then(|source| {
+                string_field(source, &["path", "installPath", "directory", "location"])
+            })
+    })
 }
 
 fn looks_like_install_origin(source: &str) -> bool {
@@ -927,6 +1062,18 @@ fn components_from_json(item: &JsonValue) -> Vec<PluginComponent> {
     out.sort_by(|a, b| a.kind.cmp(&b.kind).then(a.name.cmp(&b.name)));
     out.dedup();
     out
+}
+
+fn merge_components(out: &mut Vec<PluginComponent>, additions: Vec<PluginComponent>) {
+    for component in additions {
+        if !out
+            .iter()
+            .any(|existing| existing.kind == component.kind && existing.name == component.name)
+        {
+            out.push(component);
+        }
+    }
+    out.sort_by(|a, b| a.kind.cmp(&b.kind).then(a.name.cmp(&b.name)));
 }
 
 fn normalize_component_kind(kind: &str) -> &'static str {
@@ -1325,12 +1472,55 @@ fn scan_grok_live(grok_home: &Path, user_home: &Path) -> Result<Vec<PluginEntry>
             id: plugin_id(AgentId::Grok, &name, marketplace.as_deref(), None),
             agent: AgentId::Grok,
             name,
+            install_source: None,
             marketplace,
             version: None,
             requested_version: None,
             scope: Some("user".into()),
             enabled: Some(true),
             trusted: Some(true),
+            path: None,
+            description: None,
+            source: "live".into(),
+            components: Vec::new(),
+        });
+    }
+    Ok(rows)
+}
+
+fn scan_codex_live(codex_home: &Path, _user_home: &Path) -> Result<Vec<PluginEntry>, String> {
+    let config = codex_home.join("config.toml");
+    if !config.is_file() {
+        return Ok(Vec::new());
+    }
+    let text = fs::read_to_string(&config).map_err(|error| error.to_string())?;
+    let doc = text
+        .parse::<DocumentMut>()
+        .map_err(|error| format!("Codex config: {error}"))?;
+    let Some(plugins) = doc.get("plugins").and_then(|item| item.as_table()) else {
+        return Ok(Vec::new());
+    };
+    let mut rows = Vec::new();
+    for (source, value) in plugins.iter() {
+        let (name, marketplace) = split_name_marketplace(source);
+        if name.is_empty() || marketplace.is_none() {
+            continue;
+        }
+        let enabled = value
+            .get("enabled")
+            .and_then(|item| item.as_bool())
+            .unwrap_or(true);
+        rows.push(PluginEntry {
+            id: plugin_id(AgentId::Codex, &name, marketplace.as_deref(), None),
+            agent: AgentId::Codex,
+            install_source: Some(source.to_string()),
+            name,
+            marketplace,
+            version: None,
+            requested_version: None,
+            scope: Some("user".into()),
+            enabled: Some(enabled),
+            trusted: None,
             path: None,
             description: None,
             source: "live".into(),
@@ -1408,7 +1598,7 @@ fn pi_package_source(item: &JsonValue) -> Option<String> {
 }
 
 fn plugin_from_pi_spec(pi_config: &Path, user_home: &Path, spec: &str) -> Option<PluginEntry> {
-    if spec == "mcpServers" || is_unsafe_pi_spec(spec) {
+    if spec == "mcpServers" || is_unsafe_pi_persisted_spec(spec) {
         return None;
     }
     let parsed = parse_pi_source(spec);
@@ -1447,6 +1637,7 @@ fn plugin_from_pi_spec(pi_config: &Path, user_home: &Path, spec: &str) -> Option
         ),
         agent: AgentId::Pi,
         name,
+        install_source: Some(spec.to_string()),
         marketplace: Some(parsed.marketplace),
         version,
         requested_version,
@@ -1628,6 +1819,10 @@ fn is_unsafe_pi_spec(spec: &str) -> bool {
     spec.contains('\0') || spec.split(['/', '\\']).any(|part| part == "..")
 }
 
+fn is_unsafe_pi_persisted_spec(spec: &str) -> bool {
+    spec.trim().is_empty() || spec.starts_with('-') || spec.chars().any(char::is_control)
+}
+
 fn read_package_json(dir: &Path) -> Option<JsonValue> {
     let text = fs::read_to_string(dir.join("package.json")).ok()?;
     serde_json::from_str(&text).ok()
@@ -1732,7 +1927,8 @@ fn scan_plugin_tree(
 }
 
 fn looks_like_plugin_dir(path: &Path) -> bool {
-    path.join("skills").is_dir()
+    path.join(".codex-plugin").join("plugin.json").is_file()
+        || path.join("skills").is_dir()
         || path.join("commands").is_dir()
         || path.join("agents").is_dir()
         || path.join("hooks").join("hooks.json").is_file()
@@ -1782,6 +1978,9 @@ fn plugin_from_dir(agent: AgentId, path: &Path, user_home: &Path) -> Option<Plug
             Some(&path.to_string_lossy()),
         ),
         agent,
+        install_source: marketplace
+            .as_deref()
+            .map(|market| format!("{name}@{market}")),
         name,
         marketplace,
         version,
@@ -1799,6 +1998,7 @@ fn plugin_from_dir(agent: AgentId, path: &Path, user_home: &Path) -> Option<Plug
 fn read_plugin_manifest(dir: &Path) -> Option<JsonValue> {
     for path in [
         dir.join("plugin.json"),
+        dir.join(".codex-plugin").join("plugin.json"),
         dir.join(".grok-plugin").join("plugin.json"),
     ] {
         if let Ok(text) = fs::read_to_string(path) {

@@ -1,4 +1,4 @@
-/** Claude and Grok listed packs can be turned on/off. Planned/unsupported agents must not show a fake toggle. */
+/** Pi loads installed packs directly; only Claude, Codex, and Grok expose a real toggle. */
 export function canToggleListedPlugin(agent: string): boolean {
-  return agent === 'claude' || agent === 'grok';
+  return agent === 'claude' || agent === 'codex' || agent === 'grok';
 }

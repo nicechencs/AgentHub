@@ -32,7 +32,7 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 | [接入 Kiro（kiro-cli）](agent-kiro.md) | 大部分落地 | 剩 Skills / MCP。现行以 [STATUS](../STATUS.md) 为准。 |
 | [Kiro HTTP / 本机转发](agent-kiro-http.md) | 大部分落地 | 剩企业 IdC / `profileArn` 验收、打印路径流式、主机迁移。 |
 | [国内自动更新镜像（R2）](update-mirror-r2.md) | 代码已落地 | 剩云端运维配置和国内真机验收。 |
-| [plugin-management.md](plugin-management.md) | 部分落地 | 插件更新与 Codex / Pi 写入仍是提案。现行以 [STATUS](../STATUS.md) 为准。 |
+| [plugin-management.md](plugin-management.md) | 原定切片已落地 | Claude / Codex / Grok / Pi 的厂商插件包如何按各自契约管理，同时不做跨 Agent 商店或动态插件 ABI？现行以 [STATUS](../STATUS.md) 为准。 |
 
 已全部落地的提案（Chat 宿主加深、7 份 `*-owners` 拆分）和 2026-09-07 UI 审查已移到 [归档](../archive/README.md)。
 

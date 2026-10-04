@@ -47,12 +47,14 @@ describe('plugins layout wiring', () => {
       detail.indexOf("t('plugins.detail.version')"),
     );
     expect(detail).toContain("t('plugins.detail.requestedVersion')");
+    expect(detail).toContain("t('plugins.detail.installSource')");
+    expect(detail).toContain("t('plugins.detail.sourceType')");
     expect(detail).toContain('pluginVersionView');
     expect(detail).toContain('onUninstall');
     expect(detail).not.toContain('installPlugin');
   });
 
-  it('shows enable/disable for listed Claude and Grok packs only', () => {
+  it('shows enable/disable for listed Claude, Codex, and Grok packs only', () => {
     const page = source('index.tsx');
     const detail = source('PluginDetailPanel.tsx');
     expect(page).toContain('enablePlugin');
@@ -102,10 +104,21 @@ describe('plugins layout wiring', () => {
     expect(page).toContain("t('plugins.install.button')");
     expect(install).toContain('previewPluginInstall');
     expect(install).toContain('listAvailablePlugins');
+    expect(install).toContain("['claude', 'codex', 'grok', 'pi']");
+    expect(install).toContain("agent === 'codex'");
+    expect(install).toContain('codexMarketplace');
+    expect(install).toContain('piSourceKind');
+    expect(install).toContain('isPiAbsoluteLocalSource');
+    expect(install).toContain("t('plugins.install.piLocalAbsoluteHint')");
+    expect(install).toContain('pack.installSource');
+    expect(install).toContain("t('plugins.install.availableEmptyPi')");
+    expect(install).toContain("t('plugins.install.previewFailed')");
     expect(install).toContain("t('plugins.install.trust')");
+    expect(install).toContain("const grokNeedsTrust = agent === 'grok'");
     expect(install).toContain('<ErrorState');
     expect(uninstall).toContain("t('plugins.uninstall.deleteData')");
     expect(uninstall).toContain('<ErrorState');
+    expect(page).toContain('plugin.installSource');
     expect(page).not.toContain('listMcpInventory');
   });
 });

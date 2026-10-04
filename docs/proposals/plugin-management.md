@@ -8,7 +8,7 @@ updated: 2026-10-04
 
 # 插件（extension / plugin）管理
 
-> 状态：proposed。列表、启停、安装/卸载、更新已落地；Codex / Pi 单包安装写入仍是提案。现行行为见 [STATUS](../STATUS.md) 与 [页面模式](../ui/page-patterns.md)。
+> 状态：proposed。原提案中的四家列表、适用的启停、安装/卸载和更新切片均已落地；本文保留方案边界，现行行为以 [STATUS](../STATUS.md) 与 [页面模式](../ui/page-patterns.md) 为准。
 
 产品对象是各家的 plugin / extension 包，不是 MCP server，也不是随应用交付的 Go 路由程序。`/plugins` 与[Go 路由替换](modularity.md#8-功能模块与-go-路由程序)不是同一对象。`/mcp` 保持只读 MCP 清单，不改名。
 
@@ -16,13 +16,11 @@ updated: 2026-10-04
 
 | 状态 | 内容 | 证据 |
 | --- | --- | --- |
-| 已落地 | Claude / Grok 列出已装包（优先官方 CLI JSON，否则读本机目录）；Pi 只列 `settings.json` 的 `packages` | `crates/agenthub-core/src/services/plugin_inventory.rs` |
+| 已落地 | Claude / Codex / Grok 列出已装包（优先官方 CLI JSON；官方命令缺失或无法启动时读本机配置或目录，执行或解析失败则报错）；Pi 列 `settings.json` 的 `packages` 并保存完整安装来源 | `crates/agenthub-core/src/services/plugin_inventory.rs` |
 | 已落地 | `/plugins` 左右分栏；设置 → 功能「显示插件页面」只藏入口（新安装默认关），开关打开时排在「历史」（`/projects`）下 | `src/pages/plugins/`；`SidebarContext.tsx` 的 `pluginsNavVisible` |
-| 已落地 | Claude / Grok 启用/停用，写前备份 | `services/plugin_apply.rs`（`enable_plugin` / `disable_plugin`） |
-| 已落地 | Claude / Grok 安装/卸载：预览 → 确认 → 官方 CLI → 刷新；Grok 未勾选信任不传 `--trust`；卸载默认 `--keep-data` | `plugin_apply.rs`（`preview_plugin_install`、`install_plugin`、`uninstall_plugin`） |
-| 已落地 | Claude / Grok 分开刷新市场和更新用户范围的已装包；Pi 只做 `pi update --extensions --no-approve`，仅完整 npm 语义版本钉死的包由 Pi 跳过 | `plugin_apply.rs`（`refresh_plugin_marketplace`、`update_plugin`、`update_pi_plugins`） |
-| 未做 | Codex 列表与写入 | `plugin_inventory.rs` 中 Codex 为 `planned` |
-| 未做 | Pi 安装/卸载/启停 | Pi 除全量更新外仍为只读 |
+| 已落地 | Claude / Codex / Grok 启用/停用，写前备份；Pi 没有包级启停 | `services/plugin_apply.rs`（`enable_plugin` / `disable_plugin`） |
+| 已落地 | 四家安装/卸载：预览 → 确认 → 官方 CLI → 刷新；只有 Grok 要显式信任；Pi 卸载使用 inventory 保存的完整来源 | `plugin_apply.rs`（`preview_plugin_install`、`install_plugin`、`uninstall_plugin`） |
+| 已落地 | Claude / Codex / Grok 刷新市场；Claude / Grok 更新用户范围的单包；Pi 全量更新符合条件的扩展，完整 npm 语义版本钉死的包由 Pi 跳过 | `plugin_apply.rs`（`refresh_plugin_marketplace`、`update_plugin`、`update_pi_plugins`） |
 | 关闭 | Cursor、Kimi、WorkBuddy、ZCode、DSH、Kiro | 标 Unsupported，不伪造商店 |
 
 各家是否支持以 [Agent 插件表面](../reference/agent-plugin-surfaces.md#厂商插件系统plugin--extension-包) 为准。
@@ -39,10 +37,10 @@ updated: 2026-10-04
 
 不用 MCP `doctor` 或进程是否在跑代表插件更新。没有新版本 = 已是最新，不是错误。
 
-### 剩余：Codex 与 Pi 单包安装写入（原 PR-6）
+### 已落地：Codex 与 Pi 单包安装写入（原 PR-6）
 
-- Codex：`codex plugin list --json` 列表，`codex plugin add/remove`，启停走 `config.toml`。
-- Pi：`pi install` / `pi remove`。符合条件的扩展更新 `pi update --extensions --no-approve` 已落地；不把 npm/git 包硬转成 Claude 的 `name@marketplace`。
+- Codex：`codex plugin list --json` 列表，`codex plugin add/remove`，启停走 `config.toml`；安装必须选择 `name@marketplace`，市场升级是整体动作。
+- Pi：`pi install` / `pi remove`；完整安装来源随 inventory 返回并用于卸载。本地目录只接受绝对路径（`~/…` 由后端展开），避免隔离工作目录改变相对路径含义。符合条件的扩展继续用 `pi update --extensions --no-approve` 全量更新；不把 npm/git/本地包硬转成 Claude 的 `name@marketplace`。
 
 ## 3. 同类怎么管（2026-08 对照）
 

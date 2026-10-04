@@ -54,6 +54,7 @@ export function createTauriPluginPort(): PluginPort {
       agent: AgentKey,
       name: string,
       marketplace: string | null | undefined,
+      installSource: string | null | undefined,
       options: PluginUninstallOptions,
     ) {
       try {
@@ -61,6 +62,7 @@ export function createTauriPluginPort(): PluginPort {
           agent,
           name,
           marketplace: marketplace ?? null,
+          installSource: installSource ?? null,
           keepData: options.keepData,
         });
       } catch (e) {

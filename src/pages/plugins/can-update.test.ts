@@ -8,6 +8,7 @@ import {
 describe('plugin update actions', () => {
   it('keeps marketplace refresh separate from package updates', () => {
     expect(canRefreshPluginMarketplace('claude')).toBe(true);
+    expect(canRefreshPluginMarketplace('codex')).toBe(true);
     expect(canRefreshPluginMarketplace('grok')).toBe(true);
     expect(canRefreshPluginMarketplace('pi')).toBe(false);
   });

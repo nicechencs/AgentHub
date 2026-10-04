@@ -1,0 +1,13 @@
+{
+  "name": "agenthub-probe-market",
+  "plugins": [
+    {
+      "name": "agenthub-probe-plugin",
+      "description": "Offline fixture for AgentHub plugin lifecycle probes",
+      "source": {
+        "source": "local",
+        "path": "./plugin"
+      }
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import {
@@ -22,14 +22,39 @@ import {
 } from '@/lib/api/plugins';
 import { agentDisplayName } from '@/config/agents';
 import type { PluginComponent, PluginEntry } from '@/lib/backend/contracts/plugin-types';
+import type { TranslateFn } from '@/lib/i18n';
 import type { AgentKey } from '@/lib/types';
 import { canInstallListedPlugin } from './can-install';
+import { isPiAbsoluteLocalSource } from './plugin-install-source';
 
-const INSTALL_AGENTS: AgentKey[] = ['grok', 'claude'];
+const INSTALL_AGENTS: AgentKey[] = ['claude', 'codex', 'grok', 'pi'];
+type PiSourceKind = 'npm' | 'git' | 'local';
 
 function componentSummary(components: PluginComponent[]): string {
   if (components.length === 0) return '';
   return components.map((item) => item.name).join(' · ');
+}
+
+function piSourceKindLabel(kind: PiSourceKind, t: TranslateFn): string {
+  switch (kind) {
+    case 'npm':
+      return t('plugins.install.sourceKindNpm');
+    case 'git':
+      return t('plugins.install.sourceKindGit');
+    case 'local':
+      return t('plugins.install.sourceKindLocal');
+  }
+}
+
+function piSourcePlaceholder(kind: PiSourceKind, t: TranslateFn): string {
+  switch (kind) {
+    case 'npm':
+      return t('plugins.install.sourcePlaceholderPiNpm');
+    case 'git':
+      return t('plugins.install.sourcePlaceholderPiGit');
+    case 'local':
+      return t('plugins.install.sourcePlaceholderPiLocal');
+  }
 }
 
 export function PluginInstallDialog({
@@ -56,19 +81,41 @@ export function PluginInstallDialog({
   const [loadingAvailable, setLoadingAvailable] = useState(false);
   const [preview, setPreview] = useState<PluginEntry | null>(null);
   const [previewError, setPreviewError] = useState<unknown>(null);
+  const [sourceError, setSourceError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [trusted, setTrusted] = useState(false);
+  const [codexMarketplace, setCodexMarketplace] = useState('');
+  const [piSourceKind, setPiSourceKind] = useState<PiSourceKind>('npm');
+  const availableRequest = useRef(0);
+  const previewRequest = useRef(0);
 
   const loadAvailable = useCallback(async (nextAgent: AgentKey) => {
+    const request = ++availableRequest.current;
     setLoadingAvailable(true);
     setAvailableError(null);
+    if (nextAgent === 'pi') {
+      setAvailable([]);
+      setLoadingAvailable(false);
+      return;
+    }
     try {
-      setAvailable(await listAvailablePlugins(nextAgent));
+      const rows = await listAvailablePlugins(nextAgent);
+      if (request !== availableRequest.current) return;
+      setAvailable(rows);
+      if (nextAgent === 'codex') {
+        setCodexMarketplace((current) => {
+          const marketplaces = rows
+            .map((row) => row.marketplace?.trim() ?? '')
+            .filter(Boolean);
+          return marketplaces.includes(current) ? current : (marketplaces[0] ?? '');
+        });
+      }
     } catch (e) {
+      if (request !== availableRequest.current) return;
       setAvailable([]);
       setAvailableError(e);
     } finally {
-      setLoadingAvailable(false);
+      if (request === availableRequest.current) setLoadingAvailable(false);
     }
   }, []);
 
@@ -79,47 +126,84 @@ export function PluginInstallDialog({
     setSource('');
     setPreview(null);
     setPreviewError(null);
+    setSourceError(null);
+    previewRequest.current += 1;
+    setPreviewing(false);
     setTrusted(false);
+    setCodexMarketplace('');
+    setPiSourceKind('npm');
     void loadAvailable(next);
   }, [open, defaultAgent, loadAvailable]);
 
   async function selectPack(pack: PluginEntry) {
     const spec =
-      agent === 'claude' && pack.marketplace ? `${pack.name}@${pack.marketplace}` : pack.name;
+      pack.installSource ??
+      ((agent === 'claude' || agent === 'codex') && pack.marketplace
+        ? `${pack.name}@${pack.marketplace}`
+        : pack.name);
     setSource(spec);
+    previewRequest.current += 1;
+    setPreviewing(false);
     setPreview(pack);
     setPreviewError(null);
+    setSourceError(null);
   }
 
   async function runPreview() {
     const trimmed = source.trim();
     if (!trimmed) return;
+    if (agent === 'pi' && piSourceKind === 'local' && !isPiAbsoluteLocalSource(trimmed)) {
+      setPreview(null);
+      setPreviewError(null);
+      setSourceError(t('plugins.install.piLocalAbsoluteError'));
+      return;
+    }
+    const requestedAgent = agent;
+    const request = ++previewRequest.current;
     setPreviewing(true);
+    setSourceError(null);
     setPreviewError(null);
     try {
-      setPreview(await previewPluginInstall(agent, trimmed));
+      const result = await previewPluginInstall(requestedAgent, trimmed);
+      if (request !== previewRequest.current) return;
+      setPreview(result);
     } catch (e) {
+      if (request !== previewRequest.current) return;
       setPreview(null);
       setPreviewError(e);
     } finally {
-      setPreviewing(false);
+      if (request === previewRequest.current) setPreviewing(false);
     }
   }
 
   async function chooseLocalDir() {
+    const requestedAgent = agent;
+    const request = ++previewRequest.current;
+    setPreviewing(false);
+    setSourceError(null);
     try {
       const dir = await pickDirectory({ title: t('plugins.install.pickDir') });
-      if (!dir) return;
+      if (!dir || request !== previewRequest.current) return;
       setSource(dir);
+      if (requestedAgent === 'pi' && !isPiAbsoluteLocalSource(dir)) {
+        setPreview(null);
+        setPreviewError(null);
+        setSourceError(t('plugins.install.piLocalAbsoluteError'));
+        return;
+      }
       setPreviewing(true);
+      setSourceError(null);
       setPreviewError(null);
       try {
-        setPreview(await previewPluginInstall(agent, dir));
+        const result = await previewPluginInstall(requestedAgent, dir);
+        if (request !== previewRequest.current) return;
+        setPreview(result);
       } catch (e) {
+        if (request !== previewRequest.current) return;
         setPreview(null);
         setPreviewError(e);
       } finally {
-        setPreviewing(false);
+        if (request === previewRequest.current) setPreviewing(false);
       }
     } catch (e) {
       setPreviewError(e);
@@ -138,9 +222,33 @@ export function PluginInstallDialog({
   }
 
   const grokNeedsTrust = agent === 'grok';
+  const codexMarketplaces = useMemo(
+    () => [
+      ...new Set(
+        available
+          .filter((row) => row.agent === 'codex')
+          .map((row) => row.marketplace?.trim() ?? '')
+          .filter(Boolean),
+      ),
+    ],
+    [available],
+  );
+  const visibleAvailable =
+    agent === 'codex' && codexMarketplace
+      ? available.filter((row) => row.marketplace === codexMarketplace)
+      : available;
+  const sourcePlaceholder =
+    agent === 'claude'
+      ? t('plugins.install.sourcePlaceholderClaude')
+      : agent === 'codex'
+        ? t('plugins.install.sourcePlaceholderCodex')
+        : agent === 'pi'
+          ? piSourcePlaceholder(piSourceKind, t)
+          : t('plugins.install.sourcePlaceholderGrok');
   const canSubmit =
     Boolean(source.trim()) &&
     Boolean(preview) &&
+    !sourceError &&
     (!grokNeedsTrust || trusted) &&
     !busy &&
     !previewing;
@@ -177,7 +285,12 @@ export function PluginInstallDialog({
                     setSource('');
                     setPreview(null);
                     setPreviewError(null);
+                    setSourceError(null);
+                    previewRequest.current += 1;
+                    setPreviewing(false);
                     setTrusted(false);
+                    setCodexMarketplace('');
+                    setPiSourceKind('npm');
                     void loadAvailable(id);
                   }}
                 >
@@ -187,36 +300,79 @@ export function PluginInstallDialog({
             </div>
           </div>
 
+          {agent === 'pi' ? (
+            <div>
+              <p className="mb-1 text-meta text-muted">{t('plugins.install.sourceKind')}</p>
+              <div className="flex gap-2">
+                {(['npm', 'git', 'local'] as const).map((kind) => (
+                  <Button
+                    key={kind}
+                    type="button"
+                    size="sm"
+                    variant={piSourceKind === kind ? 'default' : 'outline'}
+                    disabled={busy}
+                    onClick={() => {
+                      setPiSourceKind(kind);
+                      setSource('');
+                      setPreview(null);
+                      setPreviewError(null);
+                      setSourceError(null);
+                      previewRequest.current += 1;
+                      setPreviewing(false);
+                    }}
+                  >
+                    {piSourceKindLabel(kind, t)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <label className="flex flex-col gap-1">
             <span className="text-meta text-muted">{t('plugins.install.source')}</span>
             <Input
               value={source}
               disabled={busy}
-              placeholder={
-                agent === 'claude'
-                  ? t('plugins.install.sourcePlaceholderClaude')
-                  : t('plugins.install.sourcePlaceholderGrok')
-              }
+              placeholder={sourcePlaceholder}
+              aria-invalid={Boolean(sourceError)}
               onChange={(e) => {
                 setSource(e.target.value);
                 setPreview(null);
                 setPreviewError(null);
+                setSourceError(null);
+                previewRequest.current += 1;
+                setPreviewing(false);
               }}
               onBlur={() => {
                 if (source.trim()) void runPreview();
               }}
             />
+            {agent === 'pi' && piSourceKind === 'local' ? (
+              <span className={sourceError ? 'text-meta text-danger' : 'text-meta text-muted'}>
+                {sourceError ?? t('plugins.install.piLocalAbsoluteHint')}
+              </span>
+            ) : null}
           </label>
-          {agent === 'grok' ? (
+          {agent === 'grok' || (agent === 'pi' && piSourceKind === 'local') ? (
             <div>
-              <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void chooseLocalDir()}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void chooseLocalDir()}
+              >
                 {t('plugins.install.pickDir')}
               </Button>
             </div>
           ) : null}
 
           <div>
-            <p className="mb-1 text-meta text-muted">{t('plugins.install.available')}</p>
+            <p className="mb-1 text-meta text-muted">
+              {agent === 'pi'
+                ? t('plugins.install.availablePi')
+                : t('plugins.install.available')}
+            </p>
             {loadingAvailable ? (
               <p className="text-meta text-muted">{t('plugins.page.refresh')}</p>
             ) : availableError ? (
@@ -226,26 +382,64 @@ export function PluginInstallDialog({
                 title={t('plugins.install.availableFailed')}
                 onRetry={() => void loadAvailable(agent)}
               />
-            ) : available.length === 0 ? (
-              <p className="text-meta text-muted">{t('plugins.install.availableEmpty')}</p>
+            ) : visibleAvailable.length === 0 ? (
+              <p className="text-meta text-muted">
+                {agent === 'pi'
+                  ? t('plugins.install.availableEmptyPi')
+                  : t('plugins.install.availableEmpty')}
+              </p>
             ) : (
-              <ul className="max-h-40 overflow-y-auto rounded-card border border-border">
-                {available.map((pack) => (
-                  <li key={pack.id}>
-                    <button
-                      type="button"
-                      className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-hover"
+              <>
+                {agent === 'codex' && codexMarketplaces.length > 0 ? (
+                  <label className="mb-2 flex flex-col gap-1">
+                    <span className="text-meta text-muted">
+                      {t('plugins.install.marketplace')}
+                    </span>
+                    <select
+                      className="h-9 rounded-btn border border-border bg-background px-2 text-sm"
+                      value={codexMarketplace}
                       disabled={busy}
-                      onClick={() => void selectPack(pack)}
+                      onChange={(event) => {
+                        setCodexMarketplace(event.target.value);
+                        setSource('');
+                        setPreview(null);
+                        setPreviewError(null);
+                        setSourceError(null);
+                        previewRequest.current += 1;
+                        setPreviewing(false);
+                      }}
                     >
-                      <span className="text-body font-medium">{pack.name}</span>
-                      {pack.description ? (
-                        <span className="line-clamp-1 text-meta text-secondary">{pack.description}</span>
-                      ) : null}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+                      {codexMarketplaces.map((marketplace) => (
+                        <option key={marketplace} value={marketplace}>
+                          {marketplace}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                <ul className="max-h-40 overflow-y-auto rounded-card border border-border">
+                  {visibleAvailable.map((pack) => (
+                    <li key={pack.id}>
+                      <button
+                        type="button"
+                        className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-hover"
+                        disabled={busy}
+                        onClick={() => void selectPack(pack)}
+                      >
+                        <span className="text-body font-medium">{pack.name}</span>
+                        {agent === 'codex' && pack.marketplace ? (
+                          <span className="text-meta text-muted">{pack.marketplace}</span>
+                        ) : null}
+                        {pack.description ? (
+                          <span className="line-clamp-1 text-meta text-secondary">
+                            {pack.description}
+                          </span>
+                        ) : null}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
           </div>
 
@@ -257,7 +451,7 @@ export function PluginInstallDialog({
               <ErrorState
                 compact
                 error={previewError}
-                title={t('plugins.install.needPreview')}
+                title={t('plugins.install.previewFailed')}
                 onRetry={() => void runPreview()}
               />
             ) : preview ? (

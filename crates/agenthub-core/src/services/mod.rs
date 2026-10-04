@@ -74,16 +74,20 @@ pub use mcp_manage::{
     McpWriteResult,
 };
 pub use plugin_apply::{
-    disable_plugin, disable_plugin_with, enable_plugin, enable_plugin_with, install_plugin,
-    install_plugin_with, list_available_plugins, list_available_plugins_with,
-    preview_plugin_install, preview_plugin_install_with, refresh_plugin_marketplace,
-    refresh_plugin_marketplace_with, uninstall_plugin, uninstall_plugin_with, update_pi_plugins,
-    update_plugin, update_plugin_with, PluginApplyContext, PluginInstallOptions,
+    disable_plugin, disable_plugin_with, disable_plugin_with_v2, enable_plugin, enable_plugin_with,
+    enable_plugin_with_v2, install_plugin, install_plugin_with, install_plugin_with_v2,
+    list_available_plugins, list_available_plugins_with, list_available_plugins_with_v2,
+    preview_plugin_install, preview_plugin_install_with, preview_plugin_install_with_v2,
+    refresh_plugin_marketplace, refresh_plugin_marketplace_with,
+    refresh_plugin_marketplace_with_v2, uninstall_plugin, uninstall_plugin_with,
+    uninstall_plugin_with_v2, update_pi_plugins, update_plugin, update_plugin_with,
+    update_plugin_with_v2, PluginApplyContext, PluginApplyContextV2, PluginInstallOptions,
     PluginUninstallOptions, PluginUpdateOptions,
 };
 pub use plugin_inventory::{
-    list_plugin_inventory, PluginAgentStatus, PluginComponent, PluginEntry, PluginInventory,
-    PluginSourceFile,
+    list_plugin_inventory, list_plugin_inventory_with, list_plugin_inventory_with_v2,
+    PluginAgentStatus, PluginComponent, PluginEntry, PluginInventory, PluginScanContext,
+    PluginScanContextV2, PluginSourceFile,
 };
 pub use project_service::ProjectService;
 pub use provider_service::{ProviderLiveConfigSnapshot, ProviderLiveSagaGuard, ProviderService};

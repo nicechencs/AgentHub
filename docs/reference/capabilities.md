@@ -65,7 +65,7 @@ agenthub agent capabilities --markdown
 
 - `Skills: Full` 指共享库与各工具的启用矩阵，**不等于** Chat 里能为本轮指定「用于本次」技能。只有 Codex 持续通道接了「用于本次」；Grok `Skills` 是 Full，但 Chat「用于本次」不支持。见 [Chat 与 Agent 运行](../concepts/chat-and-agents.md)。
 - `Mcp: Partial` 指 Claude / Codex / Grok / Cursor / WorkBuddy 已有无 OAuth 的写入/启用；只读 MCP 盘点不等于完整管理，也不等于厂商插件包。见 [MCP inventory](mcp-inventory.md) 与 [Agent 插件表面](agent-plugin-surfaces.md)。
-- 没有 `Capability::Plugins`：`/plugins` 列出 Claude / Grok / Pi 的包，Claude / Grok 可安装/卸载/启用/停用，更新仍是[提案](../proposals/plugin-management.md)。
+- 没有 `Capability::Plugins`：`/plugins` 列出 Claude / Codex / Grok / Pi 的包，四者可安装/卸载；Claude / Codex / Grok 可启用/停用并刷新市场；Claude / Grok 支持用户范围单包更新，Pi 保持符合条件的全量扩展更新。见[插件管理](../proposals/plugin-management.md)。
 - 本机 Routes 的 `/v1/models` 不改变 `ModelSelect`。
 - 能力矩阵不放 npm 包名、安装 URL、home 路径或账号识别算法；这些属于 adapter 数据。
 - Chat 持续通道深度另见 [Chat 支持深度矩阵](chat-support-depth.md)。
