@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -107,7 +108,20 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 			return
 		}
 
-		resp, err := doMemberMessages(r.Context(), client, member, upstreamPath, body, meta.Stream)
+		memberPath := upstreamPath
+		memberBody := body
+		memberStream := meta.Stream
+		convertChatResponse := surface == surfaceResponses && member.UpstreamTransport == transportOpenAIChatCompletions
+		if convertChatResponse {
+			memberPath = "/v1/chat/completions"
+			memberBody, memberStream, err = encodeResponsesToChat(body)
+			if err != nil {
+				writeMessagesError(w, http.StatusBadRequest, "invalid_request", "The Responses request cannot be represented by this route.", "invalid_request_error")
+				return
+			}
+		}
+
+		resp, err := doMemberMessages(r.Context(), client, member, memberPath, memberBody, memberStream)
 		if err != nil {
 			if r.Context().Err() != nil {
 				return
@@ -117,7 +131,15 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 			continue
 		}
 
-		if meta.Stream {
+		if memberStream {
+			if convertChatResponse {
+				outcome := dispatchConvertedChatStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast)
+				lastStream = false
+				if outcome == dispatchContinue {
+					continue
+				}
+				return
+			}
 			outcome := dispatchMemberStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast)
 			lastStream = true
 			if outcome == dispatchContinue {
@@ -143,9 +165,32 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 			hasLast = true
 			lastStatus = resp.StatusCode
 			lastHeader = resp.Header.Clone()
-			lastBody = respBody
+			if convertChatResponse {
+				lastBody = convertedResponsesErrorBody()
+			} else {
+				lastBody = respBody
+			}
 			lastStream = false
 			continue
+		}
+		if convertChatResponse && resp.StatusCode >= 400 {
+			writeClientResponse(w, resp.StatusCode, safeConvertedHeaders(resp.Header), convertedResponsesErrorBody(), false)
+			return
+		}
+		if convertChatResponse {
+			translated, translateErr := translateChatJSONToResponses(respBody)
+			if translateErr != nil {
+				pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
+				excluded = append(excluded, member.ID)
+				hasLast = true
+				lastStatus = http.StatusBadGateway
+				lastHeader = make(http.Header)
+				lastBody = convertedResponsesErrorBody()
+				lastStream = false
+				continue
+			}
+			respBody = translated
+			resp.Header.Set("Content-Type", "application/json")
 		}
 		if resp.StatusCode < 400 {
 			pool.ReportSuccess(member.ID)
@@ -153,6 +198,173 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 		writeClientResponse(w, resp.StatusCode, resp.Header, respBody, false)
 		return
 	}
+}
+
+func dispatchConvertedChatStream(
+	w http.ResponseWriter,
+	r *http.Request,
+	pool *Pool,
+	member *PoolMember,
+	model string,
+	resp *http.Response,
+	excluded *[]string,
+	lastStatus *int,
+	lastHeader *http.Header,
+	lastBody *[]byte,
+	hasLast *bool,
+) int {
+	defer resp.Body.Close()
+	class := classifyHTTP(resp.StatusCode)
+	if shouldFailover(class, false) {
+		pool.ReportFailure(member.ID, model, class, parseRetryAfter(resp.Header.Get("Retry-After")), time.Now())
+		*excluded = append(*excluded, member.ID)
+		*hasLast = true
+		*lastStatus = resp.StatusCode
+		*lastHeader = safeConvertedHeaders(resp.Header)
+		*lastBody = convertedResponsesErrorBody()
+		return dispatchContinue
+	}
+	if resp.StatusCode >= 400 {
+		writeClientResponse(w, resp.StatusCode, safeConvertedHeaders(resp.Header), convertedResponsesErrorBody(), false)
+		return dispatchDone
+	}
+
+	translator := newChatToResponsesSSE(model)
+	streamCtx, cancelStream := context.WithCancel(r.Context())
+	defer cancelStream()
+	lines := scanConvertedSSELines(streamCtx, resp.Body)
+	idle := time.NewTimer(convertedSSEIdleTimeout)
+	defer idle.Stop()
+	dataLines := make([]string, 0, 2)
+	committed := false
+	upstreamBytes := 0
+	outputBytes := 0
+	failStream := func() int {
+		if committed {
+			pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
+			failure := translator.fail()
+			if len(failure) > 0 {
+				_, _ = w.Write(failure)
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				}
+			}
+			return dispatchDone
+		}
+		pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
+		*excluded = append(*excluded, member.ID)
+		*hasLast = true
+		*lastStatus = http.StatusBadGateway
+		*lastHeader = make(http.Header)
+		*lastBody = convertedResponsesErrorBody()
+		return dispatchContinue
+	}
+	for {
+		select {
+		case <-r.Context().Done():
+			return dispatchDone
+		case <-idle.C:
+			_ = resp.Body.Close()
+			return failStream()
+		case item, ok := <-lines:
+			if !ok || item.err != nil {
+				return failStream()
+			}
+			if !idle.Stop() {
+				select {
+				case <-idle.C:
+				default:
+				}
+			}
+			idle.Reset(convertedSSEIdleTimeout)
+			upstreamBytes += len(item.line) + 1
+			if upstreamBytes > convertedSSELimitBytes {
+				_ = resp.Body.Close()
+				return failStream()
+			}
+			line := strings.TrimSuffix(item.line, "\r")
+			if line == "" && len(dataLines) > 0 {
+				translated, done, translateErr := translator.consume([]byte(strings.Join(dataLines, "\n")))
+				dataLines = dataLines[:0]
+				if translateErr != nil {
+					return failStream()
+				}
+				if len(translated) > 0 {
+					if outputBytes+len(translated) > convertedSSELimitBytes {
+						_ = resp.Body.Close()
+						return failStream()
+					}
+					if !committed {
+						committed = true
+						pool.ReportSuccess(member.ID)
+						copyUpstreamHeaders(w.Header(), resp.Header)
+						w.Header().Set("Content-Type", "text/event-stream")
+						w.WriteHeader(http.StatusOK)
+					}
+					if _, writeErr := w.Write(translated); writeErr != nil {
+						return dispatchDone
+					}
+					outputBytes += len(translated)
+					if flusher, ok := w.(http.Flusher); ok {
+						flusher.Flush()
+					}
+				}
+				if done {
+					return dispatchDone
+				}
+			} else if strings.HasPrefix(line, "data:") {
+				dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+			}
+		}
+	}
+}
+
+const (
+	convertedSSELimitBytes  = 32 * 1_048_576
+	convertedSSEIdleTimeout = 30 * time.Second
+)
+
+type convertedSSELine struct {
+	line string
+	err  error
+}
+
+func scanConvertedSSELines(ctx context.Context, body io.Reader) <-chan convertedSSELine {
+	lines := make(chan convertedSSELine, 1)
+	go func() {
+		defer close(lines)
+		scanner := bufio.NewScanner(body)
+		scanner.Buffer(make([]byte, 64*1024), convertedSSELimitBytes+1)
+		for scanner.Scan() {
+			select {
+			case lines <- convertedSSELine{line: scanner.Text()}:
+			case <-ctx.Done():
+				return
+			}
+		}
+		err := scanner.Err()
+		if err == nil {
+			err = io.EOF
+		}
+		select {
+		case lines <- convertedSSELine{err: err}:
+		case <-ctx.Done():
+		}
+	}()
+	return lines
+}
+
+func convertedResponsesErrorBody() []byte {
+	return []byte(`{"error":{"code":"upstream_error","message":"The upstream response could not be used.","type":"api_error"}}`)
+}
+
+func safeConvertedHeaders(source http.Header) http.Header {
+	header := make(http.Header)
+	if retryAfter := source.Get("Retry-After"); retryAfter != "" {
+		header.Set("Retry-After", retryAfter)
+	}
+	header.Set("Content-Type", "application/json")
+	return header
 }
 
 const (

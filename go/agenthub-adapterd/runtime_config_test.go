@@ -154,6 +154,24 @@ func TestRuntimeConfigDialectMustMatchSurface(t *testing.T) {
 	}
 }
 
+func TestRuntimeConfigAllowsResponsesToChatTransport(t *testing.T) {
+	raw := `{"version":"route-config.v0-isolated","edges":[{"id":"edge","ingress_key":"secret","surface":"responses","dialect":"codex","schedule_policy":"priority_failover","fixture_model":"model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"upstream","upstream_auth":"bearer","upstream_transport":"openai_chat_completions","priority":0,"position":0,"models":["model"]}]}]}`
+	config, err := LoadRuntimeConfig(strings.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := config.Edges[0].Members[0].UpstreamTransport; got != transportOpenAIChatCompletions {
+		t.Fatalf("transport=%q", got)
+	}
+
+	invalid := strings.Replace(raw, `"surface":"responses"`, `"surface":"messages"`, 1)
+	invalid = strings.Replace(invalid, `"dialect":"codex"`, `"dialect":"claude"`, 1)
+	invalid = strings.Replace(invalid, `"upstream_auth":"bearer"`, `"upstream_auth":"x_api_key"`, 1)
+	if _, err := LoadRuntimeConfig(strings.NewReader(invalid)); err == nil {
+		t.Fatal("accepted Messages surface with Chat Completions transport")
+	}
+}
+
 func TestRuntimeUpstreamURLPolicy(t *testing.T) {
 	for _, allowed := range []struct {
 		url, transport string
@@ -415,6 +433,135 @@ func TestRuntimeConfigRoutesThreeSurfacesAndAuthModes(t *testing.T) {
 	}
 	if snapshot.MemberCount != 3 || snapshot.HealthyMemberCount != 3 {
 		t.Fatalf("status counts: %+v", snapshot)
+	}
+}
+
+func TestRuntimeConfigConvertsResponsesToChatWithoutLeakingBadUpstreamBody(t *testing.T) {
+	const upstreamSecret = "upstream-body-secret-must-not-escape"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Errorf("upstream path=%s", r.URL.Path)
+		}
+		if bearerToken(r.Header.Get("Authorization")) != configUpstreamChat {
+			t.Errorf("upstream auth headers: %#v", r.Header)
+		}
+		var request struct {
+			Model    string `json:"model"`
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode Chat request: %v", err)
+		}
+		if len(request.Messages) != 1 || request.Messages[0].Role != "user" {
+			t.Errorf("translated messages=%#v", request.Messages)
+		}
+		if request.Messages[0].Content == "malformed" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"choices":"`+upstreamSecret+`"}`)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": "chatcmpl_conversion", "model": request.Model, "created": 7,
+			"choices": []any{map[string]any{
+				"message":       map[string]any{"role": "assistant", "content": "converted-ok"},
+				"finish_reason": "stop",
+			}},
+		})
+	}))
+	t.Cleanup(upstream.Close)
+	config := &RuntimeConfig{Version: runtimeConfigVersion, Edges: []RuntimeEdgeConfig{{
+		ID: "responses-chat-edge", IngressKey: configIngressResponses, Surface: surfaceResponses,
+		Dialect: "codex", SchedulePolicy: policyPriorityFailover, FixtureModel: "gpt-converted",
+		Members: []RuntimeMemberConfig{{
+			ID: "chat-upstream", UpstreamBaseURL: upstream.URL, UpstreamKey: configUpstreamChat,
+			UpstreamAuth: authBearer, UpstreamTransport: transportOpenAIChatCompletions,
+			Models: []string{"gpt-converted"},
+		}},
+	}}}
+	_, _, _, port := configuredRuntime(t, config)
+
+	post := func(input string) (int, []byte) {
+		t.Helper()
+		body, _ := json.Marshal(map[string]any{"model": "gpt-converted", "input": input})
+		req, _ := http.NewRequest(http.MethodPost, "http://127.0.0.1:"+strconv.Itoa(port)+"/v1/responses", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+configIngressResponses)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		got, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, got
+	}
+
+	status, body := post("ping")
+	if status != http.StatusOK || !bytes.Contains(body, []byte(`"object":"response"`)) || !bytes.Contains(body, []byte("converted-ok")) {
+		t.Fatalf("converted status=%d body=%s", status, body)
+	}
+	status, body = post("malformed")
+	if status != http.StatusBadGateway || bytes.Contains(body, []byte(upstreamSecret)) || !bytes.Contains(body, []byte(`"code":"upstream_error"`)) {
+		t.Fatalf("safe upstream error status=%d body=%s", status, body)
+	}
+}
+
+func TestRuntimeConfigConvertedStreamSignalsTruncationAfterCommit(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `data: {"id":"chatcmpl_truncated","model":"gpt-converted","choices":[{"delta":{"content":"partial"}}]}`+"\n\n")
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		// Deliberately close without Chat's [DONE] marker.
+	}))
+	t.Cleanup(upstream.Close)
+	config := &RuntimeConfig{Version: runtimeConfigVersion, Edges: []RuntimeEdgeConfig{{
+		ID: "responses-chat-edge", IngressKey: configIngressResponses, Surface: surfaceResponses,
+		Dialect: "codex", SchedulePolicy: policyPriorityFailover, FixtureModel: "gpt-converted",
+		Members: []RuntimeMemberConfig{{
+			ID: "chat-upstream", UpstreamBaseURL: upstream.URL, UpstreamKey: configUpstreamChat,
+			UpstreamAuth: authBearer, UpstreamTransport: transportOpenAIChatCompletions,
+			Models: []string{"gpt-converted"},
+		}},
+	}}}
+	_, _, _, port := configuredRuntime(t, config)
+	body := []byte(`{"model":"gpt-converted","input":"ping","stream":true}`)
+	req, _ := http.NewRequest(http.MethodPost, "http://127.0.0.1:"+strconv.Itoa(port)+"/v1/responses", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+configIngressResponses)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	got, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(got, []byte("response.output_text.delta")) {
+		t.Fatalf("translated stream status=%d body=%s", resp.StatusCode, got)
+	}
+	if !bytes.Contains(got, []byte("event: error")) || !bytes.Contains(got, []byte(`"code":"upstream_error"`)) {
+		t.Fatalf("truncation was silent: %s", got)
+	}
+	if bytes.Contains(got, []byte("response.completed")) {
+		t.Fatalf("truncated stream was completed: %s", got)
+	}
+	healthReq, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1:"+strconv.Itoa(port)+"/health", nil)
+	healthReq.Header.Set("Authorization", "Bearer "+configIngressResponses)
+	healthResp, err := http.DefaultClient.Do(healthReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer healthResp.Body.Close()
+	var health map[string]any
+	if err := json.NewDecoder(healthResp.Body).Decode(&health); err != nil {
+		t.Fatal(err)
+	}
+	if health["healthy_member_count"] != float64(0) {
+		t.Fatalf("truncated upstream remained healthy: %#v", health)
 	}
 }
 

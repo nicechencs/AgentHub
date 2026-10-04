@@ -23,6 +23,7 @@ MOCK_LOG="${SCRATCH}/mock-upstream.log"
 ADAPTERD_LOG_STDOUT="${SCRATCH}/adapterd.stdout.log"
 SYNTHETIC_KEY="ahb_probe_isolated_synthetic_not_a_real_login"
 KEY_TAIL="${SYNTHETIC_KEY: -4}"
+CROSS_KEY="ahb_probe_cross_protocol_synthetic_not_a_real_login"
 WRONG_KEY="ahb_probe_wrong_bearer_not_ingress"
 REAL_HOME="${HOME}/.agenthub"
 PRODUCT_PORT=43121
@@ -285,6 +286,65 @@ start_adapterd() {
   echo "process up: pid=${ADAPTERD_PID} responses_port=${port}"
 }
 
+start_adapterd_cross_protocol() {
+  local port="$1"
+  local kind="$2"
+  refuse_product_port "${port}"
+  rm -f "${PID_FILE}"
+  echo "+ AGENTHUB_HOME=${HOME_DIR} ${BIN} run --home ${HOME_DIR} --listen-port ${port} --runtime-config-stdin (Responses -> OpenAI Chat)"
+  AGENTHUB_HOME="${HOME_DIR}" "${BIN}" run --home "${HOME_DIR}" --listen-port "${port}" --runtime-config-stdin \
+    < <(python3 - "${UPSTREAM_PORT}" "${CROSS_KEY}" "${kind}" \
+      "${MEMBER_HI}" "${MEMBER_QUOTA}" "${MEMBER_SLOW}" "${MODEL}" <<'PY'
+import json, sys
+port, ingress, kind = sys.argv[1:4]
+hi, quota, slow, model = sys.argv[4:8]
+base = f"http://127.0.0.1:{port}/v1"
+
+def member(member_id, token, priority, position):
+    return {
+        "id": member_id,
+        "upstream_base_url": base,
+        "upstream_key": token,
+        "upstream_auth": "bearer",
+        "upstream_transport": "openai_chat_completions",
+        "priority": priority,
+        "position": position,
+        "models": [model],
+    }
+
+members = {
+    "hi": [member("cross-hi", hi, 0, 0)],
+    "quota": [
+        member("cross-quota", quota, 0, 0),
+        member("cross-hi", hi, 1, 1),
+    ],
+    "slow": [member("cross-slow", slow, 0, 0)],
+}[kind]
+print(json.dumps({
+    "version": "route-config.v0-isolated",
+    "edges": [{
+        "id": "responses-to-openai-chat",
+        "ingress_key": ingress,
+        "surface": "responses",
+        "dialect": "codex",
+        "schedule_policy": "priority_failover",
+        "fixture_model": model,
+        "members": members,
+    }],
+}))
+PY
+    ) >>"${ADAPTERD_LOG_STDOUT}" 2>&1 &
+  ADAPTERD_PID=$!
+  wait_for_file "${SOCK}"
+  wait_for_file "${PID_FILE}"
+  if ! kill -0 "${ADAPTERD_PID}" 2>/dev/null; then
+    echo "FAIL: cross-protocol adapterd is not running" >&2
+    cat "${ADAPTERD_LOG_STDOUT}" >&2 || true
+    exit 1
+  fi
+  echo "process up: pid=${ADAPTERD_PID} responses_port=${port} transport=openai_chat_completions"
+}
+
 wait_adapterd_exit() {
   local i
   for i in $(seq 1 50); do
@@ -437,6 +497,31 @@ PY
     "http://127.0.0.1:${RESPONSES_PORT}/v1/responses" || true
 }
 
+post_cross_responses() {
+  local out="$1"
+  local hdr="$2"
+  local stream="$3"
+  local tools="$4"
+  shift 4 || true
+  local extra=("$@")
+  local payload
+  payload="$(python3 - "${MODEL}" "${stream}" "${tools}" <<'PY'
+import json, sys
+model, stream, tools = sys.argv[1], sys.argv[2] == "true", sys.argv[3] == "true"
+body = {"model": model, "input": "ping", "stream": stream}
+if tools:
+    body["tools"] = [{"type": "function", "name": "weather"}]
+print(json.dumps(body))
+PY
+)"
+  curl -sS -D "${hdr}" -o "${out}" -w '%{http_code}' \
+    "${extra[@]}" \
+    -H "Authorization: Bearer ${CROSS_KEY}" \
+    -H 'Content-Type: application/json' \
+    --data-binary "${payload}" \
+    "http://127.0.0.1:${RESPONSES_PORT}/v1/responses" || true
+}
+
 body_has() {
   local path="$1"
   local needle="$2"
@@ -448,6 +533,7 @@ assert_no_secrets_in() {
   local secret
   for secret in \
     "${SYNTHETIC_KEY}" \
+    "${CROSS_KEY}" \
     "${MEMBER_HI}" "${MEMBER_LO}" "${MEMBER_A}" "${MEMBER_B}" \
     "${MEMBER_QUOTA}" "${MEMBER_DOWN}" "${MEMBER_SLOW}" "${MEMBER_COMMIT}"
   do
@@ -535,6 +621,104 @@ completed = events[5][1] or {}
 output = (completed.get("response") or {}).get("output") or []
 if not output or not isinstance(output[0], dict) or output[0].get("type") != "function_call":
     sys.exit(6)
+PY
+}
+
+cross_responses_json_ok() {
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+body_path, hdr_path = sys.argv[1:]
+headers = open(hdr_path, encoding="utf-8", errors="replace").read().lower()
+if "application/json" not in headers:
+    sys.exit(2)
+data = json.load(open(body_path, encoding="utf-8"))
+if data.get("object") != "response" or data.get("status") != "completed":
+    sys.exit(3)
+output = data.get("output") or []
+texts = []
+for item in output:
+    if not isinstance(item, dict) or item.get("type") != "message":
+        continue
+    for content in item.get("content") or []:
+        if isinstance(content, dict) and content.get("type") == "output_text":
+            texts.append(content.get("text") or "")
+if "isolated-chat-ok" not in "".join(texts):
+    sys.exit(4)
+PY
+}
+
+parse_sse_events() {
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+body_path, mode = sys.argv[1:]
+raw = open(body_path, encoding="utf-8", errors="replace").read()
+events, event, data_lines = [], None, []
+
+def flush():
+    global event, data_lines
+    if event is None and not data_lines:
+        return
+    blob = "\n".join(data_lines).strip()
+    events.append((event, json.loads(blob) if blob and blob != "[DONE]" else blob))
+    event, data_lines = None, []
+
+for line in raw.splitlines():
+    if line.startswith("event:"):
+        event = line.split(":", 1)[1].strip()
+    elif line.startswith("data:"):
+        data_lines.append(line.split(":", 1)[1].strip())
+    elif not line.strip():
+        flush()
+flush()
+names = [name for name, _ in events]
+
+def require_order(wanted):
+    cursor = 0
+    for name in names:
+        if cursor < len(wanted) and name == wanted[cursor]:
+            cursor += 1
+    if cursor != len(wanted):
+        print("event order: " + ",".join(str(name) for name in names), file=sys.stderr)
+        sys.exit(3)
+
+if mode == "tool":
+    require_order([
+        "response.created",
+        "response.output_item.added",
+        "response.function_call_arguments.delta",
+        "response.function_call_arguments.done",
+        "response.output_item.done",
+        "response.completed",
+    ])
+    added = next((payload for name, payload in events if name == "response.output_item.added"), {}) or {}
+    item = added.get("item") or {}
+    if item.get("type") != "function_call" or item.get("name") != "weather" or not item.get("call_id"):
+        sys.exit(4)
+    deltas = [(payload or {}).get("delta", "") for name, payload in events if name == "response.function_call_arguments.delta"]
+    if len(deltas) < 2:
+        sys.exit(5)
+    arguments = "".join(deltas)
+    try:
+        decoded = json.loads(arguments)
+    except json.JSONDecodeError:
+        sys.exit(6)
+    if decoded.get("city") != "Paris":
+        sys.exit(7)
+    done = next((payload for name, payload in events if name == "response.function_call_arguments.done"), {}) or {}
+    if done.get("arguments") != arguments:
+        sys.exit(8)
+elif mode == "text":
+    require_order(["response.created", "response.output_text.delta", "response.completed"])
+    text = "".join((payload or {}).get("delta", "") for name, payload in events if name == "response.output_text.delta")
+    if "isolated-chat-ok" not in text:
+        sys.exit(9)
+else:
+    sys.exit(10)
+
+completed = next((payload for name, payload in reversed(events) if name == "response.completed"), {}) or {}
+response = completed.get("response") or {}
+if response.get("object") != "response" or response.get("status") != "completed":
+    sys.exit(11)
 PY
 }
 
@@ -883,16 +1067,101 @@ else
 fi
 control_stop chat-slow
 
+# --- cycles 9-11: Responses downstream translated to OpenAI Chat upstream ---
+echo "== cycle 9: Responses -> OpenAI Chat JSON, tool SSE, method, auth =="
+RESPONSES_PORT="$(pick_port)"
+refuse_product_port "${RESPONSES_PORT}"
+start_adapterd_cross_protocol "${RESPONSES_PORT}" hi
+handshake_acquire_start cross-json
+
+CROSS_JSON="$(post_cross_responses "${SCRATCH}/resp/cross.json" "${SCRATCH}/resp/cross.headers" false false)"
+if [[ "${CROSS_JSON}" == "200" ]] \
+  && cross_responses_json_ok "${SCRATCH}/resp/cross.json" "${SCRATCH}/resp/cross.headers"; then
+  record_pass "cross_responses_json"
+else
+  record_fail "cross_responses_json" "status=${CROSS_JSON}"
+  note_leftover "cross_responses_json: Responses -> OpenAI Chat translation is unavailable or malformed"
+fi
+
+CROSS_TOOL="$(post_cross_responses "${SCRATCH}/resp/cross-tool.sse" "${SCRATCH}/resp/cross-tool.headers" true true)"
+if [[ "${CROSS_TOOL}" == "200" ]] \
+  && grep -Fqi 'text/event-stream' "${SCRATCH}/resp/cross-tool.headers" \
+  && parse_sse_events "${SCRATCH}/resp/cross-tool.sse" tool; then
+  record_pass "cross_responses_tool_sse"
+else
+  record_fail "cross_responses_tool_sse" "status=${CROSS_TOOL}"
+  note_leftover "cross_responses_tool_sse: translated tool events or argument chunks are incomplete"
+fi
+
+CROSS_GET="$(curl -sS -D "${SCRATCH}/resp/cross-get.headers" -o "${SCRATCH}/resp/cross-get.json" -w '%{http_code}' \
+  -H "Authorization: Bearer ${CROSS_KEY}" \
+  "http://127.0.0.1:${RESPONSES_PORT}/v1/responses" || true)"
+CROSS_BAD="$(curl -sS -D "${SCRATCH}/resp/cross-bad.headers" -o "${SCRATCH}/resp/cross-bad.json" -w '%{http_code}' \
+  -H "Authorization: Bearer ${WRONG_KEY}" \
+  -H 'Content-Type: application/json' \
+  --data-binary "{\"model\":\"${MODEL}\",\"input\":\"ping\",\"stream\":false}" \
+  "http://127.0.0.1:${RESPONSES_PORT}/v1/responses" || true)"
+if [[ "${CROSS_GET}" == "405" ]] \
+  && method_not_allowed_ok "${SCRATCH}/resp/cross-get.json" "${SCRATCH}/resp/cross-get.headers" \
+  && [[ "${CROSS_BAD}" == "401" ]] \
+  && invalid_key_ok "${SCRATCH}/resp/cross-bad.json"; then
+  record_pass "cross_method_and_auth"
+else
+  record_fail "cross_method_and_auth" "get=${CROSS_GET} bad=${CROSS_BAD}"
+fi
+if ! assert_no_secrets_in "${SCRATCH}/resp/cross.json" \
+  || ! assert_no_secrets_in "${SCRATCH}/resp/cross-tool.sse"; then
+  record_fail "cross_response_secret" "translated response leaked an ingress or member token"
+fi
+control_stop cross-json
+
+echo "== cycle 10: cross-protocol quota switches before first client event =="
+RESPONSES_PORT="$(pick_port)"
+refuse_product_port "${RESPONSES_PORT}"
+start_adapterd_cross_protocol "${RESPONSES_PORT}" quota
+handshake_acquire_start cross-quota
+CROSS_QUOTA="$(post_cross_responses "${SCRATCH}/resp/cross-quota.sse" "${SCRATCH}/resp/cross-quota.headers" true false)"
+if [[ "${CROSS_QUOTA}" == "200" ]] \
+  && parse_sse_events "${SCRATCH}/resp/cross-quota.sse" text \
+  && ! body_has "${SCRATCH}/resp/cross-quota.sse" "rate_limited" \
+  && ! body_has "${SCRATCH}/resp/cross-quota.sse" "quota exhausted"; then
+  record_pass "cross_quota_before_output"
+else
+  record_fail "cross_quota_before_output" "status=${CROSS_QUOTA}"
+  note_leftover "cross_quota_before_output: quota member was not replaced before translated output"
+fi
+control_stop cross-quota
+
+echo "== cycle 11: cross-protocol client cancel keeps adapterd healthy =="
+RESPONSES_PORT="$(pick_port)"
+refuse_product_port "${RESPONSES_PORT}"
+start_adapterd_cross_protocol "${RESPONSES_PORT}" slow
+handshake_acquire_start cross-slow
+CROSS_CANCEL="$(post_cross_responses "${SCRATCH}/resp/cross-cancel.sse" "${SCRATCH}/resp/cross-cancel.headers" true false --max-time 1)"
+CROSS_HEALTH="$(curl -sS -o "${SCRATCH}/resp/cross-health.json" -w '%{http_code}' \
+  -H "Authorization: Bearer ${CROSS_KEY}" \
+  "http://127.0.0.1:${RESPONSES_PORT}/health" || true)"
+if [[ "${CROSS_CANCEL}" == "000" || -z "${CROSS_CANCEL}" ]] \
+  && kill -0 "${ADAPTERD_PID}" 2>/dev/null \
+  && [[ "${CROSS_HEALTH}" == "200" ]]; then
+  record_pass "cross_client_cancel"
+else
+  record_fail "cross_client_cancel" "cancel=${CROSS_CANCEL} health=${CROSS_HEALTH}"
+fi
+control_stop cross-slow
+
 echo "== check 7: logs + status JSON must not contain entry or member tokens =="
 secret_scan_fail=0
 for secret in \
   "${SYNTHETIC_KEY}" \
+  "${CROSS_KEY}" \
   "${MEMBER_HI}" "${MEMBER_LO}" "${MEMBER_A}" "${MEMBER_B}" \
   "${MEMBER_QUOTA}" "${MEMBER_DOWN}" "${MEMBER_SLOW}" "${MEMBER_COMMIT}"
 do
   if grep -F -q -- "${secret}" "${LOG_FILE}" "${ADAPTERD_LOG_STDOUT}" "${MOCK_LOG}" \
-    "${SCRATCH}"/status-*.json 2>/dev/null; then
-    echo "FAIL: token last4=${secret: -4} found in logs or status JSON" >&2
+    "${SCRATCH}"/status-*.json 2>/dev/null \
+    || grep -R -F -q -- "${secret}" "${SCRATCH}/resp" 2>/dev/null; then
+    echo "FAIL: token last4=${secret: -4} found in logs, status JSON, or response artifacts" >&2
     secret_scan_fail=1
   fi
 done
@@ -924,6 +1193,11 @@ names = [
     "chat_quota_failover",
     "chat_commit_no_replay",
     "chat_client_cancel",
+    "cross_responses_json",
+    "cross_responses_tool_sse",
+    "cross_method_and_auth",
+    "cross_quota_before_output",
+    "cross_client_cancel",
     "secret_scan",
 ]
 checks = {name: (name not in fail_list) for name in names}
@@ -935,13 +1209,13 @@ evidence = {
     "arch": os.uname().machine,
     "agenthub_home": home,
     "upstream_port": int(uport),
-    "phase": "responses+chat",
+    "phase": "responses+chat+responses_to_openai_chat",
     "checks": checks,
     "failed_checks": fail_list,
     "leftover": left_list,
     "live_gateway_unchanged": True,
     "real_home_untouched": True,
-    "note": "isolated synthetic-key Responses and Chat Completions; Start is not the default gateway",
+    "note": "isolated synthetic-key same-protocol and Responses-to-OpenAI-Chat routes; Start is not the default gateway",
 }
 with open(path, "w", encoding="utf-8") as fh:
     json.dump(evidence, fh, indent=2)
@@ -950,6 +1224,7 @@ print("evidence written:", path)
 PY
 
 if grep -F -q -- "${SYNTHETIC_KEY}" "${EVIDENCE}" \
+  || grep -F -q -- "${CROSS_KEY}" "${EVIDENCE}" \
   || grep -E -q 'sk-member-[a-z]+-synthetic' "${EVIDENCE}"; then
   echo "FAIL: evidence.json contains a secret" >&2
   record_fail "evidence_secret"

@@ -13,9 +13,11 @@ These slices prove, in an isolated scratch directory:
 - connection-pool scheduling: `priority_failover` / `round_robin`, member
   health and cooldown, model union, client cancel; no member switch after
   output has started
-- same-protocol `POST /v1/responses`, `POST /v1/chat/completions`, and the
-  alias `POST /chat/completions` (JSON, SSE, tool calls, cancel, upstream
-  errors). The runner does not guess Codex versus Grok from the request body.
+- `POST /v1/responses`, `POST /v1/chat/completions`, and the alias
+  `POST /chat/completions` (JSON, SSE, tool calls, cancel, upstream errors),
+  including Responses ingress translated to a controlled OpenAI-compatible
+  Chat upstream. The configured edge selects the protocol; the runner does
+  not guess Codex versus Grok from the request body.
 
 `Start` is the product control name for this isolated slice. It does not write
 real agent config, refuses the product default port `43121` and real
@@ -33,7 +35,8 @@ Runtime validation accepts external upstreams only for Anthropic Messages
 routes that use an API Key and the exact official
 `https://api.anthropic.com` endpoint (optionally `/v1`). It rejects user info,
 query/fragment data, other ports, encoded paths, and redirects. The isolated
-probes do not call the real Anthropic service.
+probes do not call the real Anthropic service. Responses-to-Chat conversion is
+loopback-only until exact Kimi / OpenAI HTTPS addresses are added separately.
 
 `ActivateProbeListen` remains a probe-only shortcut with the same listen start.
 It is not the default gateway.

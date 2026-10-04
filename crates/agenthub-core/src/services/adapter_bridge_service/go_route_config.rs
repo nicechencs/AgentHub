@@ -250,6 +250,9 @@ fn compatible_protocol(
         (RouteDownstreamSurface::Responses, BridgeUpstreamProtocol::XaiResponsesOauth) => {
             Some(("bearer", TRANSPORT_GROK_RESPONSES))
         }
+        (RouteDownstreamSurface::Responses, BridgeUpstreamProtocol::OpenAiChatCompletions) => {
+            Some(("bearer", TRANSPORT_OPENAI_CHAT_COMPLETIONS))
+        }
         (
             RouteDownstreamSurface::ChatCompletions,
             BridgeUpstreamProtocol::OpenAiChatCompletions,
@@ -271,6 +274,9 @@ fn compatible_transport(
         }
         (RouteDownstreamSurface::Responses, "grok:grok") => {
             Some(("bearer", TRANSPORT_GROK_RESPONSES))
+        }
+        (RouteDownstreamSurface::Responses, "openai:generic") => {
+            Some(("bearer", TRANSPORT_OPENAI_CHAT_COMPLETIONS))
         }
         (RouteDownstreamSurface::ChatCompletions, "openai:generic") => {
             Some(("bearer", TRANSPORT_OPENAI_CHAT_COMPLETIONS))

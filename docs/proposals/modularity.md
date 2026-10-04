@@ -74,7 +74,7 @@ Go 路由替换：只按[Go 路由替换方案](adapter-sidecar.md)逐个纵向�
 
 `/plugins` 页面继续只管理各 Agent 的厂商 plugin / extension 包。Go 路由程序是随 AgentHub 打包的内部运行组件，不建立另一套插件概念；厂商插件见[插件管理提案](plugin-management.md)。
 
-当前本机转发仍是 Tauri 进程内 `local_bridge`。树中已有隔离目录下的 Go Messages 切片（含连接池调度，以及同协议 Responses 与 Chat Completions：`go/agenthub-adapterd`、`scripts/route-runtime-probe/messages-isolated.sh`、`pool-isolated.sh`、`protocols-isolated.sh`）和开发态应用控制，但它还不是默认网关。
+当前本机转发仍是 Tauri 进程内 `local_bridge`。树中已有隔离目录下的 Go Messages 切片（含连接池调度、Responses 与 Chat Completions 同协议转发，以及 Responses 到 OpenAI 兼容 Chat 的转换：`go/agenthub-adapterd`、`scripts/route-runtime-probe/messages-isolated.sh`、`pool-isolated.sh`、`protocols-isolated.sh`）和开发态应用控制，但它还不是默认网关。
 
 路由只解决自身的进程替换。登录、连接、会话、历史、用量、技能、MCP、各 Agent 对接、数据迁移和更新继续留在现有模块中，不为它们设计可下载扩展或独立进程。
 

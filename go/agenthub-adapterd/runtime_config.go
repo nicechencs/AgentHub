@@ -177,7 +177,7 @@ func transportMatchesSurface(transport, surface string) bool {
 	case surfaceMessages:
 		return transport == transportAnthropicMessages
 	case surfaceResponses:
-		return transport == transportCodexResponses || transport == transportGrokResponses
+		return transport == transportCodexResponses || transport == transportGrokResponses || transport == transportOpenAIChatCompletions
 	case surfaceChatCompletions:
 		return transport == transportOpenAIChatCompletions
 	default:
