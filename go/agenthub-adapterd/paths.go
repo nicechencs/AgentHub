@@ -161,6 +161,28 @@ func validateRuntimeUpstreamURL(raw, transport string) error {
 	return nil
 }
 
+// validateFinalUpstreamURL repeats the trust-boundary check after the fixed API
+// path has been joined. It intentionally accepts no host or transport beyond
+// validateRuntimeUpstreamURL's current allowlist.
+func validateFinalUpstreamURL(raw, transport string) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || !u.IsAbs() || u.Host == "" {
+		return fmt.Errorf("final upstream URL is invalid")
+	}
+	if u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(raw, "#") || u.EscapedPath() != u.Path {
+		return fmt.Errorf("final upstream URL contains disallowed components")
+	}
+	if err := loopbackURL(raw); err == nil {
+		return nil
+	}
+	if transport != transportAnthropicMessages || u.Scheme != "https" ||
+		(!strings.EqualFold(u.Host, "api.anthropic.com") && !strings.EqualFold(u.Host, "api.anthropic.com:443")) ||
+		u.Path != "/v1/messages" {
+		return fmt.Errorf("final external upstream URL is not allowed")
+	}
+	return nil
+}
+
 func isLoopbackRemote(remoteAddr string) bool {
 	host, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {

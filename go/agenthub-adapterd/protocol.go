@@ -12,7 +12,6 @@ import (
 const (
 	protocolVersion     = "route-runtime.v0-isolated"
 	configFormatVersion = "route-config.v0-isolated"
-	packageVersion      = "0.0.0-isolated"
 	extensionID         = "agenthub.routes"
 
 	typeHandshake            = "Handshake"
@@ -50,6 +49,11 @@ const (
 	productDefaultPort = 43121
 	maxUnixSocketBytes = 100
 )
+
+// packageVersion is replaced by the desktop sidecar build with
+// `-X main.packageVersion=<desktop version>`. Standalone probes and ordinary
+// `go test` builds deliberately retain the isolated development version.
+var packageVersion = "0.0.0-isolated"
 
 var handshakeCapabilities = []string{
 	"messages.json",

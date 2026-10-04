@@ -34,6 +34,7 @@ Thumbs.db
 # Isolated Go adapterd local binaries
 /go/agenthub-adapterd/bin/
 /go/agenthub-adapterd/agenthub-adapterd
+/src-tauri/binaries/
 
 # Local dumps / scratch / personal machine capture (never commit)
 skill-list.json

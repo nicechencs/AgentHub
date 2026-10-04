@@ -70,9 +70,9 @@ impl AppState {
     /// Build state around an already-opened hub (tests / alternate entry points).
     pub(crate) fn from_hub(hub: Result<Arc<AgentHub>, String>) -> Self {
         let close_to_tray = load_close_to_tray(&hub);
-        #[cfg(debug_assertions)]
+        #[cfg(unix)]
         let go_route_hub = hub.as_ref().ok().map(Arc::clone);
-        #[cfg(not(debug_assertions))]
+        #[cfg(not(unix))]
         let go_route_hub = None;
         let bridge_host = BridgeRuntimeHost::new();
         // Install the durable gateway usage spool once, before any edge can

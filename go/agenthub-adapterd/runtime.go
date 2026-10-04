@@ -57,8 +57,11 @@ type Runtime struct {
 	// Test seam for long OAuth refresh windows. Production always uses time.Now.
 	oauthNow func() time.Time
 
-	messagesSrv *http.Server
-	messagesLn  net.Listener
+	messagesSrv    *http.Server
+	messagesLn     net.Listener
+	httpPolicy     routeHTTPSafetyPolicy
+	requestSlots   chan struct{}
+	upstreamClient *http.Client
 
 	cancel context.CancelFunc
 }
@@ -134,6 +137,9 @@ func NewRuntime(home string, listenPort int, controlSocket string, cancel contex
 		oauthPendingByKey: make(map[string]*oauthRefreshPending),
 		oauthPendingByID:  make(map[string]*oauthRefreshPending),
 		oauthNotify:       make(chan struct{}, 1),
+		httpPolicy:        defaultRouteHTTPSafetyPolicy,
+		requestSlots:      make(chan struct{}, defaultRouteHTTPSafetyPolicy.MaxConcurrentRequests),
+		upstreamClient:    sharedUpstreamHTTPClient,
 		cancel:            cancel,
 	}
 	return rt, nil
@@ -867,7 +873,11 @@ func (rt *Runtime) startHTTPServer() error {
 	}
 	srv := &http.Server{
 		Handler:           rt.messagesMux(),
-		ReadHeaderTimeout: 10 * time.Second,
+		ReadHeaderTimeout: rt.httpPolicy.ServerReadHeaderTimeout,
+		ReadTimeout:       rt.httpPolicy.ServerReadTimeout,
+		WriteTimeout:      0, // Streaming refreshes a bounded per-write deadline instead of using one absolute deadline.
+		IdleTimeout:       rt.httpPolicy.ServerIdleTimeout,
+		MaxHeaderBytes:    rt.httpPolicy.MaxHeaderBytes,
 	}
 	rt.mu.Lock()
 	rt.messagesLn = ln
@@ -1046,6 +1056,22 @@ func (rt *Runtime) addInFlight(delta int) {
 		rt.inFlight = 0
 	}
 	rt.mu.Unlock()
+}
+
+func (rt *Runtime) tryAcquireRequestSlot() bool {
+	select {
+	case rt.requestSlots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (rt *Runtime) releaseRequestSlot() {
+	select {
+	case <-rt.requestSlots:
+	default:
+	}
 }
 
 func sameDir(a, b string) bool {

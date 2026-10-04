@@ -6,23 +6,26 @@
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, OpenOptions};
-use std::io::{Read, Write};
+#[cfg(unix)]
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 use std::sync::atomic::{AtomicU64, Ordering};
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 use std::sync::Condvar;
-#[cfg(debug_assertions)]
+#[cfg(unix)]
 use std::sync::Weak;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+#[cfg(unix)]
+use std::{os::unix::fs::MetadataExt, os::unix::fs::OpenOptionsExt};
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 use agenthub_core::error::AppError;
 use agenthub_core::AgentHub;
 
@@ -30,24 +33,28 @@ const PRODUCT_DEFAULT_PORT: u16 = 43121;
 const OWNER_ID: &str = "agenthub-gui";
 const PROTOCOL_VERSION: &str = "route-runtime.v0-isolated";
 const CONFIG_FORMAT_VERSION: &str = "route-config.v0-isolated";
-const PACKAGE_VERSION: &str = "0.0.0-isolated";
+#[cfg(debug_assertions)]
+const ISOLATED_DEV_PACKAGE_VERSION: &str = "0.0.0-isolated";
+const BUNDLED_PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
+const BUNDLED_SHA256: &str = env!("AGENTHUB_ADAPTERD_BUNDLED_SHA256");
+const EMBEDDED_BUNDLED_VERSION: &str = env!("AGENTHUB_ADAPTERD_BUNDLED_VERSION");
 const CONFIG_STREAM_CAPABILITY: &str = "config.stdin_stream.atomic";
 const OAUTH_REFRESH_CAPABILITY: &str = "control.oauth_refresh.v1";
 const ISOLATED_LEASE_BUDGET_MS: i64 = 24 * 60 * 60 * 1_000;
 const OWNER_RENEW_INTERVAL: Duration = Duration::from_secs(30);
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 const OAUTH_REFRESH_POLL_WAIT_MS: u64 = 1_000;
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 const OAUTH_REFRESH_CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 const OAUTH_REFRESH_HANDLER_LIMIT: usize = 8;
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 const OAUTH_REFRESH_QUEUE_LIMIT: usize = 8;
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 const OAUTH_REFRESH_ACTION_GATE_LIMIT: usize = 4_096;
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 const OAUTH_REFRESH_COMPLETED_ID_LIMIT: usize = 4_096;
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 const OAUTH_REFRESH_COMPLETED_ID_TTL: Duration = Duration::from_secs(90);
 const START_STOP_WAIT: Duration = Duration::from_secs(10);
 const GRACEFUL_STOP_WAIT: Duration = Duration::from_secs(9);
@@ -57,12 +64,18 @@ const STABLE_RUN_RESET: Duration = Duration::from_secs(30);
 const ERROR_ISOLATED_UNAVAILABLE: &str = "Go route is unavailable in this build";
 const ERROR_START_FAILED: &str = "Go route could not start";
 const ERROR_CONTROL_UNAVAILABLE: &str = "Go route status is unavailable";
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 const ERROR_REQUIRED_RELOAD_FAILED: &str = "go.route.required_reload_failed";
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 const REQUIRED_RELOAD_STOPPED_MESSAGE: &str =
     "Go route configuration could not be updated; Go route was stopped";
 const MAX_RUNTIME_CONFIG_BYTES: usize = 8 * 1024 * 1024;
+#[cfg(unix)]
+const SCRATCH_ROOT_PREFIX: &str = "agenthub-go-route-isolated-";
+#[cfg(unix)]
+const SCRATCH_OWNER_MARKER: &str = ".agenthub-go-route-owner-v1";
+#[cfg(unix)]
+const STALE_SCRATCH_MIN_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -104,7 +117,7 @@ pub enum GoRouteRequiredReloadResult {
 #[serde(rename_all = "snake_case")]
 pub enum GoRouteRequiredReloadSkipReason {
     NotRunning,
-    #[allow(dead_code)] // constructed only by release and non-Unix builds
+    #[allow(dead_code)] // constructed only by non-Unix builds
     Unavailable,
     Unchanged,
 }
@@ -113,6 +126,19 @@ pub struct GoRouteIsolatedHost {
     hub: Option<Arc<AgentHub>>,
     inner: Mutex<Inner>,
     update_gate: Mutex<()>,
+}
+
+#[cfg(unix)]
+impl Drop for GoRouteIsolatedHost {
+    fn drop(&mut self) {
+        let inner = self
+            .inner
+            .get_mut()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(mut session) = inner.session.take() {
+            terminate_session(&mut session);
+        }
+    }
 }
 
 struct Inner {
@@ -124,7 +150,7 @@ struct Inner {
     stable_since: Option<Instant>,
     next_restart_at: Option<Instant>,
     committed_plan: Option<RuntimePlan>,
-    #[cfg(all(debug_assertions, unix))]
+    #[cfg(unix)]
     oauth_refresh_worker_session: Option<(String, i64)>,
 }
 
@@ -145,6 +171,34 @@ struct Session {
     oauth_refresh_supported: bool,
     config_stdin: Arc<Mutex<ChildStdin>>,
     adapterd: Child,
+}
+
+#[cfg(unix)]
+struct ResolvedAdapterd {
+    path: PathBuf,
+    package_version: &'static str,
+}
+
+#[cfg(unix)]
+struct ScratchHomeGuard {
+    home: PathBuf,
+    armed: bool,
+}
+
+#[cfg(unix)]
+impl ScratchHomeGuard {
+    fn disarm(mut self) {
+        self.armed = false;
+    }
+}
+
+#[cfg(unix)]
+impl Drop for ScratchHomeGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            cleanup_scratch_home(&self.home);
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -190,6 +244,8 @@ fn unavailable_status() -> GoRouteIsolatedStatus {
 
 impl GoRouteIsolatedHost {
     pub fn new(hub: Option<Arc<AgentHub>>) -> Arc<Self> {
+        #[cfg(unix)]
+        cleanup_stale_scratch_roots();
         let host = Arc::new(Self {
             hub,
             inner: Mutex::new(Inner {
@@ -201,14 +257,14 @@ impl GoRouteIsolatedHost {
                 stable_since: None,
                 next_restart_at: None,
                 committed_plan: None,
-                #[cfg(all(debug_assertions, unix))]
+                #[cfg(unix)]
                 oauth_refresh_worker_session: None,
             }),
             update_gate: Mutex::new(()),
         });
-        #[cfg(debug_assertions)]
+        #[cfg(unix)]
         Self::spawn_monitor(Arc::downgrade(&host));
-        #[cfg(all(debug_assertions, unix))]
+        #[cfg(unix)]
         if let Some(hub) = host.hub.as_ref() {
             let weak_host = Arc::downgrade(&host);
             hub.accounts().set_oauth_access_publish(Arc::new(move || {
@@ -229,15 +285,11 @@ impl GoRouteIsolatedHost {
     }
 
     pub fn status(&self) -> GoRouteIsolatedStatus {
-        #[cfg(not(debug_assertions))]
-        {
-            return unavailable_status();
-        }
-        #[cfg(all(debug_assertions, not(unix)))]
+        #[cfg(not(unix))]
         {
             return unix_only_failed();
         }
-        #[cfg(all(debug_assertions, unix))]
+        #[cfg(unix)]
         {
             let control = {
                 let mut inner = self.lock();
@@ -276,15 +328,11 @@ impl GoRouteIsolatedHost {
     }
 
     pub fn start(&self) -> GoRouteIsolatedStatus {
-        #[cfg(not(debug_assertions))]
-        {
-            return unavailable_status();
-        }
-        #[cfg(all(debug_assertions, not(unix)))]
+        #[cfg(not(unix))]
         {
             return unix_only_failed();
         }
-        #[cfg(all(debug_assertions, unix))]
+        #[cfg(unix)]
         {
             let reload = {
                 let mut inner = self.lock();
@@ -317,15 +365,11 @@ impl GoRouteIsolatedHost {
     /// process. The previous committed snapshot remains the recovery source
     /// until Status acknowledges the exact new digest.
     pub fn reload(&self) -> GoRouteIsolatedStatus {
-        #[cfg(not(debug_assertions))]
-        {
-            return unavailable_status();
-        }
-        #[cfg(all(debug_assertions, not(unix)))]
+        #[cfg(not(unix))]
         {
             return unix_only_failed();
         }
-        #[cfg(all(debug_assertions, unix))]
+        #[cfg(unix)]
         {
             let _update = self
                 .update_gate
@@ -409,19 +453,13 @@ impl GoRouteIsolatedHost {
     /// committed runtime snapshot is discarded so stale configuration cannot
     /// be restored.
     pub fn reload_required_after_write(&self) -> GoRouteRequiredReloadResult {
-        #[cfg(not(debug_assertions))]
+        #[cfg(not(unix))]
         {
             return GoRouteRequiredReloadResult::Skipped {
                 reason: GoRouteRequiredReloadSkipReason::Unavailable,
             };
         }
-        #[cfg(all(debug_assertions, not(unix)))]
-        {
-            return GoRouteRequiredReloadResult::Skipped {
-                reason: GoRouteRequiredReloadSkipReason::Unavailable,
-            };
-        }
-        #[cfg(all(debug_assertions, unix))]
+        #[cfg(unix)]
         {
             let _update = self
                 .update_gate
@@ -556,25 +594,19 @@ impl GoRouteIsolatedHost {
     /// Fail closed when the blocking task that owns a required reload cannot
     /// return a result (for example, because its worker panicked).
     pub fn fail_required_reload_task(&self) -> GoRouteRequiredReloadResult {
-        #[cfg(not(debug_assertions))]
+        #[cfg(not(unix))]
         {
             GoRouteRequiredReloadResult::Skipped {
                 reason: GoRouteRequiredReloadSkipReason::Unavailable,
             }
         }
-        #[cfg(all(debug_assertions, not(unix)))]
-        {
-            GoRouteRequiredReloadResult::Skipped {
-                reason: GoRouteRequiredReloadSkipReason::Unavailable,
-            }
-        }
-        #[cfg(all(debug_assertions, unix))]
+        #[cfg(unix)]
         {
             self.fail_required_reload()
         }
     }
 
-    #[cfg(all(debug_assertions, unix))]
+    #[cfg(unix)]
     fn fail_required_reload(&self) -> GoRouteRequiredReloadResult {
         let mut inner = self.lock();
         let mut session = inner.session.take();
@@ -607,7 +639,7 @@ impl GoRouteIsolatedHost {
         }
     }
 
-    #[cfg(all(debug_assertions, unix))]
+    #[cfg(unix)]
     fn fail_session(&self, control: &ControlSession) -> GoRouteIsolatedStatus {
         let mut inner = self.lock();
         let same_session = inner
@@ -625,14 +657,14 @@ impl GoRouteIsolatedHost {
         self.lock().status.clone()
     }
 
-    #[cfg(all(debug_assertions, unix))]
+    #[cfg(unix)]
     fn status_with_reload_error(&self) -> GoRouteIsolatedStatus {
         let mut inner = self.lock();
         inner.status.last_error = Some("Go route configuration could not be updated".into());
         inner.status.clone()
     }
 
-    #[cfg(all(debug_assertions, unix))]
+    #[cfg(unix)]
     fn finish_start(&self, recovering: bool) -> GoRouteIsolatedStatus {
         let existing_plan = self.lock().committed_plan.clone();
         let plan = existing_plan.map(Ok).unwrap_or_else(|| {
@@ -705,15 +737,11 @@ impl GoRouteIsolatedHost {
     }
 
     pub fn stop(&self) -> GoRouteIsolatedStatus {
-        #[cfg(not(debug_assertions))]
-        {
-            return unavailable_status();
-        }
-        #[cfg(all(debug_assertions, not(unix)))]
+        #[cfg(not(unix))]
         {
             return unix_only_failed();
         }
-        #[cfg(all(debug_assertions, unix))]
+        #[cfg(unix)]
         {
             {
                 let mut inner = self.lock();
@@ -764,86 +792,79 @@ impl GoRouteIsolatedHost {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    #[cfg(debug_assertions)]
+    #[cfg(unix)]
     fn spawn_monitor(host: Weak<Self>) {
         std::thread::spawn(move || loop {
             std::thread::sleep(Duration::from_millis(500));
             let Some(host) = host.upgrade() else { return };
-            #[cfg(unix)]
-            {
-                #[cfg(all(debug_assertions, unix))]
-                {
-                    let refresh_worker = {
-                        let mut inner = host.lock();
-                        refresh_locked(&mut inner);
-                        let control = inner.session.as_ref().and_then(|session| {
-                            (session.oauth_refresh_supported
-                                && !inner.oauth_refresh_worker_session.as_ref().is_some_and(
-                                    |(epoch, term)| {
-                                        epoch == &session.instance_epoch
-                                            && *term == session.owner_term
-                                    },
-                                ))
-                            .then(|| ControlSession::from(session))
-                        });
-                        if let Some(control) = control.as_ref() {
-                            inner.oauth_refresh_worker_session =
-                                Some((control.instance_epoch.clone(), control.owner_term));
-                        }
-                        control
-                    };
-                    if let Some(control) = refresh_worker {
-                        Self::spawn_oauth_refresh_worker(Arc::downgrade(&host), control);
+            let refresh_worker = {
+                let mut inner = host.lock();
+                refresh_locked(&mut inner);
+                let control = inner.session.as_ref().and_then(|session| {
+                    (session.oauth_refresh_supported
+                        && !inner.oauth_refresh_worker_session.as_ref().is_some_and(
+                            |(epoch, term)| {
+                                epoch == &session.instance_epoch && *term == session.owner_term
+                            },
+                        ))
+                    .then(|| ControlSession::from(session))
+                });
+                if let Some(control) = control.as_ref() {
+                    inner.oauth_refresh_worker_session =
+                        Some((control.instance_epoch.clone(), control.owner_term));
+                }
+                control
+            };
+            if let Some(control) = refresh_worker {
+                Self::spawn_oauth_refresh_worker(Arc::downgrade(&host), control);
+            }
+            let renewal = {
+                let mut inner = host.lock();
+                refresh_locked(&mut inner);
+                reset_stable_recovery_budget(&mut inner);
+                let now = Instant::now();
+                inner.session.as_mut().and_then(|session| {
+                    if now >= session.next_owner_renewal {
+                        session.next_owner_renewal = now + OWNER_RENEW_INTERVAL;
+                        Some(ControlSession::from(&*session))
+                    } else {
+                        None
                     }
+                })
+            };
+            if let Some(control) = renewal {
+                host.finish_owner_renewal(control);
+                continue;
+            }
+            let should_restart = {
+                let mut inner = host.lock();
+                refresh_locked(&mut inner);
+                reset_stable_recovery_budget(&mut inner);
+                let retry_due = inner
+                    .next_restart_at
+                    .map(|deadline| Instant::now() >= deadline)
+                    .unwrap_or(true);
+                let should = inner.desired
+                    && !inner.stopping
+                    && inner.session.is_none()
+                    && inner.status.state != "starting"
+                    && inner.recovery_budget_used < MAX_RECOVERY_BUDGET
+                    && retry_due;
+                if should {
+                    inner.status.state = "starting".into();
+                    inner.status.recovering = true;
+                } else if inner.recovery_budget_used >= MAX_RECOVERY_BUDGET {
+                    inner.status.recovering = false;
                 }
-                let renewal = {
-                    let mut inner = host.lock();
-                    refresh_locked(&mut inner);
-                    reset_stable_recovery_budget(&mut inner);
-                    let now = Instant::now();
-                    inner.session.as_mut().and_then(|session| {
-                        if now >= session.next_owner_renewal {
-                            session.next_owner_renewal = now + OWNER_RENEW_INTERVAL;
-                            Some(ControlSession::from(&*session))
-                        } else {
-                            None
-                        }
-                    })
-                };
-                if let Some(control) = renewal {
-                    host.finish_owner_renewal(control);
-                    continue;
-                }
-                let should_restart = {
-                    let mut inner = host.lock();
-                    refresh_locked(&mut inner);
-                    reset_stable_recovery_budget(&mut inner);
-                    let retry_due = inner
-                        .next_restart_at
-                        .map(|deadline| Instant::now() >= deadline)
-                        .unwrap_or(true);
-                    let should = inner.desired
-                        && !inner.stopping
-                        && inner.session.is_none()
-                        && inner.status.state != "starting"
-                        && inner.recovery_budget_used < MAX_RECOVERY_BUDGET
-                        && retry_due;
-                    if should {
-                        inner.status.state = "starting".into();
-                        inner.status.recovering = true;
-                    } else if inner.recovery_budget_used >= MAX_RECOVERY_BUDGET {
-                        inner.status.recovering = false;
-                    }
-                    should
-                };
-                if should_restart {
-                    let _ = host.finish_start(true);
-                }
+                should
+            };
+            if should_restart {
+                let _ = host.finish_start(true);
             }
         });
     }
 
-    #[cfg(all(debug_assertions, unix))]
+    #[cfg(unix)]
     fn finish_owner_renewal(&self, control: ControlSession) {
         let result = renew_owner_and_status(&control);
         let mut inner = self.lock();
@@ -874,7 +895,7 @@ impl GoRouteIsolatedHost {
         }
     }
 
-    #[cfg(all(debug_assertions, unix))]
+    #[cfg(unix)]
     fn spawn_oauth_refresh_worker(host: Weak<Self>, control: ControlSession) {
         let worker_session = (control.instance_epoch.clone(), control.owner_term);
         let fallback_host = host.clone();
@@ -910,7 +931,7 @@ impl GoRouteIsolatedHost {
     }
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 struct OAuthRefreshEvent {
     refresh_id: String,
     instance_epoch: String,
@@ -923,13 +944,13 @@ struct OAuthRefreshEvent {
     refresh_kind: String,
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 enum OAuthRefreshCompletion {
     ConfigApplied(String),
     NotRefreshed,
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 #[derive(Default)]
 struct OAuthRefreshWorkerCounters {
     completed: AtomicU64,
@@ -943,7 +964,7 @@ struct OAuthRefreshWorkerCounters {
 /// action for late events from the same generation. Failed waves wake their
 /// current waiters without sealing the key, so a later event may retry. The
 /// registry evicts its oldest idle gates under bounded-memory pressure.
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct OAuthRefreshActionKey {
     instance_epoch: String,
@@ -954,7 +975,7 @@ struct OAuthRefreshActionKey {
     refresh_kind: String,
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 impl From<&OAuthRefreshEvent> for OAuthRefreshActionKey {
     fn from(event: &OAuthRefreshEvent) -> Self {
         Self {
@@ -968,7 +989,7 @@ impl From<&OAuthRefreshEvent> for OAuthRefreshActionKey {
     }
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 #[derive(Default)]
 struct OAuthRefreshActionState {
     running: bool,
@@ -976,34 +997,34 @@ struct OAuthRefreshActionState {
     generation: u64,
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 #[derive(Default)]
 struct OAuthRefreshActionGate {
     state: Mutex<OAuthRefreshActionState>,
     completed: Condvar,
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 #[derive(Default)]
 struct OAuthRefreshActionRegistry {
     gates: HashMap<OAuthRefreshActionKey, Arc<OAuthRefreshActionGate>>,
     fifo: VecDeque<OAuthRefreshActionKey>,
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 #[derive(Default)]
 struct OAuthRefreshActionCoordinator {
     registry: Arc<Mutex<OAuthRefreshActionRegistry>>,
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 enum OAuthRefreshActionRole {
     Sealed,
     Wait(u64),
     Lead(u64),
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 impl OAuthRefreshActionCoordinator {
     fn run_once(
         &self,
@@ -1086,7 +1107,7 @@ impl OAuthRefreshActionCoordinator {
     }
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 fn prune_oauth_refresh_action_gates(registry: &Arc<Mutex<OAuthRefreshActionRegistry>>) {
     let mut registry = registry
         .lock()
@@ -1111,7 +1132,7 @@ fn prune_oauth_refresh_action_gates(registry: &Arc<Mutex<OAuthRefreshActionRegis
     }
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 struct OAuthRefreshActionLeader {
     gate: Arc<OAuthRefreshActionGate>,
     registry: Arc<Mutex<OAuthRefreshActionRegistry>>,
@@ -1119,7 +1140,7 @@ struct OAuthRefreshActionLeader {
     finished: bool,
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 impl OAuthRefreshActionLeader {
     fn finish(&mut self, sealed: bool) {
         {
@@ -1139,7 +1160,7 @@ impl OAuthRefreshActionLeader {
     }
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 impl Drop for OAuthRefreshActionLeader {
     fn drop(&mut self) {
         if !self.finished {
@@ -1148,7 +1169,7 @@ impl Drop for OAuthRefreshActionLeader {
     }
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 #[derive(Default)]
 struct OAuthRefreshQueueState {
     events: VecDeque<OAuthRefreshEvent>,
@@ -1158,7 +1179,7 @@ struct OAuthRefreshQueueState {
     stopped: bool,
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 impl OAuthRefreshQueueState {
     fn prune_completed_refresh_ids(&mut self, now: Instant) {
         loop {
@@ -1179,7 +1200,7 @@ impl OAuthRefreshQueueState {
     }
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 #[derive(Default)]
 struct OAuthRefreshWorkQueue {
     state: Mutex<OAuthRefreshQueueState>,
@@ -1187,7 +1208,7 @@ struct OAuthRefreshWorkQueue {
     space_ready: Condvar,
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 impl OAuthRefreshWorkQueue {
     fn push_for_session(
         &self,
@@ -1293,7 +1314,7 @@ impl OAuthRefreshWorkQueue {
     }
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 fn oauth_refresh_worker(host: Weak<GoRouteIsolatedHost>, control: ControlSession) {
     let queue = Arc::new(OAuthRefreshWorkQueue::default());
     let counters = Arc::new(OAuthRefreshWorkerCounters::default());
@@ -1377,7 +1398,7 @@ fn oauth_refresh_worker(host: Weak<GoRouteIsolatedHost>, control: ControlSession
     }
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 fn process_oauth_refresh_event(
     host: &Weak<GoRouteIsolatedHost>,
     control: &ControlSession,
@@ -1532,7 +1553,7 @@ fn process_oauth_refresh_event(
     }
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 fn current_committed_hash(host: &GoRouteIsolatedHost, control: &ControlSession) -> Option<String> {
     let inner = host.lock();
     let session = inner.session.as_ref()?;
@@ -1549,13 +1570,13 @@ fn current_committed_hash(host: &GoRouteIsolatedHost, control: &ControlSession) 
         .map(|plan| plan.config_hash.clone())
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 enum NextOAuthRefreshError {
     Transport,
     InvalidEvent,
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 fn next_oauth_refresh(
     control: &ControlSession,
 ) -> Result<Option<OAuthRefreshEvent>, NextOAuthRefreshError> {
@@ -1585,7 +1606,7 @@ fn next_oauth_refresh(
         .ok_or(NextOAuthRefreshError::InvalidEvent)
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 fn parse_oauth_refresh_event(value: &Value) -> Option<OAuthRefreshEvent> {
     fn required_string(value: &Value, key: &str) -> Option<String> {
         let value = value.get(key)?.as_str()?;
@@ -1609,7 +1630,7 @@ fn parse_oauth_refresh_event(value: &Value) -> Option<OAuthRefreshEvent> {
     })
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 fn complete_oauth_refresh(
     control: &ControlSession,
     event: &OAuthRefreshEvent,
@@ -1656,7 +1677,7 @@ fn complete_oauth_refresh(
     Ok(())
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 enum CompleteOAuthRefreshError {
     Transport,
     Rejected,
@@ -1705,7 +1726,7 @@ fn refresh_locked(inner: &mut Inner) {
     }
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 fn mark_runtime_unavailable(inner: &mut Inner) {
     inner.recovery_budget_used = inner.recovery_budget_used.saturating_add(1);
     inner.stable_since = None;
@@ -1718,7 +1739,7 @@ fn mark_runtime_unavailable(inner: &mut Inner) {
     inner.next_restart_at = Some(Instant::now() + restart_backoff(inner.recovery_budget_used));
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 fn reset_stable_recovery_budget(inner: &mut Inner) {
     let stable = inner
         .stable_since
@@ -1747,7 +1768,10 @@ fn stop_session(session: &mut Session) {
     );
     while started.elapsed() < GRACEFUL_STOP_WAIT {
         match session.adapterd.try_wait() {
-            Ok(Some(_)) => return,
+            Ok(Some(_)) => {
+                cleanup_scratch_home(&session.home);
+                return;
+            }
             Ok(None) => std::thread::sleep(Duration::from_millis(50)),
             Err(_) => break,
         }
@@ -1759,6 +1783,7 @@ fn stop_session(session: &mut Session) {
 fn terminate_session(session: &mut Session) {
     let _ = session.adapterd.kill();
     let _ = session.adapterd.wait();
+    cleanup_scratch_home(&session.home);
 }
 
 #[cfg(unix)]
@@ -1785,6 +1810,10 @@ fn build_runtime_plan(hub: &AgentHub) -> Result<RuntimePlan, String> {
 #[cfg(unix)]
 fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
     let home = create_scratch_home()?;
+    let scratch_guard = ScratchHomeGuard {
+        home: home.clone(),
+        armed: true,
+    };
     if is_forbidden_user_home(&home) {
         return Err("refusing real user AGENTHUB_HOME".into());
     }
@@ -1802,7 +1831,7 @@ fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
     let bin = resolve_adapterd_bin(scratch_root)?;
     let adapterd_log = home.join("logs/adapterd.stdout.log");
     let mut adapterd = spawn_logged(
-        Command::new(&bin)
+        Command::new(&bin.path)
             .arg("run")
             .arg("--home")
             .arg(&home)
@@ -1831,7 +1860,13 @@ fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
     }
 
     let socket = home.join("run/adapterd.sock");
-    let started = match handshake_start(&home, &socket, plan.port, &plan.config_hash) {
+    let started = match handshake_start(
+        &home,
+        &socket,
+        plan.port,
+        &plan.config_hash,
+        bin.package_version,
+    ) {
         Ok(session) => Session {
             home: session.home,
             socket: session.socket,
@@ -1849,6 +1884,7 @@ fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
             return Err(err);
         }
     };
+    scratch_guard.disarm();
     Ok(started)
 }
 
@@ -1910,6 +1946,7 @@ fn handshake_start(
     socket: &Path,
     fallback_port: u16,
     expected_config_hash: &str,
+    expected_package_version: &str,
 ) -> Result<HandshakeMeta, String> {
     wait_for_socket(socket, Duration::from_secs(8))?;
     let home_s = home.display().to_string();
@@ -1922,12 +1959,15 @@ fn handshake_start(
             "payload": {
                 "protocol_version": PROTOCOL_VERSION,
                 "config_format_version": CONFIG_FORMAT_VERSION,
-                "package_version": PACKAGE_VERSION,
+                "package_version": expected_package_version,
                 "app_data_dir": home_s,
             },
         }),
     )?;
     let hs_payload = require_ok(&hs)?;
+    if hs_payload.get("package_version").and_then(Value::as_str) != Some(expected_package_version) {
+        return Err("Go route package version mismatch".into());
+    }
     let capabilities = hs_payload
         .get("capabilities")
         .and_then(Value::as_array)
@@ -2020,6 +2060,7 @@ fn handshake_start(
     })
 }
 
+#[cfg(unix)]
 fn pick_loopback_port() -> Result<u16, String> {
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|err| err.to_string())?;
     let port = listener.local_addr().map_err(|err| err.to_string())?.port();
@@ -2032,28 +2073,167 @@ fn pick_loopback_port() -> Result<u16, String> {
     Ok(port)
 }
 
+#[cfg(unix)]
 fn create_scratch_home() -> Result<PathBuf, String> {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let root = PathBuf::from("/tmp/agenthub-go-route-isolated")
-        .join(format!("{}-{nanos}", std::process::id()));
+    use std::os::unix::fs::PermissionsExt;
+
+    // Keep the Unix-domain socket comfortably below the macOS path limit.
+    // The per-session directory is still created exclusively with mode 0700.
+    let temp = fs::canonicalize("/tmp").map_err(|err| err.to_string())?;
+    let mut created = None;
+    for attempt in 0..16_u32 {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let candidate = temp.join(format!(
+            "{SCRATCH_ROOT_PREFIX}{}-{nanos}-{attempt}",
+            std::process::id()
+        ));
+        match fs::create_dir(&candidate) {
+            Ok(()) => {
+                if let Err(error) =
+                    fs::set_permissions(&candidate, fs::Permissions::from_mode(0o700))
+                {
+                    let _ = fs::remove_dir(&candidate);
+                    return Err(error.to_string());
+                }
+                if let Err(error) = write_scratch_owner_marker(&candidate, nanos, attempt) {
+                    let _ = fs::remove_dir_all(&candidate);
+                    return Err(error);
+                }
+                created = Some(candidate);
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    let root = created.ok_or_else(|| "could not create isolated runtime directory".to_string())?;
     let home = root.join("home");
-    fs::create_dir_all(home.join("config")).map_err(|err| err.to_string())?;
-    fs::create_dir_all(home.join("run")).map_err(|err| err.to_string())?;
-    fs::create_dir_all(home.join("logs")).map_err(|err| err.to_string())?;
-    let home = fs::canonicalize(&home).map_err(|err| err.to_string())?;
+    if let Err(error) = (|| {
+        fs::create_dir(&home)?;
+        fs::set_permissions(&home, fs::Permissions::from_mode(0o700))?;
+        fs::create_dir(home.join("config"))?;
+        fs::set_permissions(home.join("config"), fs::Permissions::from_mode(0o700))?;
+        fs::create_dir(home.join("run"))?;
+        fs::set_permissions(home.join("run"), fs::Permissions::from_mode(0o700))?;
+        fs::create_dir(home.join("logs"))?;
+        fs::set_permissions(home.join("logs"), fs::Permissions::from_mode(0o700))?;
+        Ok::<(), std::io::Error>(())
+    })() {
+        let _ = fs::remove_dir_all(&root);
+        return Err(error.to_string());
+    }
+    let home = match fs::canonicalize(&home) {
+        Ok(home) => home,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&root);
+            return Err(error.to_string());
+        }
+    };
     if !is_scratch_home(&home) {
-        return Err("scratch home escaped /tmp".into());
+        cleanup_scratch_home(&home);
+        return Err("scratch home escaped the operating-system temp directory".into());
     }
     Ok(home)
 }
 
-fn is_scratch_home(path: &Path) -> bool {
-    path.starts_with("/tmp") || path.starts_with("/var/tmp")
+#[cfg(unix)]
+fn current_euid() -> u32 {
+    // SAFETY: geteuid has no preconditions and does not dereference pointers.
+    unsafe { libc::geteuid() }
 }
 
+#[cfg(unix)]
+fn scratch_marker_contents(pid: u32, nanos: u128, attempt: u32) -> String {
+    format!(
+        "agenthub-go-route-owner-v1\npid={pid}\ncreated_unix_nanos={nanos}\nattempt={attempt}\n"
+    )
+}
+
+#[cfg(unix)]
+fn write_scratch_owner_marker(root: &Path, nanos: u128, attempt: u32) -> Result<(), String> {
+    let marker = root.join(SCRATCH_OWNER_MARKER);
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(&marker)
+        .map_err(|error| error.to_string())?;
+    file.write_all(scratch_marker_contents(std::process::id(), nanos, attempt).as_bytes())
+        .and_then(|()| file.sync_all())
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(unix)]
+fn parse_scratch_root_name(name: &str) -> Option<(u32, u128, u32)> {
+    let mut parts = name.strip_prefix(SCRATCH_ROOT_PREFIX)?.split('-');
+    let pid = parts.next()?.parse::<u32>().ok()?;
+    let nanos = parts.next()?.parse::<u128>().ok()?;
+    let attempt = parts.next()?.parse::<u32>().ok()?;
+    if pid == 0 || pid > i32::MAX as u32 || parts.next().is_some() {
+        return None;
+    }
+    Some((pid, nanos, attempt))
+}
+
+#[cfg(unix)]
+fn validate_scratch_root(root: &Path) -> Option<(u32, SystemTime)> {
+    let temp = fs::canonicalize("/tmp").ok()?;
+    if root.parent() != Some(temp.as_path()) {
+        return None;
+    }
+    let name = root.file_name()?.to_str()?;
+    let (pid, nanos, attempt) = parse_scratch_root_name(name)?;
+    let metadata = fs::symlink_metadata(root).ok()?;
+    if !metadata.file_type().is_dir()
+        || metadata.uid() != current_euid()
+        || metadata.mode() & 0o777 != 0o700
+    {
+        return None;
+    }
+    let marker_path = root.join(SCRATCH_OWNER_MARKER);
+    let mut marker = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(marker_path)
+        .ok()?;
+    let marker_metadata = marker.metadata().ok()?;
+    if !marker_metadata.file_type().is_file()
+        || marker_metadata.uid() != current_euid()
+        || marker_metadata.mode() & 0o777 != 0o600
+        || marker_metadata.nlink() != 1
+        || marker_metadata.len() > 256
+    {
+        return None;
+    }
+    let mut contents = String::new();
+    marker.read_to_string(&mut contents).ok()?;
+    if contents != scratch_marker_contents(pid, nanos, attempt) {
+        return None;
+    }
+    Some((pid, marker_metadata.modified().ok()?))
+}
+
+#[cfg(unix)]
+fn scratch_root_for_home(path: &Path) -> Option<PathBuf> {
+    let resolved = fs::canonicalize(path).ok()?;
+    if resolved.file_name().and_then(|name| name.to_str()) != Some("home") {
+        return None;
+    }
+    let root = resolved.parent()?.to_path_buf();
+    validate_scratch_root(&root)?;
+    Some(root)
+}
+
+#[cfg(unix)]
+fn is_scratch_home(path: &Path) -> bool {
+    scratch_root_for_home(path).is_some()
+}
+
+#[cfg(unix)]
 fn is_forbidden_user_home(path: &Path) -> bool {
     let Ok(user_home) = std::env::var("HOME") else {
         return false;
@@ -2064,38 +2244,192 @@ fn is_forbidden_user_home(path: &Path) -> bool {
     resolved == real || resolved.starts_with(&real)
 }
 
-fn resolve_adapterd_bin(scratch_root: &Path) -> Result<PathBuf, String> {
+#[cfg(unix)]
+fn cleanup_scratch_home(home: &Path) {
+    let Some(root) = scratch_root_for_home(home) else {
+        return;
+    };
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[cfg(unix)]
+fn process_is_alive(pid: u32) -> bool {
+    // SAFETY: kill(pid, 0) performs permission/existence checking only.
+    let result = unsafe { libc::kill(pid as i32, 0) };
+    if result == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+}
+
+#[cfg(unix)]
+fn cleanup_stale_scratch_roots() {
+    let Ok(temp) = fs::canonicalize("/tmp") else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(&temp) else {
+        return;
+    };
+    let now = SystemTime::now();
+    for entry in entries.flatten() {
+        let root = entry.path();
+        let Some((pid, created)) = validate_scratch_root(&root) else {
+            continue;
+        };
+        let old_enough = now
+            .duration_since(created)
+            .is_ok_and(|age| age >= STALE_SCRATCH_MIN_AGE);
+        if !old_enough || process_is_alive(pid) {
+            continue;
+        }
+        // Revalidate immediately before removal; remove_dir_all on Unix does
+        // not follow a root symlink, and only our exact marker/name contract
+        // is eligible.
+        if validate_scratch_root(&root).is_some() {
+            let _ = fs::remove_dir_all(root);
+        }
+    }
+}
+
+#[cfg(unix)]
+fn sha256_file(file: &mut fs::File) -> Result<String, String> {
+    file.seek(SeekFrom::Start(0))
+        .map_err(|_| "bundled Go route could not be verified".to_string())?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|_| "bundled Go route could not be verified".to_string())?;
+        if count == 0 {
+            break;
+        }
+        digest.update(&buffer[..count]);
+    }
+    file.seek(SeekFrom::Start(0))
+        .map_err(|_| "bundled Go route could not be verified".to_string())?;
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+#[cfg(unix)]
+fn bundled_adapterd(scratch_root: &Path) -> Result<ResolvedAdapterd, String> {
+    use std::os::unix::fs::PermissionsExt;
+
+    if BUNDLED_SHA256.len() != 64 || EMBEDDED_BUNDLED_VERSION != BUNDLED_PACKAGE_VERSION {
+        return Err("bundled Go route identity is unavailable".into());
+    }
+    let exe = std::env::current_exe()
+        .map_err(|_| "bundled Go route location is unavailable".to_string())?;
+    let directory = exe
+        .parent()
+        .ok_or_else(|| "bundled Go route location is unavailable".to_string())?;
+    let source_path = directory.join("agenthub-adapterd");
+    let mut source = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(&source_path)
+        .map_err(|_| "bundled Go route is unavailable".to_string())?;
+    let source_metadata = source
+        .metadata()
+        .map_err(|_| "bundled Go route is unavailable".to_string())?;
+    let source_uid = source_metadata.uid();
+    if !source_metadata.file_type().is_file()
+        || (source_uid != current_euid() && source_uid != 0)
+        || source_metadata.mode() & 0o022 != 0
+    {
+        return Err("bundled Go route is unavailable".into());
+    }
+    if sha256_file(&mut source)? != BUNDLED_SHA256 {
+        return Err("bundled Go route integrity check failed".into());
+    }
+
+    let dest_dir = scratch_root.join("bin");
+    fs::create_dir(&dest_dir)
+        .and_then(|()| fs::set_permissions(&dest_dir, fs::Permissions::from_mode(0o700)))
+        .map_err(|_| "bundled Go route staging failed".to_string())?;
+    let dest_path = dest_dir.join("agenthub-adapterd");
+    let mut dest = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .mode(0o500)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(&dest_path)
+        .map_err(|_| "bundled Go route staging failed".to_string())?;
+    std::io::copy(&mut source, &mut dest)
+        .and_then(|_| dest.sync_all())
+        .and_then(|()| dest.set_permissions(fs::Permissions::from_mode(0o500)))
+        .map_err(|_| "bundled Go route staging failed".to_string())?;
+    let dest_metadata = dest
+        .metadata()
+        .map_err(|_| "bundled Go route staging failed".to_string())?;
+    if !dest_metadata.file_type().is_file()
+        || dest_metadata.uid() != current_euid()
+        || dest_metadata.mode() & 0o777 != 0o500
+        || dest_metadata.nlink() != 1
+        || sha256_file(&mut dest)? != BUNDLED_SHA256
+    {
+        return Err("bundled Go route staged integrity check failed".into());
+    }
+    drop(dest);
+    drop(source);
+    Ok(ResolvedAdapterd {
+        path: dest_path,
+        package_version: BUNDLED_PACKAGE_VERSION,
+    })
+}
+
+#[cfg(unix)]
+fn resolve_adapterd_bin(_scratch_root: &Path) -> Result<ResolvedAdapterd, String> {
+    #[cfg(debug_assertions)]
     if let Ok(raw) = std::env::var("AGENTHUB_ADAPTERD_BIN") {
         let path = PathBuf::from(raw);
         if path.is_file() {
-            return Ok(path);
+            return Ok(ResolvedAdapterd {
+                path,
+                package_version: ISOLATED_DEV_PACKAGE_VERSION,
+            });
         }
     }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let sibling = dir.join("agenthub-adapterd");
-            if sibling.is_file() {
-                return Ok(sibling);
-            }
+
+    if BUNDLED_SHA256.len() == 64 {
+        #[cfg(not(debug_assertions))]
+        return bundled_adapterd(_scratch_root);
+        #[cfg(debug_assertions)]
+        if let Ok(bundled) = bundled_adapterd(_scratch_root) {
+            return Ok(bundled);
         }
     }
-    let src = find_adapterd_src()?;
-    let dest_dir = scratch_root.join("bin");
-    fs::create_dir_all(&dest_dir).map_err(|err| err.to_string())?;
-    let dest = dest_dir.join("agenthub-adapterd");
-    let status = Command::new("go")
-        .arg("build")
-        .arg("-o")
-        .arg(&dest)
-        .current_dir(&src)
-        .status()
-        .map_err(|err| format!("go build: {err}"))?;
-    if !status.success() {
-        return Err("go build agenthub-adapterd failed".into());
+
+    #[cfg(not(debug_assertions))]
+    return Err("bundled Go route identity is unavailable".into());
+
+    #[cfg(debug_assertions)]
+    {
+        let src = find_adapterd_src()?;
+        let dest_dir = _scratch_root.join("bin");
+        fs::create_dir_all(&dest_dir).map_err(|err| err.to_string())?;
+        let dest = dest_dir.join("agenthub-adapterd");
+        let status = Command::new("go")
+            .arg("build")
+            .arg("-trimpath")
+            .arg("-buildvcs=false")
+            .arg("-o")
+            .arg(&dest)
+            .current_dir(&src)
+            .status()
+            .map_err(|err| format!("go build: {err}"))?;
+        if !status.success() {
+            return Err("go build agenthub-adapterd failed".into());
+        }
+        Ok(ResolvedAdapterd {
+            path: dest,
+            package_version: ISOLATED_DEV_PACKAGE_VERSION,
+        })
     }
-    Ok(dest)
 }
 
+#[cfg(all(unix, debug_assertions))]
 fn find_adapterd_src() -> Result<PathBuf, String> {
     let mut candidates =
         vec![PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../go/agenthub-adapterd")];
@@ -2119,6 +2453,7 @@ fn find_adapterd_src() -> Result<PathBuf, String> {
     Err("go/agenthub-adapterd source not found".into())
 }
 
+#[cfg(unix)]
 fn spawn_logged(cmd: &mut Command, log_path: &Path) -> Result<Child, String> {
     let file = OpenOptions::new()
         .create(true)
@@ -2242,7 +2577,7 @@ fn session_status(session: &ControlSession) -> Result<Value, String> {
     Ok(require_ok(&reply)?.clone())
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 fn required_reload_ack_matches(
     status: &Value,
     expected_hash: &str,
@@ -2255,7 +2590,7 @@ fn required_reload_ack_matches(
         && status.get("listen_ready").and_then(Value::as_bool) == Some(true)
 }
 
-#[cfg(all(debug_assertions, unix))]
+#[cfg(unix)]
 fn renew_owner_and_status(session: &ControlSession) -> Result<Value, String> {
     let renewal = post_control(
         &session.socket,

@@ -85,6 +85,12 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Setup Go
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version-file: go/agenthub-adapterd/go.mod
+          cache-dependency-path: go/agenthub-adapterd/go.mod
+
       - name: Rust cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -142,6 +148,9 @@ jobs:
 
       - name: Run frontend tests
         run: pnpm test
+
+      - name: Check Go route runtime
+        run: pnpm test:go-route
 
       - name: Run Rust workspace tests
         shell: bash
@@ -253,6 +262,12 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Setup Go
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version-file: go/agenthub-adapterd/go.mod
+          cache-dependency-path: go/agenthub-adapterd/go.mod
+
       - name: Rust cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -277,6 +292,20 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri:build -- --locked
+
+      - name: Verify staged Windows Go route
+        shell: pwsh
+        run: |
+          pnpm check:go-sidecar
+          $staged = 'target\release\agenthub-adapterd.exe'
+          if (-not (Test-Path -LiteralPath $staged -PathType Leaf)) {
+            throw 'Tauri did not stage agenthub-adapterd.exe beside the desktop executable.'
+          }
+          $manifest = Get-Content -LiteralPath 'src-tauri\binaries\agenthub-adapterd-x86_64-pc-windows-msvc.exe.json' -Raw | ConvertFrom-Json
+          $actual = (Get-FileHash -LiteralPath $staged -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $manifest.sha256) {
+            throw 'The staged Windows Go route does not match its embedded identity.'
+          }
 
       - name: Collect signed Windows artifacts
         shell: pwsh
@@ -357,6 +386,12 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Setup Go
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version-file: go/agenthub-adapterd/go.mod
+          cache-dependency-path: go/agenthub-adapterd/go.mod
+
       - name: Rust cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -384,6 +419,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri:build -- --locked
+
+      - name: Verify staged macOS Go route
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm check:go-sidecar
+          test -x target/release/agenthub-adapterd
+          cmp -s src-tauri/binaries/agenthub-adapterd-aarch64-apple-darwin target/release/agenthub-adapterd
 
       - name: Collect signed macOS artifacts
         shell: bash
@@ -493,6 +536,12 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Setup Go
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version-file: go/agenthub-adapterd/go.mod
+          cache-dependency-path: go/agenthub-adapterd/go.mod
+
       - name: Rust cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -529,11 +578,19 @@ jobs:
           # When the key is present (same secret as Windows/macOS), also emit .sig.
           if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
             echo "TAURI_SIGNING_PRIVATE_KEY is set; building signed Linux updater artifacts."
-            pnpm tauri build --bundles deb,appimage -- --locked
+            pnpm tauri:build --bundles deb,appimage -- --locked
           else
             echo "TAURI_SIGNING_PRIVATE_KEY is unset; building unsigned Linux installers."
             pnpm tauri:build:linux -- --locked
           fi
+
+      - name: Verify staged Linux Go route
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm check:go-sidecar
+          test -x target/release/agenthub-adapterd
+          cmp -s src-tauri/binaries/agenthub-adapterd-x86_64-unknown-linux-gnu target/release/agenthub-adapterd
 
       - name: Collect Linux artifacts
         shell: bash

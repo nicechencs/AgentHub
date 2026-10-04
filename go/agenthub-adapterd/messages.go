@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -57,10 +58,26 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 		writeMessagesError(w, http.StatusUnauthorized, "invalid_api_key", "Invalid local bearer token.", "invalid_request_error")
 		return
 	}
+	if !rt.tryAcquireRequestSlot() {
+		w.Header().Set("Retry-After", "1")
+		writeMessagesError(w, http.StatusServiceUnavailable, "route_busy", "The local route is busy. Try again shortly.", "api_error")
+		return
+	}
+	defer rt.releaseRequestSlot()
+	rt.addInFlight(1)
+	defer rt.addInFlight(-1)
 
-	body, err := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+	body, err := readStrictRequestBody(w, r, rt.httpPolicy.IngressBodyBytes)
 	if err != nil {
+		if errors.Is(err, errBodyTooLarge) {
+			writeMessagesError(w, http.StatusRequestEntityTooLarge, "request_too_large", "The request body is too large.", "invalid_request_error")
+			return
+		}
 		writeMessagesError(w, http.StatusBadRequest, "invalid_request", "Unable to read request body.", "invalid_request_error")
+		return
+	}
+	if !isJSONObject(body) {
+		writeMessagesError(w, http.StatusBadRequest, "invalid_request", "The request body must be a JSON object.", "invalid_request_error")
 		return
 	}
 	var meta struct {
@@ -83,10 +100,10 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 
-	rt.addInFlight(1)
-	defer rt.addInFlight(-1)
-
-	client := newUpstreamHTTPClient()
+	client := rt.upstreamClient
+	if client == nil {
+		client = newUpstreamHTTPClient()
+	}
 	excluded := make([]string, 0, 4)
 	var lastStatus int
 	var lastHeader http.Header
@@ -134,28 +151,49 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 			}
 			pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
 			excluded = append(excluded, member.ID)
+			hasLast = true
+			lastStatus = http.StatusBadGateway
+			lastHeader = make(http.Header)
+			lastBody = safeUpstreamErrorBody()
+			lastStream = false
 			continue
 		}
 		if resp.StatusCode == http.StatusUnauthorized && !refreshUsed && member.RefreshKind != refreshNone {
 			refreshUsed = true
+			_ = resp.Body.Close()
 			if refreshed := rt.requestOAuthRefresh(r.Context(), edge.ID, member); refreshed != nil && refreshed.member.serves(model, time.Now()) {
-				_ = resp.Body.Close()
 				pool = refreshed.pool
 				retryMember = refreshed.member
 				continue
 			}
 		}
+		if resp.StatusCode >= 300 {
+			_ = resp.Body.Close()
+			class := classifyHTTP(resp.StatusCode)
+			if shouldFailover(class, false) {
+				pool.ReportFailure(member.ID, model, class, parseRetryAfter(resp.Header.Get("Retry-After")), time.Now())
+				excluded = append(excluded, member.ID)
+				hasLast = true
+				lastStatus = resp.StatusCode
+				lastHeader = safeConvertedHeaders(resp.Header)
+				lastBody = safeUpstreamErrorBody()
+				lastStream = false
+				continue
+			}
+			writeSafeUpstreamResponse(w, resp.StatusCode, resp.Header)
+			return
+		}
 
 		if memberStream {
 			if convertChatResponse {
-				outcome := dispatchConvertedChatStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast)
+				outcome := dispatchConvertedChatStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy)
 				lastStream = false
 				if outcome == dispatchContinue {
 					continue
 				}
 				return
 			}
-			outcome := dispatchMemberStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast)
+			outcome := dispatchMemberStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy)
 			lastStream = true
 			if outcome == dispatchContinue {
 				continue
@@ -163,7 +201,13 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 			return
 		}
 
-		respBody, readErr := io.ReadAll(resp.Body)
+		respBody, readErr := readBoundedResponseBody(
+			r.Context(),
+			resp,
+			rt.httpPolicy.NonStreamBodyBytes,
+			rt.httpPolicy.NonStreamIdleTimeout,
+			rt.httpPolicy.NonStreamTotalTimeout,
+		)
 		_ = resp.Body.Close()
 		if readErr != nil {
 			if r.Context().Err() != nil {
@@ -171,30 +215,26 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 			}
 			pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
 			excluded = append(excluded, member.ID)
-			continue
-		}
-		class := classifyHTTP(resp.StatusCode)
-		if shouldFailover(class, false) {
-			pool.ReportFailure(member.ID, model, class, parseRetryAfter(resp.Header.Get("Retry-After")), time.Now())
-			excluded = append(excluded, member.ID)
 			hasLast = true
-			lastStatus = resp.StatusCode
-			lastHeader = resp.Header.Clone()
-			if convertChatResponse {
-				lastBody = convertedResponsesErrorBody()
-			} else {
-				lastBody = respBody
-			}
+			lastStatus = http.StatusBadGateway
+			lastHeader = make(http.Header)
+			lastBody = safeUpstreamErrorBody()
 			lastStream = false
 			continue
 		}
-		if convertChatResponse && resp.StatusCode >= 400 {
-			writeClientResponse(w, resp.StatusCode, safeConvertedHeaders(resp.Header), convertedResponsesErrorBody(), false)
-			return
+		if !isJSONMediaType(resp.Header.Get("Content-Type")) || !isJSONObject(respBody) {
+			pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
+			excluded = append(excluded, member.ID)
+			hasLast = true
+			lastStatus = http.StatusBadGateway
+			lastHeader = make(http.Header)
+			lastBody = safeUpstreamErrorBody()
+			lastStream = false
+			continue
 		}
 		if convertChatResponse {
 			translated, translateErr := translateChatJSONToResponses(respBody)
-			if translateErr != nil {
+			if translateErr != nil || int64(len(translated)) > rt.httpPolicy.NonStreamBodyBytes {
 				pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
 				excluded = append(excluded, member.ID)
 				hasLast = true
@@ -207,9 +247,7 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 			respBody = translated
 			resp.Header.Set("Content-Type", "application/json")
 		}
-		if resp.StatusCode < 400 {
-			pool.ReportSuccess(member.ID)
-		}
+		pool.ReportSuccess(member.ID)
 		writeClientResponse(w, resp.StatusCode, resp.Header, respBody, false)
 		return
 	}
@@ -227,6 +265,7 @@ func dispatchConvertedChatStream(
 	lastHeader *http.Header,
 	lastBody *[]byte,
 	hasLast *bool,
+	policy routeHTTPSafetyPolicy,
 ) int {
 	defer resp.Body.Close()
 	class := classifyHTTP(resp.StatusCode)
@@ -243,12 +282,21 @@ func dispatchConvertedChatStream(
 		writeClientResponse(w, resp.StatusCode, safeConvertedHeaders(resp.Header), convertedResponsesErrorBody(), false)
 		return dispatchDone
 	}
+	if !isEventStreamMediaType(resp.Header.Get("Content-Type")) {
+		pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
+		*excluded = append(*excluded, member.ID)
+		*hasLast = true
+		*lastStatus = http.StatusBadGateway
+		*lastHeader = make(http.Header)
+		*lastBody = safeUpstreamErrorBody()
+		return dispatchContinue
+	}
 
 	translator := newChatToResponsesSSE(model)
 	streamCtx, cancelStream := context.WithCancel(r.Context())
 	defer cancelStream()
-	lines := scanConvertedSSELines(streamCtx, resp.Body)
-	idle := time.NewTimer(convertedSSEIdleTimeout)
+	lines := scanConvertedSSELines(streamCtx, resp.Body, policy.SSEBodyBytes)
+	idle := time.NewTimer(policy.SSEIdleTimeout)
 	defer idle.Stop()
 	dataLines := make([]string, 0, 2)
 	committed := false
@@ -259,6 +307,7 @@ func dispatchConvertedChatStream(
 			pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
 			failure := translator.fail()
 			if len(failure) > 0 {
+				refreshDownstreamWriteDeadline(w, policy.DownstreamWriteTimeout)
 				_, _ = w.Write(failure)
 				if flusher, ok := w.(http.Flusher); ok {
 					flusher.Flush()
@@ -291,9 +340,9 @@ func dispatchConvertedChatStream(
 				default:
 				}
 			}
-			idle.Reset(convertedSSEIdleTimeout)
+			idle.Reset(policy.SSEIdleTimeout)
 			upstreamBytes += len(item.line) + 1
-			if upstreamBytes > convertedSSELimitBytes {
+			if int64(upstreamBytes) > policy.SSEBodyBytes {
 				_ = resp.Body.Close()
 				return failStream()
 			}
@@ -305,17 +354,18 @@ func dispatchConvertedChatStream(
 					return failStream()
 				}
 				if len(translated) > 0 {
-					if outputBytes+len(translated) > convertedSSELimitBytes {
+					if int64(outputBytes+len(translated)) > policy.SSEBodyBytes {
 						_ = resp.Body.Close()
 						return failStream()
 					}
 					if !committed {
 						committed = true
 						pool.ReportSuccess(member.ID)
-						copyUpstreamHeaders(w.Header(), resp.Header)
-						w.Header().Set("Content-Type", "text/event-stream")
+						refreshDownstreamWriteDeadline(w, policy.DownstreamWriteTimeout)
+						setSafeSuccessHeaders(w.Header(), true)
 						w.WriteHeader(http.StatusOK)
 					}
+					refreshDownstreamWriteDeadline(w, policy.DownstreamWriteTimeout)
 					if _, writeErr := w.Write(translated); writeErr != nil {
 						return dispatchDone
 					}
@@ -334,22 +384,21 @@ func dispatchConvertedChatStream(
 	}
 }
 
-const (
-	convertedSSELimitBytes  = 32 * 1_048_576
-	convertedSSEIdleTimeout = 30 * time.Second
-)
-
 type convertedSSELine struct {
 	line string
 	err  error
 }
 
-func scanConvertedSSELines(ctx context.Context, body io.Reader) <-chan convertedSSELine {
+func scanConvertedSSELines(ctx context.Context, body io.Reader, maxBytes int64) <-chan convertedSSELine {
 	lines := make(chan convertedSSELine, 1)
 	go func() {
 		defer close(lines)
 		scanner := bufio.NewScanner(body)
-		scanner.Buffer(make([]byte, 64*1024), convertedSSELimitBytes+1)
+		maxToken := int(maxBytes + 1)
+		if maxToken < 64*1024 {
+			maxToken = 64 * 1024
+		}
+		scanner.Buffer(make([]byte, 64*1024), maxToken)
 		for scanner.Scan() {
 			select {
 			case lines <- convertedSSELine{line: scanner.Text()}:
@@ -370,15 +419,12 @@ func scanConvertedSSELines(ctx context.Context, body io.Reader) <-chan converted
 }
 
 func convertedResponsesErrorBody() []byte {
-	return []byte(`{"error":{"code":"upstream_error","message":"The upstream response could not be used.","type":"api_error"}}`)
+	return safeUpstreamErrorBody()
 }
 
 func safeConvertedHeaders(source http.Header) http.Header {
 	header := make(http.Header)
-	if retryAfter := source.Get("Retry-After"); retryAfter != "" {
-		header.Set("Retry-After", retryAfter)
-	}
-	header.Set("Content-Type", "application/json")
+	setSafeErrorHeaders(header, source)
 	return header
 }
 
@@ -399,56 +445,49 @@ func dispatchMemberStream(
 	lastHeader *http.Header,
 	lastBody *[]byte,
 	hasLast *bool,
+	policy routeHTTPSafetyPolicy,
 ) int {
 	defer resp.Body.Close()
-	peek := make([]byte, 4096)
-	n, peekErr := resp.Body.Read(peek)
-	if r.Context().Err() != nil {
-		return dispatchDone
-	}
 	class := classifyHTTP(resp.StatusCode)
 	if shouldFailover(class, false) {
 		pool.ReportFailure(member.ID, model, class, parseRetryAfter(resp.Header.Get("Retry-After")), time.Now())
 		*excluded = append(*excluded, member.ID)
 		*hasLast = true
 		*lastStatus = resp.StatusCode
-		*lastHeader = resp.Header.Clone()
-		*lastBody = append([]byte(nil), peek[:n]...)
+		*lastHeader = safeConvertedHeaders(resp.Header)
+		*lastBody = safeUpstreamErrorBody()
 		return dispatchContinue
 	}
-	if n == 0 && peekErr != nil && peekErr != io.EOF {
-		if r.Context().Err() != nil {
-			return dispatchDone
-		}
-		pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
-		*excluded = append(*excluded, member.ID)
-		return dispatchContinue
-	}
-	if resp.StatusCode < 400 {
-		pool.ReportSuccess(member.ID)
-	}
-	copyUpstreamHeaders(w.Header(), resp.Header)
-	if w.Header().Get("Content-Type") == "" {
-		w.Header().Set("Content-Type", "text/event-stream")
-	}
-	w.WriteHeader(resp.StatusCode)
-	if n > 0 {
-		if _, err := w.Write(peek[:n]); err != nil {
-			return dispatchDone
-		}
-		if flusher, ok := w.(http.Flusher); ok {
-			flusher.Flush()
-		}
-	}
-	if peekErr == io.EOF {
+	if resp.StatusCode >= 300 {
+		writeSafeUpstreamResponse(w, resp.StatusCode, resp.Header)
 		return dispatchDone
 	}
-	copySSE(w, resp.Body)
-	return dispatchDone
+	committed, relayErr := relayBoundedSSE(w, r, resp, policy)
+	if relayErr == nil {
+		pool.ReportSuccess(member.ID)
+		return dispatchDone
+	}
+	if r.Context().Err() != nil || errors.Is(relayErr, errDownstreamWrite) {
+		return dispatchDone
+	}
+	pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
+	if committed {
+		writeSafeSSETermination(w)
+		return dispatchDone
+	}
+	*excluded = append(*excluded, member.ID)
+	*hasLast = true
+	*lastStatus = http.StatusBadGateway
+	*lastHeader = make(http.Header)
+	*lastBody = safeUpstreamErrorBody()
+	return dispatchContinue
 }
 
 func doMemberMessages(ctx context.Context, client *http.Client, member *PoolMember, upstreamPath string, body []byte, stream bool) (*http.Response, error) {
 	upstream := joinUpstreamPath(member.UpstreamBaseURL, upstreamPath)
+	if err := validateFinalUpstreamURL(upstream, member.UpstreamTransport); err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstream, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -466,14 +505,6 @@ func doMemberMessages(ctx context.Context, client *http.Client, member *PoolMemb
 		req.Header.Set("Authorization", "Bearer "+member.UpstreamKey)
 	}
 	return client.Do(req)
-}
-
-func newUpstreamHTTPClient() *http.Client {
-	return &http.Client{
-		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
 }
 
 func joinUpstreamPath(base, endpoint string) string {
@@ -513,6 +544,7 @@ func (rt *Runtime) handleModels(w http.ResponseWriter, r *http.Request) {
 		data = append(data, map[string]string{"id": id, "object": "model"})
 	}
 	w.Header().Set("Content-Type", "application/json")
+	refreshDownstreamWriteDeadline(w, rt.httpPolicy.DownstreamWriteTimeout)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"object": "list",
 		"data":   data,
@@ -550,6 +582,7 @@ func (rt *Runtime) handleHealth(w http.ResponseWriter, r *http.Request) {
 		healthyCount = snap.HealthyMemberCount
 	}
 	w.Header().Set("Content-Type", "application/json")
+	refreshDownstreamWriteDeadline(w, rt.httpPolicy.DownstreamWriteTimeout)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"listen_ready":         listenReady,
 		"member_count":         memberCount,
@@ -566,6 +599,7 @@ func bearerToken(header string) string {
 }
 
 func writeMessagesError(w http.ResponseWriter, status int, code, message, typ string) {
+	refreshDownstreamWriteDeadline(w, defaultRouteHTTPSafetyPolicy.DownstreamWriteTimeout)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -577,47 +611,17 @@ func writeMessagesError(w http.ResponseWriter, status int, code, message, typ st
 	})
 }
 
-func copyUpstreamHeaders(dst, src http.Header) {
-	for k, vs := range src {
-		if strings.EqualFold(k, "Content-Length") || strings.EqualFold(k, "Authorization") {
-			continue
-		}
-		for _, v := range vs {
-			dst.Add(k, v)
-		}
-	}
-}
-
 func writeClientResponse(w http.ResponseWriter, status int, header http.Header, body []byte, stream bool) {
-	copyUpstreamHeaders(w.Header(), header)
-	if w.Header().Get("Content-Type") == "" {
-		if stream {
-			w.Header().Set("Content-Type", "text/event-stream")
-		} else {
-			w.Header().Set("Content-Type", "application/json")
-		}
+	refreshDownstreamWriteDeadline(w, defaultRouteHTTPSafetyPolicy.DownstreamWriteTimeout)
+	if status >= 300 {
+		setSafeErrorHeaders(w.Header(), header)
+		body = safeUpstreamErrorBody()
+		stream = false
+	} else {
+		setSafeSuccessHeaders(w.Header(), stream)
 	}
 	w.WriteHeader(status)
 	if len(body) > 0 {
 		_, _ = w.Write(body)
-	}
-}
-
-func copySSE(w http.ResponseWriter, r io.Reader) {
-	flusher, _ := w.(http.Flusher)
-	buf := make([]byte, 4096)
-	for {
-		n, err := r.Read(buf)
-		if n > 0 {
-			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
-				return
-			}
-			if flusher != nil {
-				flusher.Flush()
-			}
-		}
-		if err != nil {
-			return
-		}
 	}
 }

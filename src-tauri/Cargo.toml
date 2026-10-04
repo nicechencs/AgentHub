@@ -16,6 +16,9 @@ path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
 
 [dependencies]
 agenthub-core = { workspace = true }
@@ -25,6 +28,7 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 base64 = { workspace = true }
 urlencoding = { workspace = true }
+libc = { workspace = true }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"

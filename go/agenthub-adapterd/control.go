@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -35,7 +35,11 @@ func (rt *Runtime) ServeControl(ctx context.Context) error {
 	})
 	srv := &http.Server{
 		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
+		ReadHeaderTimeout: rt.httpPolicy.ServerReadHeaderTimeout,
+		ReadTimeout:       rt.httpPolicy.ServerReadTimeout,
+		WriteTimeout:      rt.httpPolicy.ControlWriteTimeout,
+		IdleTimeout:       rt.httpPolicy.ServerIdleTimeout,
+		MaxHeaderBytes:    rt.httpPolicy.MaxHeaderBytes,
 	}
 	go func() {
 		<-ctx.Done()
@@ -59,8 +63,12 @@ func (rt *Runtime) serveControlHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	raw, err := readStrictRequestBody(w, r, rt.httpPolicy.ControlBodyBytes)
 	if err != nil {
+		if errors.Is(err, errBodyTooLarge) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "unable to read body", http.StatusBadRequest)
 		return
 	}

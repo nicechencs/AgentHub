@@ -18,6 +18,10 @@ These slices prove, in an isolated scratch directory:
   including Responses ingress translated to a controlled OpenAI-compatible
   Chat upstream. The configured edge selects the protocol; the runner does
   not guess Codex versus Grok from the request body.
+- bounded HTTP resources: strict 8 MiB request and 32 MiB response/SSE limits,
+  a 16-request admission limit, upstream phase timeouts, SSE idle timeout, and
+  safe response/error headers that never relay cookies, redirects, auth
+  challenges, or raw upstream error bodies
 
 `Start` is the product control name for this isolated slice. It does not write
 real agent config, refuses the product default port `43121` and real
@@ -37,6 +41,11 @@ routes that use an API Key and the exact official
 query/fragment data, other ports, encoded paths, and redirects. The isolated
 probes do not call the real Anthropic service. Responses-to-Chat conversion is
 loopback-only until exact Kimi / OpenAI HTTPS addresses are added separately.
+The final joined request URL is validated again immediately before dispatch.
+The outbound client does not follow redirects and shares a bounded connection
+pool. Successful JSON responses must be JSON media types containing valid JSON;
+successful streams must be `text/event-stream`. Errors, redirects, malformed
+responses, and responses over the limit use a synthetic local error body.
 
 `ActivateProbeListen` remains a probe-only shortcut with the same listen start.
 It is not the default gateway.
@@ -49,6 +58,17 @@ go test ./...
 go build -o bin/agenthub-adapterd .
 ```
 
+Desktop release builds run `pnpm build:go-sidecar` and stage the target-specific
+binary through Tauri `externalBin`. The build manifest, desktop version, and
+SHA-256 are embedded in the GUI. On Unix, the supervisor opens that bundled
+file without following symlinks, verifies it, copies it into the current 0700
+scratch session, verifies the 0500 private copy again, and executes only that
+copy. This makes the isolated supervisor usable from a packaged Unix build;
+it still requires an explicit start and still refuses the default gateway
+port. Windows packages carry the binary for release completeness, but the
+supervisor remains unavailable until a protected Windows control transport is
+implemented.
+
 ## Isolated probe
 
 From the repository root (creates an absolute scratch tree under `/tmp`, never
@@ -60,6 +80,8 @@ scripts/route-runtime-probe/pool-isolated.sh
 scripts/route-runtime-probe/protocols-isolated.sh
 scripts/route-runtime-probe/existing-flow-isolated.sh
 scripts/route-runtime-probe/config-stream-isolated.sh
+scripts/route-runtime-probe/http-safety-isolated.sh
+scripts/route-runtime-probe/packaged-sidecar-security-isolated.sh
 ```
 
 The scripts list every data/config/log path before start, check they stay
@@ -67,7 +89,18 @@ under scratch, then verify handshake, status, process up, Messages JSON/SSE,
 pool scheduling, Responses and Chat Completions, entry isolation, both upstream
 authentication modes, cancel, graceful drain, Stop, and process down. The
 existing-flow probe passes its runtime configuration through stdin rather than
-writing API keys to disk.
+writing API keys to disk. The HTTP-safety probe uses a malicious loopback
+fixture to verify request/response/SSE limits, error and redirect sanitizing,
+the production non-stream and SSE idle timeouts, the 16-request admission limit,
+slot reuse after cancellation or rejection, and log redaction. Its two production
+idle checks take about one minute. Set `AGENTHUB_HTTP_SAFETY_LONG_PROBE=1` to
+also exercise the two-minute non-stream total timeout with a continuous slow
+drip. The shortened timeout cases and downstream write deadline remain covered
+by Go tests rather than pretending the real production durations elapsed.
+The packaged-sidecar security probe runs a real non-root GUI against a
+root-owned test copy, replaces the original path after it has been opened, and
+confirms that only the verified private copy executes. It also checks that
+stale-session cleanup removes only strictly owned and marked scratch roots.
 
 ## Run the daemon yourself
 
