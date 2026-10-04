@@ -209,6 +209,9 @@ SOURCE_FINGERPRINT="$(
     find "${ROOT}/go/agenthub-adapterd" -maxdepth 1 -type f -name '*.go' -print0 \
       | sort -z \
       | xargs -0 sha256sum
+    find "${ROOT}/crates/agenthub-core/src" -type f -name '*.rs' -print0 \
+      | sort -z \
+      | xargs -0 sha256sum
   } | sha256sum | awk '{print $1}'
 )"
 
@@ -262,9 +265,15 @@ assert evidence["persisted_pool_enrolled"] and evidence["persisted_pool_member_m
 assert evidence["persisted_pool_ingress_key_matches_request"], evidence
 assert evidence["http_status"] == 200 and evidence["upstream_marker_seen"], evidence
 assert evidence["responses_conversion_seen"] and evidence["codex_bytes_restored"], evidence
-assert evidence["original_provider_restored_current"], evidence
+assert evidence["restore_pointers_committed_with_switch"], evidence
+assert evidence["restore_backup_is_completed_auto_switch"], evidence
+assert evidence["bridge_rollback_preserved_legacy_snapshot"], evidence
+assert evidence["original_provider_deleted_before_unbind"], evidence
+assert evidence["deleted_provider_not_resurrected"], evidence
+assert evidence["original_provider_absent_after_unbind"], evidence
 assert evidence["generated_profile_removed"] and evidence["generated_provider_removed"], evidence
 assert evidence["rust_listener_stopped"] and evidence["go_port_released"], evidence
+assert evidence["go_required_reload_ack_count_after_delete"] == evidence["go_required_reload_ack_count_before_delete"] + 1, evidence
 assert evidence["go_required_reload_ack_count_after_unbind"] == evidence["go_required_reload_ack_count_before_unbind"] + 1, evidence
 assert evidence["go_state_after_unbind"] == "ready" and evidence["go_port_stable_after_reload"], evidence
 assert evidence["go_member_count_before_unbind"] >= 1 and evidence["go_healthy_member_count_before_unbind"] >= 1, evidence

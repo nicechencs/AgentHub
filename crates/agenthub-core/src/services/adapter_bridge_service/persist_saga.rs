@@ -48,6 +48,20 @@ fn provider_to_non_current_input(provider: &Provider) -> ProviderInput {
     }
 }
 
+fn preserve_first_bind_restore_meta(input: &mut ProviderInput, existing: Option<&Provider>) {
+    let Some(meta) = input.meta.as_object_mut() else {
+        return;
+    };
+    let Some(existing) = existing.and_then(|provider| provider.meta.as_object()) else {
+        return;
+    };
+    for key in ["previousCurrentId", "previousBackupId"] {
+        if let Some(value) = existing.get(key).cloned() {
+            meta.insert(key.into(), value);
+        }
+    }
+}
+
 /// Refresh live only if the generated loopback is already current.
 pub fn should_make_bridge_current(generated_was_current: bool) -> bool {
     generated_was_current
@@ -81,7 +95,8 @@ impl AdapterBridgeService {
                     .map_err(|error| map_persist_err("create_adapter_bridge_provider", error))?;
                 (true, Some(provider))
             }
-            AdapterBridgeProviderProjection::Update(input) => {
+            AdapterBridgeProviderProjection::Update(mut input) => {
+                preserve_first_bind_restore_meta(&mut input, snapshot.generated.as_ref());
                 let provider = providers
                     .update_with_guard(core_guard, &input)
                     .map_err(|error| map_persist_err("update_adapter_bridge_provider", error))?;
@@ -97,44 +112,13 @@ impl AdapterBridgeService {
             .unwrap_or(false);
         let should_switch = should_make_bridge_current(generated_was_current);
 
-        let previous_current_id = snapshot
-            .current_provider
-            .as_ref()
-            .map(|provider| provider.id.as_str())
-            .filter(|id| *id != provider_id.as_str());
         let provider = if should_switch {
             match providers.switch_with_guard(
                 core_guard,
                 &provider_id,
                 prepared.profile().target_agent_id,
             ) {
-                Ok(result) => {
-                    let backup_id = result.backup.as_ref().map(|backup| backup.id.as_str());
-                    match providers.persist_first_bind_restore_meta_with_guard(
-                        core_guard,
-                        &result.provider,
-                        previous_current_id,
-                        backup_id,
-                    ) {
-                        Ok(provider) => provider.redacted(),
-                        Err(error) => {
-                            let rollback = self.rollback_bridge_projection(
-                                providers,
-                                core_guard,
-                                &provider_id,
-                                snapshot,
-                                created,
-                                should_switch,
-                                prepared.profile().target_agent_id,
-                            );
-                            return Err(composite_saga_error(
-                                "persist_adapter_bridge_restore_meta",
-                                map_persist_err("persist_adapter_bridge_restore_meta", error),
-                                rollback,
-                            ));
-                        }
-                    }
-                }
+                Ok(result) => result.provider.redacted(),
                 Err(error) => {
                     let rollback = self.rollback_bridge_projection(
                         providers,
@@ -251,7 +235,7 @@ impl AdapterBridgeService {
 
         if let Some(old_current) = &snapshot.current_provider {
             if providers
-                .switch_with_guard(core_guard, &old_current.id, target_agent)
+                .switch_for_compensation_with_guard(core_guard, &old_current.id, target_agent)
                 .is_err()
             {
                 failed = true;

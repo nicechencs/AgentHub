@@ -5,36 +5,25 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"time"
 )
 
 func (rt *Runtime) ServeControl(ctx context.Context) error {
-	if err := os.RemoveAll(rt.controlSocket); err != nil {
-		return fmt.Errorf("remove old control socket: %w", err)
-	}
-	ln, err := net.Listen("unix", rt.controlSocket)
+	ln, cleanup, err := rt.openControlListener()
 	if err != nil {
-		return fmt.Errorf("listen control socket: %w", err)
+		return err
 	}
-	if err := os.Chmod(rt.controlSocket, 0o600); err != nil {
-		_ = ln.Close()
-		return fmt.Errorf("chmod control socket: %w", err)
-	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/control", rt.serveControlHTTP)
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
+	defer cleanup()
+	if rt.controlNetwork == "tcp4" {
+		if _, err := fmt.Fprintf(os.Stdout, "agenthub-adapterd control listener: tcp4 %s\n", rt.controlAddress); err != nil {
+			_ = ln.Close()
+			return fmt.Errorf("report TCP control endpoint: %w", err)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(fmt.Sprintf(`{"ok":true,"pid":%d}`, os.Getpid())))
-	})
+	}
 	srv := &http.Server{
-		Handler:           mux,
+		Handler:           rt.controlHTTPHandler(),
 		ReadHeaderTimeout: rt.httpPolicy.ServerReadHeaderTimeout,
 		ReadTimeout:       rt.httpPolicy.ServerReadTimeout,
 		WriteTimeout:      rt.httpPolicy.ControlWriteTimeout,
@@ -47,14 +36,28 @@ func (rt *Runtime) ServeControl(ctx context.Context) error {
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 		_ = ln.Close()
-		_ = os.Remove(rt.controlSocket)
+		cleanup()
 	}()
-	rt.logf("control socket listening at %s", rt.controlSocket)
+	rt.logf("control listener ready using %s", rt.controlNetwork)
 	err = srv.Serve(ln)
 	if err == http.ErrServerClosed {
 		return nil
 	}
 	return err
+}
+
+func (rt *Runtime) controlHTTPHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/control", rt.serveControlHTTP)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"ok":true,"pid":%d}`, os.Getpid())))
+	})
+	return rt.authenticatedControlHandler(mux)
 }
 
 func (rt *Runtime) serveControlHTTP(w http.ResponseWriter, r *http.Request) {

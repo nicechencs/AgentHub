@@ -11,7 +11,6 @@ use agenthub_core::models::{
     ProviderSwitchResult, SwitchConfirmPreview,
 };
 use agenthub_core::presets;
-use agenthub_core::services::adapter_projection::generated_provider_is_adapter_owned;
 use agenthub_core::services::provider_identity::{normalize_base_url, normalize_provider_base_url};
 use agenthub_core::utils::redact::{api_key_secret, mask_secret_tail};
 use agenthub_core::utils::secret_merge::merge_preserving_secrets;
@@ -111,10 +110,20 @@ pub async fn delete_provider(
     provider_id: String,
 ) -> Result<(), String> {
     let agent = parse_agent(&agent_id)?;
+    delete_provider_state_inner(&state, agent, provider_id).await
+}
+
+pub(crate) async fn delete_provider_state_inner(
+    state: &AppState,
+    agent: AgentId,
+    provider_id: String,
+) -> Result<(), String> {
     let hub = state.hub_arc()?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     let deleted = with_hub_blocking(hub, move |hub| {
-        delete_provider_inner(hub, &agent_id, &provider_id)
+        hub.providers()
+            .delete(&provider_id, agent)
+            .map_err(|e| map_err_string("delete_provider", e))
     })
     .await;
     finish_go_route_string_write_result(&state, deleted).await
@@ -329,13 +338,6 @@ fn upsert_provider_inner(hub: &AgentHub, mut input: ProviderInput) -> Result<Pro
     Ok(saved.redacted())
 }
 
-fn delete_provider_inner(hub: &AgentHub, agent_id: &str, provider_id: &str) -> Result<(), String> {
-    let agent = parse_agent(agent_id)?;
-    hub.providers()
-        .delete(provider_id, agent)
-        .map_err(|e| map_err_string("delete_provider", e))
-}
-
 fn import_provider_live_inner(
     hub: &AgentHub,
     agent_id: &str,
@@ -375,26 +377,8 @@ fn switch_provider_for_agent_inner(
     let guard = providers
         .begin_live_saga(agent)
         .map_err(|e| map_err_string("switch_provider", e))?;
-    let target = providers
-        .get(id_or_name, Some(agent))
-        .map_err(|e| map_err_string("switch_provider", e))?;
-    if generated_provider_is_adapter_owned(&target) {
-        let current = providers
-            .get_current(agent)
-            .map_err(|e| map_err_string("switch_provider", e))?;
-        if let Some(previous) = current.as_ref().filter(|row| row.id != target.id) {
-            providers
-                .persist_first_bind_restore_meta_with_guard(
-                    &guard,
-                    &target,
-                    Some(&previous.id),
-                    None,
-                )
-                .map_err(|e| map_err_string("switch_provider", e))?;
-        }
-    }
     let result = providers
-        .switch_with_guard(&guard, &target.id, agent)
+        .switch_with_guard(&guard, id_or_name, agent)
         .map_err(|e| map_err_string("switch_provider", e))?;
     invalidate_runtime_catalogs(hub);
     Ok(result.redacted())

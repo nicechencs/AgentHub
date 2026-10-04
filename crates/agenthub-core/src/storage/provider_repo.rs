@@ -336,6 +336,7 @@ impl ProviderRepo {
                 agent,
                 expected_target_updated_at,
                 updated_at,
+                None,
             )
         })
     }
@@ -744,6 +745,7 @@ pub(crate) fn select_current_conn(
     agent: AgentId,
     expected_target_updated_at: &str,
     updated_at: &str,
+    target_meta: Option<&serde_json::Value>,
 ) -> Result<Provider> {
     let target = get_by_id_conn(conn, target_id)?
         .ok_or_else(|| AppError::NotFound(format!("provider not found: {target_id}")))?;
@@ -764,10 +766,18 @@ pub(crate) fn select_current_conn(
         "UPDATE providers SET is_current = 0, updated_at = ?2 WHERE agent_id = ?1 AND is_current != 0",
         params![agent.as_str(), updated_at],
     )?;
-    let changed = conn.execute(
-        "UPDATE providers SET is_current = 1, updated_at = ?3 WHERE id = ?1 AND agent_id = ?2",
-        params![target_id, agent.as_str(), updated_at],
-    )?;
+    let changed = if let Some(meta) = target_meta {
+        let meta = serde_json::to_string(meta)?;
+        conn.execute(
+            "UPDATE providers SET is_current = 1, meta = ?3, updated_at = ?4 WHERE id = ?1 AND agent_id = ?2",
+            params![target_id, agent.as_str(), meta, updated_at],
+        )?
+    } else {
+        conn.execute(
+            "UPDATE providers SET is_current = 1, updated_at = ?3 WHERE id = ?1 AND agent_id = ?2",
+            params![target_id, agent.as_str(), updated_at],
+        )?
+    };
     if changed != 1 {
         return Err(AppError::message(
             "db.provider",

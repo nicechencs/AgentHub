@@ -20,14 +20,17 @@ type Runtime struct {
 	mu          sync.Mutex
 	lifecycleMu sync.Mutex
 
-	home          string
-	listenHost    string
-	listenPort    int
-	actualPort    int
-	controlSocket string
-	pidFile       string
-	logFile       string
-	logger        *log.Logger
+	home           string
+	listenHost     string
+	listenPort     int
+	actualPort     int
+	controlSocket  string
+	controlNetwork string
+	controlAddress string
+	controlToken   string
+	pidFile        string
+	logFile        string
+	logger         *log.Logger
 
 	instanceID    string
 	instanceEpoch string
@@ -75,6 +78,25 @@ type idempotentEntry struct {
 const maxControlIdempotencyEntries = 4096
 
 func NewRuntime(home string, listenPort int, controlSocket string, cancel context.CancelFunc) (*Runtime, error) {
+	return newRuntime(home, listenPort, controlSocket, true, cancel)
+}
+
+func NewTCPRuntime(home string, listenPort int, controlAddress, controlToken string, cancel context.CancelFunc) (*Runtime, error) {
+	normalizedAddress, err := validateTCPControl(controlAddress, controlToken)
+	if err != nil {
+		return nil, err
+	}
+	rt, err := newRuntime(home, listenPort, "", false, cancel)
+	if err != nil {
+		return nil, err
+	}
+	rt.controlNetwork = "tcp4"
+	rt.controlAddress = normalizedAddress
+	rt.controlToken = controlToken
+	return rt, nil
+}
+
+func newRuntime(home string, listenPort int, controlSocket string, validateUnixControl bool, cancel context.CancelFunc) (*Runtime, error) {
 	abs, err := resolveAbsolute(home)
 	if err != nil {
 		return nil, err
@@ -107,14 +129,16 @@ func NewRuntime(home string, listenPort int, controlSocket string, cancel contex
 	if controlSocket == "" {
 		controlSocket = defaultControlSocket(abs)
 	}
-	if !filepath.IsAbs(controlSocket) {
-		return nil, fmt.Errorf("control socket must be absolute")
-	}
-	if err := assertSocketPathLength(controlSocket); err != nil {
-		return nil, err
-	}
-	if !isUnderRoot(controlSocket, abs) && !isScratchHome(filepath.Dir(controlSocket)) {
-		return nil, fmt.Errorf("control socket must stay under scratch AGENTHUB_HOME")
+	if validateUnixControl {
+		if !filepath.IsAbs(controlSocket) {
+			return nil, fmt.Errorf("control socket must be absolute")
+		}
+		if err := assertSocketPathLength(controlSocket); err != nil {
+			return nil, err
+		}
+		if !isUnderRoot(controlSocket, abs) && !isScratchHome(filepath.Dir(controlSocket)) {
+			return nil, fmt.Errorf("control socket must stay under scratch AGENTHUB_HOME")
+		}
 	}
 
 	logPath := defaultLogFile(abs)
@@ -129,6 +153,8 @@ func NewRuntime(home string, listenPort int, controlSocket string, cancel contex
 		listenHost:        "127.0.0.1",
 		listenPort:        listenPort,
 		controlSocket:     controlSocket,
+		controlNetwork:    "unix",
+		controlAddress:    controlSocket,
 		pidFile:           defaultPIDFile(abs),
 		logFile:           logPath,
 		logger:            logger,
@@ -147,8 +173,11 @@ func NewRuntime(home string, listenPort int, controlSocket string, cancel contex
 
 func (rt *Runtime) Home() string          { return rt.home }
 func (rt *Runtime) ControlSocket() string { return rt.controlSocket }
-func (rt *Runtime) PIDFile() string       { return rt.pidFile }
-func (rt *Runtime) LogFile() string       { return rt.logFile }
+func (rt *Runtime) ControlEndpoint() (string, string) {
+	return rt.controlNetwork, rt.controlAddress
+}
+func (rt *Runtime) PIDFile() string { return rt.pidFile }
+func (rt *Runtime) LogFile() string { return rt.logFile }
 
 func (rt *Runtime) SetRuntimeConfig(config *RuntimeConfig) error {
 	return rt.replaceRuntimeConfig(config, "", false)
@@ -388,7 +417,7 @@ func (rt *Runtime) handleHandshake(env Envelope) Reply {
 		ConfigFormatVersion: configFormatVersion,
 		PackageVersion:      packageVersion,
 		ExtensionID:         extensionID,
-		Capabilities:        handshakeCapabilities,
+		Capabilities:        rt.handshakeCapabilities(),
 		Active:              nil,
 		Prepared:            nil,
 	}

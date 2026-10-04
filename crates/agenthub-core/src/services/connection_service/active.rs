@@ -101,6 +101,27 @@ impl ConnectionService {
         updated_at: &str,
         undo: Option<(&str, Option<&str>)>,
     ) -> Result<(Provider, ActiveBinding)> {
+        self.activate_provider_with_restore_meta_and_undo(
+            agent,
+            provider_id,
+            expected_updated_at,
+            updated_at,
+            None,
+            undo,
+        )
+    }
+
+    /// Same as [`Self::activate_provider_with_undo`], atomically replacing the
+    /// target metadata when first-bind restore pointers are initialized.
+    pub fn activate_provider_with_restore_meta_and_undo(
+        &self,
+        agent: AgentId,
+        provider_id: &str,
+        expected_updated_at: &str,
+        updated_at: &str,
+        target_meta: Option<&serde_json::Value>,
+        undo: Option<(&str, Option<&str>)>,
+    ) -> Result<(Provider, ActiveBinding)> {
         self.db.with_conn(|conn| {
             let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
             let provider = provider_select_current_conn(
@@ -109,6 +130,7 @@ impl ConnectionService {
                 agent,
                 expected_updated_at,
                 updated_at,
+                target_meta,
             )?;
             account_clear_current_conn(&tx, agent)?;
             let binding = binding_set_connection_refs_conn(

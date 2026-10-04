@@ -65,9 +65,12 @@ file without following symlinks, verifies it, copies it into the current 0700
 scratch session, verifies the 0500 private copy again, and executes only that
 copy. This makes the isolated supervisor usable from a packaged Unix build;
 it still requires an explicit start and still refuses the default gateway
-port. Windows packages carry the binary for release completeness, but the
-supervisor remains unavailable until a protected Windows control transport is
-implemented.
+port. The Go process also has an authenticated `127.0.0.1` TCP control
+transport that atomically selects its port and limits active connections. It
+has run on Linux and cross-compiles for Windows amd64/arm64. The Windows
+desktop supervisor remains unavailable until the token moves from the child
+environment to an inherited FD/handle and the complete lifecycle passes on a
+Windows machine.
 
 ## Isolated probe
 
@@ -82,6 +85,8 @@ scripts/route-runtime-probe/existing-flow-isolated.sh
 scripts/route-runtime-probe/config-stream-isolated.sh
 scripts/route-runtime-probe/http-safety-isolated.sh
 scripts/route-runtime-probe/packaged-sidecar-security-isolated.sh
+scripts/route-runtime-probe/control-tcp-isolated.sh
+scripts/route-runtime-probe/bind-go-e2e-isolated.sh
 ```
 
 The scripts list every data/config/log path before start, check they stay
@@ -101,6 +106,11 @@ The packaged-sidecar security probe runs a real non-root GUI against a
 root-owned test copy, replaces the original path after it has been opened, and
 confirms that only the verified private copy executes. It also checks that
 stale-session cleanup removes only strictly owned and marked scratch roots.
+The TCP-control probe checks authentication before request processing, a
+child-selected port, the connection ceiling, hot reload, command-line and file
+secret scans, graceful stop, and port release. The bind probe exercises the
+desktop `plan` / `bind` / provider switch / delete / `unbind` path, including
+backup restoration after the original provider row has been deleted.
 
 ## Run the daemon yourself
 
@@ -110,7 +120,11 @@ stale-session cleanup removes only strictly owned and marked scratch roots.
 
 Control channel: Unix domain socket at `$AGENTHUB_HOME/run/adapterd.sock`
 (Linux). POST JSON envelopes to `http://localhost/control` with
-`curl --unix-socket`.
+`curl --unix-socket`. The alternate TCP control starts only with
+`--control-listen 127.0.0.1:0` and a canonical 256-bit base64url token in
+`AGENTHUB_ADAPTERD_CONTROL_TOKEN`; the child reports its selected endpoint on
+stdout after binding. This transport is for the desktop supervisor and the
+isolated probe, not a user-facing network API.
 
 ```bash
 export AGENTHUB_HOME=/tmp/agenthub-route-runtime-probe/manual/home
@@ -141,7 +155,8 @@ formats.
 
 Non-allowlisted external upstreams, live/default gateway cutover, real
 `~/.agenthub` reads/writes, combined desktop-to-Agent configuration
-write/recovery, Windows control transport, plugin SDK/ABI, and stages E/F.
+write/recovery, Windows desktop supervisor integration and real execution,
+plugin SDK/ABI, and stages E/F.
 Eligible Go members can request an official-login refresh from the desktop
 controller and retry once, but the isolated probes use synthetic logins and do
 not call a real external service or use a real API Key.

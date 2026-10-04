@@ -13,14 +13,17 @@ use std::time::{Duration, Instant};
 
 use agenthub_core::adapter_control::AdapterControl;
 use agenthub_core::models::{
-    AdapterRoute, AdapterSourceKind, AgentId, ProviderInput, RouteDownstreamSurface,
-    TicketBindingRoute,
+    AdapterRoute, AdapterSourceKind, AgentId, BackupKind, Provider, ProviderInput,
+    RouteDownstreamSurface, TicketBindingRoute,
 };
+use agenthub_core::AgentHub;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::commands::adapter::{bind_ticket_inner, plan_ticket_inner, unbind_ticket_inner};
-use crate::commands::provider::{import_provider_live_state_inner, switch_provider_state_inner};
+use crate::commands::provider::{
+    delete_provider_state_inner, import_provider_live_state_inner, switch_provider_state_inner,
+};
 use crate::state::AppState;
 
 const SOURCE_ID: &str = "probe-openai-codex";
@@ -157,6 +160,41 @@ async fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
             != config_before,
         "generated provider switch did not change Codex config",
     )?;
+    let stored_generated = hub
+        .providers()
+        .get_by_id(&generated_provider_id)
+        .map_err(|error| format!("read generated provider restore metadata: {error}"))?
+        .ok_or_else(|| "generated provider missing after switch".to_string())?;
+    ensure(
+        stored_generated
+            .meta
+            .get("previousCurrentId")
+            .and_then(Value::as_str)
+            == Some(original_provider.id.as_str()),
+        "generated provider did not atomically preserve the previous current provider",
+    )?;
+    let previous_backup_id = stored_generated
+        .meta
+        .get("previousBackupId")
+        .and_then(Value::as_str)
+        .filter(|id| !id.trim().is_empty())
+        .ok_or_else(|| "generated provider did not preserve a previous backup".to_string())?;
+    let previous_backup = hub
+        .backups()
+        .get_by_id(previous_backup_id)
+        .map_err(|error| format!("read generated provider restore backup: {error}"))?;
+    ensure(
+        previous_backup.agent_id == Some(AgentId::Codex)
+            && previous_backup.kind == BackupKind::AutoSwitch
+            && !previous_backup.files.is_empty(),
+        "generated provider restore backup was not a completed Codex switch snapshot",
+    )?;
+    probe_bridge_rollback_preserves_legacy_snapshot(
+        &hub,
+        &stored_generated,
+        &codex_config,
+        &codex_auth,
+    )?;
 
     let request_token = binding_token(&state, &profile_id).await?;
     let listener_pools = hub
@@ -229,7 +267,6 @@ async fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     };
-    let reload_ack_count_before = go_host.probe_required_reload_ack_count();
     let response = post_go(go_port, request_token)?;
     ensure(response.0 == 200, "Go request did not return HTTP 200")?;
     let response_json: Value = serde_json::from_str(&response.1)
@@ -242,6 +279,21 @@ async fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
     ensure(
         response_output_texts(&response_json).any(|text| text == UPSTREAM_MARKER),
         "Go Responses output did not contain the upstream marker",
+    )?;
+
+    let reload_ack_count_before_delete = go_host.probe_required_reload_ack_count();
+    delete_provider_state_inner(&state, AgentId::Codex, original_provider.id.clone()).await?;
+    ensure(
+        hub.providers()
+            .get_by_id(&original_provider.id)
+            .map_err(|error| format!("verify original provider deletion: {error}"))?
+            .is_none(),
+        "original provider still existed before unbind",
+    )?;
+    let reload_ack_count_before = go_host.probe_required_reload_ack_count();
+    ensure(
+        reload_ack_count_before == reload_ack_count_before_delete + 1,
+        "original provider deletion did not complete exactly one required Go reload acknowledgement",
     )?;
 
     unbind_ticket_inner(&state, ticket_id, AgentId::Codex)
@@ -262,11 +314,17 @@ async fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
     let restored_current = hub
         .providers()
         .get_current(AgentId::Codex)
-        .map_err(|error| format!("read restored current provider: {error}"))?
-        .ok_or_else(|| "unbind did not restore a current Codex provider".to_string())?;
+        .map_err(|error| format!("read current provider after backup restore: {error}"))?;
     ensure(
-        restored_current.id == original_provider.id && restored_current.is_current,
-        "unbind did not restore the original current Codex provider",
+        restored_current.is_none(),
+        "unbind resurrected a deleted provider or retained the generated current provider",
+    )?;
+    ensure(
+        hub.providers()
+            .get_by_id(&original_provider.id)
+            .map_err(|error| format!("query deleted provider after unbind: {error}"))?
+            .is_none(),
+        "unbind restored the deleted provider row from backup",
     )?;
     ensure(
         hub.route_pools()
@@ -329,6 +387,9 @@ async fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
         "rule_id": plan.analysis.rule_id,
         "first_bind_active": false,
         "generated_provider_switched_current": true,
+        "restore_pointers_committed_with_switch": true,
+        "restore_backup_is_completed_auto_switch": true,
+        "bridge_rollback_preserved_legacy_snapshot": true,
         "persisted_pool_enrolled": true,
         "persisted_pool_member_matches_source": true,
         "persisted_pool_ingress_key_matches_request": true,
@@ -342,12 +403,16 @@ async fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
         "upstream_marker_seen": true,
         "responses_conversion_seen": true,
         "codex_bytes_restored": true,
-        "original_provider_restored_current": true,
+        "original_provider_deleted_before_unbind": true,
+        "deleted_provider_not_resurrected": true,
+        "original_provider_absent_after_unbind": true,
         "generated_profile_removed": true,
         "generated_provider_removed": true,
         "rust_listener_stopped": true,
         "go_state_after_unbind": go_after_unbind.state,
         "go_unbind_reload_outcome": unbind_reload_outcome,
+        "go_required_reload_ack_count_before_delete": reload_ack_count_before_delete,
+        "go_required_reload_ack_count_after_delete": reload_ack_count_before,
         "go_required_reload_ack_count_before_unbind": reload_ack_count_before,
         "go_required_reload_ack_count_after_unbind": reload_ack_count_after,
         "go_hash_after_unbind": go_hash_after,
@@ -356,6 +421,104 @@ async fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
         "go_stopped": true,
         "go_port_released": true,
     }))
+}
+
+fn probe_bridge_rollback_preserves_legacy_snapshot(
+    hub: &AgentHub,
+    generated: &Provider,
+    codex_config: &Path,
+    codex_auth: &Path,
+) -> ProbeResult<()> {
+    let providers = hub.providers();
+    let guard = providers
+        .begin_live_saga(AgentId::Codex)
+        .map_err(|error| format!("begin bridge rollback probe: {error}"))?;
+
+    // Reproduce a legacy adapter-owned current row without first-bind
+    // pointers. A failed refresh must restore this exact metadata instead of
+    // initializing it from the failed projection snapshot.
+    let mut legacy = generated.clone();
+    let legacy_meta = legacy
+        .meta
+        .as_object_mut()
+        .ok_or_else(|| "generated provider metadata was not an object".to_string())?;
+    legacy_meta.remove("previousCurrentId");
+    legacy_meta.remove("previousBackupId");
+    legacy.is_current = true;
+    let legacy = providers
+        .update_with_guard(&guard, &provider_input(&legacy))
+        .map_err(|error| format!("prepare legacy bridge rollback snapshot: {error}"))?;
+    let config_before = fs::read(codex_config)
+        .map_err(|error| format!("read bridge rollback Codex config: {error}"))?;
+    let auth_before = fs::read(codex_auth)
+        .map_err(|error| format!("read bridge rollback Codex auth: {error}"))?;
+    let snapshot = hub
+        .adapter_bridge()
+        .capture_provider_snapshot(providers, &guard, Some(&generated.id), AgentId::Codex)
+        .map_err(|error| format!("capture bridge rollback snapshot: {error}"))?;
+
+    let mut failed_projection = legacy.clone();
+    failed_projection.is_current = false;
+    failed_projection
+        .meta
+        .as_object_mut()
+        .ok_or_else(|| "legacy provider metadata was not an object".to_string())?
+        .insert("probeFailedProjection".into(), json!(true));
+    providers
+        .update_with_guard(&guard, &provider_input(&failed_projection))
+        .map_err(|error| format!("stage failed bridge projection: {error}"))?;
+    hub.adapter_bridge()
+        .rollback_bridge_projection(
+            providers,
+            &guard,
+            &generated.id,
+            &snapshot,
+            false,
+            true,
+            AgentId::Codex,
+        )
+        .map_err(|code| format!("bridge rollback compensation failed: {code}"))?;
+
+    let restored = providers
+        .get_by_id(&generated.id)
+        .map_err(|error| format!("read compensated bridge provider: {error}"))?
+        .ok_or_else(|| "bridge rollback removed the generated provider".to_string())?;
+    ensure(
+        restored.is_current && restored.meta == legacy.meta,
+        "bridge rollback did not restore legacy generated metadata/current exactly",
+    )?;
+    ensure(
+        fs::read(codex_config)
+            .map_err(|error| format!("read compensated Codex config: {error}"))?
+            == config_before,
+        "bridge rollback did not restore Codex config bytes exactly",
+    )?;
+    ensure(
+        fs::read(codex_auth).map_err(|error| format!("read compensated Codex auth: {error}"))?
+            == auth_before,
+        "bridge rollback did not restore Codex auth bytes exactly",
+    )?;
+
+    // Return the main probe to the successfully switched first-bind state so
+    // the later delete + unbind leg still proves backup fallback.
+    let restored_first_bind = providers
+        .update_with_guard(&guard, &provider_input(generated))
+        .map_err(|error| format!("restore first-bind probe state: {error}"))?;
+    ensure(
+        restored_first_bind.is_current && restored_first_bind.meta == generated.meta,
+        "bridge rollback probe could not restore first-bind state",
+    )
+}
+
+fn provider_input(provider: &Provider) -> ProviderInput {
+    ProviderInput {
+        id: provider.id.clone(),
+        agent_id: provider.agent_id,
+        name: provider.name.clone(),
+        settings_config: provider.settings_config.clone(),
+        meta: provider.meta.clone(),
+        is_current: provider.is_current,
+    }
 }
 
 struct ProbePaths {

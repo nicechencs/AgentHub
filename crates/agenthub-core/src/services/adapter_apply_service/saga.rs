@@ -1,5 +1,3 @@
-use serde_json::json;
-
 use crate::error::{AppError, Result};
 use crate::models::{
     AdapterApplyRequest, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
@@ -252,12 +250,7 @@ impl AdapterApplyService {
             live_config,
             created,
         };
-        stamp_previous_restore_meta(
-            &mut spec.provider.meta,
-            previous_current.as_ref(),
-            &spec.provider_id,
-            existing.as_ref(),
-        );
+        preserve_previous_restore_meta(&mut spec.provider.meta, existing.as_ref());
 
         // Create/repair the pool row before switch; the switched provider is
         // returned from switch_with_guard below.
@@ -288,27 +281,7 @@ impl AdapterApplyService {
             &spec.provider_id,
             spec.target_agent,
         ) {
-            Ok(result) => {
-                if let Some(backup_id) = result.backup.as_ref().map(|backup| backup.id.as_str()) {
-                    if let Err(error) =
-                        self.persist_previous_backup_id(&saga_guard, &result.provider, backup_id)
-                    {
-                        if self
-                            .compensate_apply(
-                                &saga_guard,
-                                &spec.provider_id,
-                                spec.target_agent,
-                                &snapshot,
-                            )
-                            .is_err()
-                        {
-                            return Err(self.fail_rollback_incomplete(profile));
-                        }
-                        return Err(self.fail_profile(profile, &error));
-                    }
-                }
-                result.provider
-            }
+            Ok(result) => result.provider,
             Err(error) => {
                 if self
                     .compensate_apply(&saga_guard, &spec.provider_id, spec.target_agent, &snapshot)
@@ -468,31 +441,6 @@ impl AdapterApplyService {
             ));
         }
         Ok(())
-    }
-
-    pub(super) fn persist_previous_backup_id(
-        &self,
-        saga_guard: &ProviderLiveSagaGuard<'_>,
-        provider: &Provider,
-        backup_id: &str,
-    ) -> Result<Provider> {
-        let already = provider
-            .meta
-            .get(PREVIOUS_BACKUP_ID)
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .is_some_and(|id| !id.is_empty());
-        if already {
-            // First-bind snapshot wins. Later repair/re-switch must not
-            // replace it with a leftover 本机路由 projection.
-            return Ok(provider.clone());
-        }
-        let mut input = provider_input(provider);
-        let Some(meta) = input.meta.as_object_mut() else {
-            return Ok(provider.clone());
-        };
-        meta.insert(PREVIOUS_BACKUP_ID.into(), json!(backup_id));
-        self.providers.update_with_guard(saga_guard, &input)
     }
 
     pub(super) fn restore_previous_binding(

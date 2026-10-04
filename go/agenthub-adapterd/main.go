@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -19,7 +20,12 @@ const runtimeConfigRejectedMessage = "agenthub-adapterd: runtime config rejected
 const maxConsecutiveRuntimeConfigRejections = 8
 
 func main() {
+	controlToken, controlTokenPresent := consumeControlTokenEnvironment()
 	if len(os.Args) > 1 && os.Args[1] == "mock-upstream" {
+		if controlTokenPresent {
+			fmt.Fprintln(os.Stderr, "mock-upstream: control authentication is not accepted in fixture mode")
+			os.Exit(2)
+		}
 		fs := flag.NewFlagSet("mock-upstream", flag.ExitOnError)
 		listen := fs.String("listen", "127.0.0.1:0", "loopback listen address for the fixture upstream")
 		_ = fs.Parse(os.Args[2:])
@@ -38,6 +44,7 @@ func main() {
 	home := fs.String("home", os.Getenv("AGENTHUB_HOME"), "absolute scratch AGENTHUB_HOME")
 	listenPort := fs.Int("listen-port", envInt("AGENTHUB_ADAPTERD_LISTEN_PORT", 0), "loopback Messages port (0 = ephemeral; not the product default)")
 	controlSocket := fs.String("control-socket", os.Getenv("AGENTHUB_ADAPTERD_CONTROL_SOCKET"), "absolute unix control socket (default $AGENTHUB_HOME/run/adapterd.sock)")
+	controlListen := fs.String("control-listen", os.Getenv("AGENTHUB_ADAPTERD_CONTROL_LISTEN"), "authenticated TCP control address (production requires 127.0.0.1:0)")
 	runtimeConfigStdin := fs.Bool("runtime-config-stdin", false, "read one route-config.v0-isolated JSON value from stdin")
 	runtimeConfigStdinStream := fs.Bool("runtime-config-stdin-stream", false, "read length-framed route configs from stdin and accept atomic updates")
 	fs.Usage = func() {
@@ -54,6 +61,19 @@ func main() {
 	}
 	if *runtimeConfigStdin && *runtimeConfigStdinStream {
 		fmt.Fprintln(os.Stderr, "agenthub-adapterd: choose one runtime config stdin mode")
+		os.Exit(2)
+	}
+	tcpControl := strings.TrimSpace(*controlListen) != ""
+	if tcpControl && strings.TrimSpace(*controlSocket) != "" {
+		fmt.Fprintln(os.Stderr, "agenthub-adapterd: choose one control transport")
+		os.Exit(2)
+	}
+	if tcpControl != controlTokenPresent || (!tcpControl && controlToken != "") {
+		fmt.Fprintln(os.Stderr, "agenthub-adapterd: TCP control requires its dedicated environment token")
+		os.Exit(2)
+	}
+	if tcpControl && strings.TrimSpace(*controlListen) != "127.0.0.1:0" {
+		fmt.Fprintln(os.Stderr, "agenthub-adapterd: TCP control must let the child bind 127.0.0.1:0")
 		os.Exit(2)
 	}
 
@@ -78,7 +98,13 @@ func main() {
 		}
 	}
 
-	rt, err := NewRuntime(*home, *listenPort, *controlSocket, cancel)
+	var rt *Runtime
+	var err error
+	if tcpControl {
+		rt, err = NewTCPRuntime(*home, *listenPort, *controlListen, controlToken, cancel)
+	} else {
+		rt, err = NewRuntime(*home, *listenPort, *controlSocket, cancel)
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "agenthub-adapterd: %v\n", err)
 		os.Exit(1)
@@ -98,7 +124,10 @@ func main() {
 	}
 
 	fmt.Fprintf(os.Stdout, "agenthub-adapterd home: %s\n", rt.Home())
-	fmt.Fprintf(os.Stdout, "agenthub-adapterd control socket: %s\n", rt.ControlSocket())
+	controlNetwork, controlAddress := rt.ControlEndpoint()
+	if controlNetwork == "unix" {
+		fmt.Fprintf(os.Stdout, "agenthub-adapterd control socket: %s\n", controlAddress)
+	}
 	fmt.Fprintf(os.Stdout, "agenthub-adapterd pid: %d\n", os.Getpid())
 	fmt.Fprintf(os.Stdout, "agenthub-adapterd log: %s\n", rt.LogFile())
 	fmt.Fprintf(os.Stdout, "agenthub-adapterd messages port (inactive until Start): %d\n", *listenPort)

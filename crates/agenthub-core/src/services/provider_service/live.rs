@@ -192,57 +192,6 @@ impl ProviderService {
         })
     }
 
-    /// Persist first-bind restore pointers. Existing values are kept.
-    pub fn persist_first_bind_restore_meta_with_guard(
-        &self,
-        guard: &ProviderLiveSagaGuard<'_>,
-        provider: &Provider,
-        previous_current_id: Option<&str>,
-        backup_id: Option<&str>,
-    ) -> Result<Provider> {
-        let mut input = ProviderInput {
-            id: provider.id.clone(),
-            agent_id: provider.agent_id,
-            name: provider.name.clone(),
-            settings_config: provider.settings_config.clone(),
-            meta: provider.meta.clone(),
-            is_current: provider.is_current,
-        };
-        let Some(meta) = input.meta.as_object_mut() else {
-            return Ok(provider.clone());
-        };
-        let mut changed = false;
-        let has_previous = meta
-            .get("previousCurrentId")
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .is_some_and(|id| !id.is_empty());
-        if !has_previous {
-            if let Some(id) = previous_current_id
-                .map(str::trim)
-                .filter(|id| !id.is_empty() && *id != provider.id)
-            {
-                meta.insert("previousCurrentId".into(), serde_json::json!(id));
-                changed = true;
-            }
-        }
-        let has_backup = meta
-            .get("previousBackupId")
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .is_some_and(|id| !id.is_empty());
-        if !has_backup {
-            if let Some(id) = backup_id.map(str::trim).filter(|id| !id.is_empty()) {
-                meta.insert("previousBackupId".into(), serde_json::json!(id));
-                changed = true;
-            }
-        }
-        if !changed {
-            return Ok(provider.clone());
-        }
-        self.update_with_guard(guard, &input)
-    }
-
     /// Restore a live config while an existing saga guard remains held.
     pub fn restore_live_config_snapshot_with_guard(
         &self,

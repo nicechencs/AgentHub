@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use crate::error::{AppError, Result};
 use crate::models::{AgentConfig, AgentId, BackupKind, ProviderSwitchResult};
+use crate::services::adapter_projection::generated_provider_is_adapter_owned;
 use crate::services::switch_undo::{clear_switch_undo, peek_switch_undo, PROVIDER_UNDO_PREFIX};
 
 use super::live::{hash_live_paths, log_live_switch_paths, require_live_config_write};
@@ -11,6 +12,12 @@ use super::{
     ensure_config_agent, live_config_is_empty, log_provider_op, now_ts, ProviderLiveSagaGuard,
     ProviderService,
 };
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SwitchMode {
+    Normal,
+    CompensationRestore,
+}
 
 impl ProviderService {
     /// Apply a saved provider to the live agent config.
@@ -35,17 +42,40 @@ impl ProviderService {
         let started = Instant::now();
         let result = (|| {
             self.validate_live_saga_guard(guard, agent)?;
-            self.switch_locked_inner(guard.as_live_write_guard(), id_or_name, agent)
+            self.switch_locked_inner(
+                guard.as_live_write_guard(),
+                id_or_name,
+                agent,
+                SwitchMode::Normal,
+            )
         })();
         log_provider_op("switch", agent, started, &result);
         result
     }
 
-    pub(super) fn switch_locked_inner(
+    /// Restore a provider during saga compensation without initializing
+    /// first-bind metadata or replacing the user's one-shot undo slot.
+    pub(crate) fn switch_for_compensation_with_guard(
+        &self,
+        guard: &ProviderLiveSagaGuard<'_>,
+        id_or_name: &str,
+        agent: AgentId,
+    ) -> Result<ProviderSwitchResult> {
+        self.validate_live_saga_guard(guard, agent)?;
+        self.switch_locked_inner(
+            guard.as_live_write_guard(),
+            id_or_name,
+            agent,
+            SwitchMode::CompensationRestore,
+        )
+    }
+
+    fn switch_locked_inner(
         &self,
         live_guard: &crate::services::LiveWriteGuard,
         id_or_name: &str,
         agent: AgentId,
+        mode: SwitchMode,
     ) -> Result<ProviderSwitchResult> {
         let backup = self.backup.as_ref().ok_or_else(|| {
             AppError::Unsupported(
@@ -156,6 +186,15 @@ impl ProviderService {
                 return Err(compensated_switch_error(error, None, db_rollback));
             }
         };
+        let restore_meta = (mode == SwitchMode::Normal)
+            .then(|| {
+                first_bind_restore_meta(
+                    &target,
+                    current.as_ref(),
+                    snapshot.as_ref().map(|record| record.id.as_str()),
+                )
+            })
+            .flatten();
 
         if let Some(observed_revision) = auth_revision.as_deref() {
             if probe_auth_revision(adapter.as_ref()).as_deref() != Some(observed_revision) {
@@ -185,14 +224,19 @@ impl ProviderService {
             &before,
         );
         let now = now_ts();
-        // Single transaction: is_current + demote accounts + binding + undo slot.
-        let provider = match self.connections.activate_provider_with_undo(
-            agent,
-            &target.id,
-            expected_target_updated_at,
-            &now,
-            Some((PROVIDER_UNDO_PREFIX, previous_current_id.as_deref())),
-        ) {
+        // Single transaction: first-bind restore pointers + is_current +
+        // demote accounts + binding + undo slot.
+        let provider = match self
+            .connections
+            .activate_provider_with_restore_meta_and_undo(
+                agent,
+                &target.id,
+                expected_target_updated_at,
+                &now,
+                restore_meta.as_ref(),
+                (mode == SwitchMode::Normal)
+                    .then_some((PROVIDER_UNDO_PREFIX, previous_current_id.as_deref())),
+            ) {
             Ok((provider, _binding)) => provider,
             Err(error) => {
                 let live_rollback = adapter.restore_config_snapshot(&rollback_snapshot).err();
@@ -220,6 +264,61 @@ impl ProviderService {
         clear_switch_undo(&self.db, PROVIDER_UNDO_PREFIX, agent)?;
         Ok(true)
     }
+}
+
+const PREVIOUS_CURRENT_ID: &str = "previousCurrentId";
+const PREVIOUS_BACKUP_ID: &str = "previousBackupId";
+
+/// Build the first-bind restore metadata to commit with the final switch tx.
+/// Existing pointers always win. A missing backup is filled only when this
+/// snapshot is known to correspond to the preserved previous current (or to a
+/// live-only state with no current row), never from an already-active
+/// generated projection.
+fn first_bind_restore_meta(
+    target: &crate::models::Provider,
+    current: Option<&crate::models::Provider>,
+    backup_id: Option<&str>,
+) -> Option<serde_json::Value> {
+    if !generated_provider_is_adapter_owned(target) {
+        return None;
+    }
+    let mut meta = target.meta.clone();
+    let object = meta.as_object_mut()?;
+    let existing_previous = object
+        .get(PREVIOUS_CURRENT_ID)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|id| !id.is_empty() && *id != target.id)
+        .map(str::to_owned);
+    let has_backup = object
+        .get(PREVIOUS_BACKUP_ID)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .is_some_and(|id| !id.is_empty());
+    let switching_from = current.filter(|provider| provider.id != target.id);
+    let mut changed = false;
+
+    if existing_previous.is_none() {
+        if let Some(previous) = switching_from {
+            object.insert(PREVIOUS_CURRENT_ID.into(), serde_json::json!(previous.id));
+            changed = true;
+        }
+    }
+
+    let snapshot_matches_first_bind = match (existing_previous.as_deref(), current) {
+        (None, Some(previous)) => previous.id != target.id,
+        (None, None) => true,
+        (Some(saved), Some(previous)) => saved == previous.id && previous.id != target.id,
+        (Some(_), None) => false,
+    };
+    if !has_backup && snapshot_matches_first_bind {
+        if let Some(backup_id) = backup_id.map(str::trim).filter(|id| !id.is_empty()) {
+            object.insert(PREVIOUS_BACKUP_ID.into(), serde_json::json!(backup_id));
+            changed = true;
+        }
+    }
+
+    changed.then_some(meta)
 }
 
 pub(super) fn compensated_switch_error(

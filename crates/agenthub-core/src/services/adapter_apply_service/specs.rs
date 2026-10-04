@@ -870,36 +870,20 @@ pub(super) fn projection_contract_meta(meta: &serde_json::Value) -> serde_json::
     cloned
 }
 
-pub(super) fn stamp_previous_restore_meta(
+pub(super) fn preserve_previous_restore_meta(
     meta: &mut serde_json::Value,
-    previous_current: Option<&Provider>,
-    generated_id: &str,
     existing: Option<&Provider>,
 ) {
     let Some(object) = meta.as_object_mut() else {
         return;
     };
-    let previous_id = previous_current
-        .map(|provider| provider.id.as_str())
-        .filter(|id| *id != generated_id);
-    match previous_id {
-        Some(id) => {
-            object.insert(PREVIOUS_CURRENT_ID.into(), json!(id));
+    let Some(existing) = existing.and_then(|provider| provider.meta.as_object()) else {
+        return;
+    };
+    for key in [PREVIOUS_CURRENT_ID, PREVIOUS_BACKUP_ID] {
+        if let Some(value) = existing.get(key).cloned() {
+            object.insert(key.into(), value);
         }
-        None => {
-            if let Some(existing_id) = existing
-                .and_then(|provider| provider.meta.get(PREVIOUS_CURRENT_ID))
-                .cloned()
-            {
-                object.insert(PREVIOUS_CURRENT_ID.into(), existing_id);
-            }
-        }
-    }
-    if let Some(existing_backup) = existing
-        .and_then(|provider| provider.meta.get(PREVIOUS_BACKUP_ID))
-        .cloned()
-    {
-        object.insert(PREVIOUS_BACKUP_ID.into(), existing_backup);
     }
 }
 

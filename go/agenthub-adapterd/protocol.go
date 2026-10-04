@@ -55,7 +55,7 @@ const (
 // `go test` builds deliberately retain the isolated development version.
 var packageVersion = "0.0.0-isolated"
 
-var handshakeCapabilities = []string{
+var baseHandshakeCapabilities = []string{
 	"messages.json",
 	"messages.sse",
 	"control.handshake",
