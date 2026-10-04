@@ -48,7 +48,14 @@ type Runtime struct {
 	configRevision uint64
 	configHash     string
 
-	idempotency map[string]idempotentEntry
+	idempotency       map[string]idempotentEntry
+	idempotencyOrder  []string
+	oauthPendingByKey map[string]*oauthRefreshPending
+	oauthPendingByID  map[string]*oauthRefreshPending
+	oauthQueue        []string
+	oauthNotify       chan struct{}
+	// Test seam for long OAuth refresh windows. Production always uses time.Now.
+	oauthNow func() time.Time
 
 	messagesSrv *http.Server
 	messagesLn  net.Listener
@@ -58,8 +65,11 @@ type Runtime struct {
 
 type idempotentEntry struct {
 	hash  string
+	scope string
 	reply Reply
 }
+
+const maxControlIdempotencyEntries = 4096
 
 func NewRuntime(home string, listenPort int, controlSocket string, cancel context.CancelFunc) (*Runtime, error) {
 	abs, err := resolveAbsolute(home)
@@ -112,16 +122,19 @@ func NewRuntime(home string, listenPort int, controlSocket string, cancel contex
 	logger := log.New(lf, "", log.LstdFlags|log.Lmsgprefix)
 
 	rt := &Runtime{
-		home:          abs,
-		listenHost:    "127.0.0.1",
-		listenPort:    listenPort,
-		controlSocket: controlSocket,
-		pidFile:       defaultPIDFile(abs),
-		logFile:       logPath,
-		logger:        logger,
-		lifecycle:     lifecycleEmpty,
-		idempotency:   make(map[string]idempotentEntry),
-		cancel:        cancel,
+		home:              abs,
+		listenHost:        "127.0.0.1",
+		listenPort:        listenPort,
+		controlSocket:     controlSocket,
+		pidFile:           defaultPIDFile(abs),
+		logFile:           logPath,
+		logger:            logger,
+		lifecycle:         lifecycleEmpty,
+		idempotency:       make(map[string]idempotentEntry),
+		oauthPendingByKey: make(map[string]*oauthRefreshPending),
+		oauthPendingByID:  make(map[string]*oauthRefreshPending),
+		oauthNotify:       make(chan struct{}, 1),
+		cancel:            cancel,
 	}
 	return rt, nil
 }
@@ -161,10 +174,12 @@ func (rt *Runtime) replaceRuntimeConfig(config *RuntimeConfig, digest string, al
 	if rt.listenReady && !allowServing {
 		return fmt.Errorf("runtime config cannot change while serving")
 	}
+	previousHash := rt.configHash
 	rt.edges = edges
 	rt.configRevision = rt.configRevision + 1
 	rt.configHash = digest
 	rt.lastError = nil
+	rt.cancelUndeliveredOAuthRefreshLocked(previousHash)
 	return nil
 }
 
@@ -210,6 +225,13 @@ func (rt *Runtime) logf(format string, args ...any) {
 }
 
 func (rt *Runtime) HandleControl(raw []byte) Reply {
+	return rt.HandleControlContext(context.Background(), raw)
+}
+
+func (rt *Runtime) HandleControlContext(ctx context.Context, raw []byte) Reply {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if controlContainsForbiddenFields(raw) {
 		return rt.fail("", "", errSecretOnControl, "control message must not include login or entry-key fields", false)
 	}
@@ -231,11 +253,12 @@ func (rt *Runtime) HandleControl(raw []byte) Reply {
 	if env.PayloadHash == "" {
 		env.PayloadHash = wantHash
 	}
+	replayScope := controlReplayScope(env)
 
 	rt.mu.Lock()
 	if prev, ok := rt.idempotency[env.RequestID]; ok {
 		rt.mu.Unlock()
-		if prev.hash != env.PayloadHash {
+		if prev.hash != env.PayloadHash || prev.scope != replayScope {
 			return rt.fail(env.Type, env.RequestID, errInvalidRequest, "request_id reused with a different payload", false)
 		}
 		return prev.reply
@@ -264,6 +287,10 @@ func (rt *Runtime) HandleControl(raw []byte) Reply {
 		reply = rt.handleStart(env)
 	case typeActivateProbeListen:
 		reply = rt.handleActivateProbe(env)
+	case typeNextOAuthRefresh:
+		reply = rt.handleNextOAuthRefresh(ctx, env)
+	case typeCompleteOAuthRefresh:
+		reply = rt.handleCompleteOAuthRefresh(env)
 	case typeStop:
 		reply = rt.handleStop(env)
 	default:
@@ -271,7 +298,15 @@ func (rt *Runtime) HandleControl(raw []byte) Reply {
 	}
 
 	rt.mu.Lock()
-	rt.idempotency[env.RequestID] = idempotentEntry{hash: env.PayloadHash, reply: reply}
+	if _, exists := rt.idempotency[env.RequestID]; !exists {
+		rt.idempotencyOrder = append(rt.idempotencyOrder, env.RequestID)
+	}
+	rt.idempotency[env.RequestID] = idempotentEntry{hash: env.PayloadHash, scope: replayScope, reply: reply}
+	if len(rt.idempotencyOrder) > maxControlIdempotencyEntries {
+		oldest := rt.idempotencyOrder[0]
+		rt.idempotencyOrder = rt.idempotencyOrder[1:]
+		delete(rt.idempotency, oldest)
+	}
 	rt.mu.Unlock()
 	return reply
 }
@@ -437,12 +472,23 @@ func (rt *Runtime) handleAcquire(env Envelope) Reply {
 		if rt.ownerTerm > 0 && time.Now().Before(rt.ownerLeaseUntil) {
 			return rt.failUnlocked(env.Type, env.RequestID, errOwnerConflict, "this epoch already has an owner", false)
 		}
+		if rt.ownerTerm == 0 {
+			if payload.PreviousTerm != nil {
+				return rt.failUnlocked(env.Type, env.RequestID, errInvalidRequest, "initial acquire must not include previous_term", false)
+			}
+		} else if payload.PreviousTerm == nil || *payload.PreviousTerm != rt.ownerTerm {
+			return rt.failUnlocked(env.Type, env.RequestID, errStaleTerm, "previous_term does not match", false)
+		}
 		if env.OwnerID == "" {
 			return rt.failUnlocked(env.Type, env.RequestID, errInvalidRequest, "owner_id is required", false)
 		}
+		if rt.ownerTerm == int64(^uint64(0)>>1) {
+			return rt.failUnlocked(env.Type, env.RequestID, errOwnerConflict, "owner term is exhausted", false)
+		}
 		rt.ownerID = env.OwnerID
-		rt.ownerTerm = 1
+		rt.ownerTerm++
 		rt.ownerLeaseUntil = time.Now().Add(time.Duration(leaseMS) * time.Millisecond)
+		rt.cancelAllOAuthRefreshLocked()
 		if rt.lifecycle == lifecycleEmpty {
 			rt.lifecycle = lifecycleNotServing
 		}
@@ -926,6 +972,7 @@ func (rt *Runtime) Shutdown(ctx context.Context) error {
 	}
 	rt.mu.Lock()
 	rt.lifecycle = lifecycleStopped
+	rt.cancelAllOAuthRefreshLocked()
 	rt.mu.Unlock()
 	return shutdownErr
 }

@@ -22,6 +22,10 @@ const (
 	transportCodexResponses        = "codex_responses"
 	transportGrokResponses         = "grok_responses"
 	transportOpenAIChatCompletions = "openai_chat_completions"
+
+	refreshNone       = "none"
+	refreshCodexOAuth = "codex_oauth"
+	refreshGrokOAuth  = "grok_oauth"
 )
 
 // RuntimeConfig is supplied once on stdin before the control socket starts.
@@ -44,6 +48,9 @@ type RuntimeEdgeConfig struct {
 
 type RuntimeMemberConfig struct {
 	ID                string   `json:"id"`
+	SourceKind        string   `json:"source_kind,omitempty"`
+	SourceID          string   `json:"source_id,omitempty"`
+	RefreshKind       string   `json:"refresh_kind,omitempty"`
 	UpstreamBaseURL   string   `json:"upstream_base_url"`
 	UpstreamKey       string   `json:"upstream_key"`
 	UpstreamAuth      string   `json:"upstream_auth"`
@@ -177,14 +184,31 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 		if len(edge.Members) == 0 {
 			return fmt.Errorf("runtime edge %s requires members", edge.ID)
 		}
+		memberIDs := make(map[string]struct{}, len(edge.Members))
 		for memberIndex := range edge.Members {
 			member := &edge.Members[memberIndex]
 			member.ID = strings.TrimSpace(member.ID)
+			member.SourceKind = strings.TrimSpace(member.SourceKind)
+			member.SourceID = strings.TrimSpace(member.SourceID)
+			member.RefreshKind = strings.TrimSpace(member.RefreshKind)
 			member.UpstreamBaseURL = strings.TrimSpace(member.UpstreamBaseURL)
 			member.UpstreamAuth = strings.TrimSpace(member.UpstreamAuth)
 			member.UpstreamTransport = strings.TrimSpace(member.UpstreamTransport)
 			if member.ID == "" || member.UpstreamBaseURL == "" || member.UpstreamKey == "" {
 				return fmt.Errorf("runtime edge %s member %d is incomplete", edge.ID, memberIndex)
+			}
+			if _, exists := memberIDs[member.ID]; exists {
+				return fmt.Errorf("runtime edge %s member id is duplicated", edge.ID)
+			}
+			memberIDs[member.ID] = struct{}{}
+			if (member.SourceKind == "") != (member.SourceID == "") {
+				return fmt.Errorf("runtime edge %s member %s source identity is incomplete", edge.ID, member.ID)
+			}
+			if member.SourceKind != "" && member.SourceKind != "account" && member.SourceKind != "provider" {
+				return fmt.Errorf("runtime edge %s member %s source kind is unsupported", edge.ID, member.ID)
+			}
+			if member.RefreshKind == "" {
+				member.RefreshKind = refreshNone
 			}
 			if member.UpstreamAuth != authBearer && member.UpstreamAuth != authAPIKey {
 				return fmt.Errorf("runtime edge %s member %s has unsupported upstream_auth", edge.ID, member.ID)
@@ -196,6 +220,9 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 			if !transportMatchesSurface(member.UpstreamTransport, edge.Surface) {
 				return fmt.Errorf("runtime edge %s member %s transport does not match surface", edge.ID, member.ID)
 			}
+			if !refreshMatchesMember(member) {
+				return fmt.Errorf("runtime edge %s member %s refresh kind does not match source or transport", edge.ID, member.ID)
+			}
 			if err := validateRuntimeUpstreamURL(member.UpstreamBaseURL, member.UpstreamTransport); err != nil {
 				return fmt.Errorf("runtime edge %s member %s upstream is not allowed", edge.ID, member.ID)
 			}
@@ -205,6 +232,24 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 		}
 	}
 	return nil
+}
+
+func refreshMatchesMember(member *RuntimeMemberConfig) bool {
+	if member == nil {
+		return false
+	}
+	switch member.RefreshKind {
+	case refreshNone:
+		return true
+	case refreshCodexOAuth:
+		return member.SourceKind == "account" && member.SourceID != "" &&
+			member.UpstreamAuth == authBearer && member.UpstreamTransport == transportCodexResponses
+	case refreshGrokOAuth:
+		return member.SourceKind == "account" && member.SourceID != "" &&
+			member.UpstreamAuth == authBearer && member.UpstreamTransport == transportGrokResponses
+	default:
+		return false
+	}
 }
 
 func transportMatchesSurface(transport, surface string) bool {
@@ -243,6 +288,9 @@ func runtimeEdges(config *RuntimeConfig) ([]*RuntimeEdge, error) {
 		for _, member := range edge.Members {
 			members = append(members, ProbeMember{
 				ID:                member.ID,
+				SourceKind:        member.SourceKind,
+				SourceID:          member.SourceID,
+				RefreshKind:       member.RefreshKind,
 				UpstreamBaseURL:   member.UpstreamBaseURL,
 				UpstreamKey:       member.UpstreamKey,
 				UpstreamAuth:      member.UpstreamAuth,

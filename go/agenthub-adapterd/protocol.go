@@ -15,12 +15,14 @@ const (
 	packageVersion      = "0.0.0-isolated"
 	extensionID         = "agenthub.routes"
 
-	typeHandshake           = "Handshake"
-	typeAcquireOrRenewOwner = "AcquireOrRenewOwner"
-	typeStatus              = "Status"
-	typeStart               = "Start"
-	typeActivateProbeListen = "ActivateProbeListen"
-	typeStop                = "Stop"
+	typeHandshake            = "Handshake"
+	typeAcquireOrRenewOwner  = "AcquireOrRenewOwner"
+	typeStatus               = "Status"
+	typeStart                = "Start"
+	typeActivateProbeListen  = "ActivateProbeListen"
+	typeNextOAuthRefresh     = "NextOAuthRefresh"
+	typeCompleteOAuthRefresh = "CompleteOAuthRefresh"
+	typeStop                 = "Stop"
 
 	lifecycleEmpty      = "empty"
 	lifecycleServing    = "serving"
@@ -57,6 +59,7 @@ var handshakeCapabilities = []string{
 	"control.acquire_owner",
 	"control.start",
 	"control.activate_probe_listen",
+	"control.oauth_refresh.v1",
 	"config.stdin_stream.atomic",
 }
 
@@ -153,6 +156,9 @@ type ProbeFixture struct {
 
 type ProbeMember struct {
 	ID                string   `json:"id"`
+	SourceKind        string   `json:"source_kind,omitempty"`
+	SourceID          string   `json:"source_id,omitempty"`
+	RefreshKind       string   `json:"refresh_kind,omitempty"`
 	UpstreamBaseURL   string   `json:"upstream_base_url"`
 	UpstreamKey       string   `json:"upstream_key,omitempty"`
 	UpstreamAuth      string   `json:"upstream_auth,omitempty"`
@@ -173,6 +179,26 @@ func payloadHash(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		raw = []byte("{}")
 	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+func controlReplayScope(env Envelope) string {
+	raw, _ := json.Marshal(struct {
+		Type          string `json:"type"`
+		InstanceEpoch string `json:"instance_epoch"`
+		OwnerTerm     *int64 `json:"owner_term"`
+		OwnerID       string `json:"owner_id"`
+		AppDataDir    string `json:"app_data_dir"`
+		PayloadHash   string `json:"payload_hash"`
+	}{
+		Type:          env.Type,
+		InstanceEpoch: env.InstanceEpoch,
+		OwnerTerm:     env.OwnerTerm,
+		OwnerID:       env.OwnerID,
+		AppDataDir:    env.AppDataDir,
+		PayloadHash:   env.PayloadHash,
+	})
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }

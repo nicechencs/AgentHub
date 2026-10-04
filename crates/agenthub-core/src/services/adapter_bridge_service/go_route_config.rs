@@ -17,6 +17,9 @@ const TRANSPORT_ANTHROPIC_MESSAGES: &str = "anthropic_messages";
 const TRANSPORT_CODEX_RESPONSES: &str = "codex_responses";
 const TRANSPORT_GROK_RESPONSES: &str = "grok_responses";
 const TRANSPORT_OPENAI_CHAT_COMPLETIONS: &str = "openai_chat_completions";
+const REFRESH_NONE: &str = "none";
+const REFRESH_CODEX_OAUTH: &str = "codex_oauth";
+const REFRESH_GROK_OAUTH: &str = "grok_oauth";
 
 #[derive(Serialize)]
 struct GoRouteIsolatedConfig {
@@ -50,6 +53,9 @@ struct GoRouteIsolatedEdge {
 #[derive(Serialize)]
 struct GoRouteIsolatedMember {
     id: String,
+    source_kind: String,
+    source_id: String,
+    refresh_kind: &'static str,
     upstream_base_url: String,
     upstream_key: String,
     upstream_auth: &'static str,
@@ -68,6 +74,62 @@ impl AdapterBridgeService {
     /// directly to the child process and must not log, persist, or return them to
     /// a command/UI boundary.
     pub fn build_go_route_isolated_config(&self, pools: &[RoutePool]) -> Result<Vec<u8>> {
+        let config = self.build_go_route_isolated_config_model(pools)?;
+        serde_json::to_vec(&config)
+            .map_err(|_| go_config_error("The isolated Go route configuration could not be built."))
+    }
+
+    /// Resolve an auth-refresh request against the complete configuration that
+    /// would be handed to Go now. Every caller-supplied identity field must
+    /// match the same current member; the returned account id is read from that
+    /// rebuilt configuration and never from the untrusted request alone.
+    pub fn resolve_go_route_oauth_refresh(
+        &self,
+        edge_id: &str,
+        member_id: &str,
+        source_id: &str,
+        refresh_kind: &str,
+    ) -> Result<String> {
+        let pools = self
+            .route_pools
+            .list_gateway_listener_pools()
+            .map_err(|_| go_oauth_refresh_rejected())?;
+        let config = self
+            .build_go_route_isolated_config_model(&pools)
+            .map_err(|_| go_oauth_refresh_rejected())?;
+        let edge_id = edge_id.trim();
+        let member_id = member_id.trim();
+        let source_id = source_id.trim();
+        let refresh_kind = refresh_kind.trim();
+        let mut matching = config
+            .edges
+            .iter()
+            .filter(|edge| edge.id == edge_id)
+            .flat_map(|edge| edge.members.iter())
+            .filter(|member| {
+                member.id == member_id
+                    && member.source_id == source_id
+                    && member.refresh_kind == refresh_kind
+            });
+        let member = matching.next().ok_or_else(go_oauth_refresh_rejected)?;
+        if matching.next().is_some() {
+            return Err(go_oauth_refresh_rejected());
+        }
+        let eligible_transport = matches!(
+            (member.refresh_kind, member.upstream_transport),
+            (REFRESH_CODEX_OAUTH, TRANSPORT_CODEX_RESPONSES)
+                | (REFRESH_GROK_OAUTH, TRANSPORT_GROK_RESPONSES)
+        );
+        if member.source_kind != "account" || !eligible_transport {
+            return Err(go_oauth_refresh_rejected());
+        }
+        Ok(member.source_id.clone())
+    }
+
+    fn build_go_route_isolated_config_model(
+        &self,
+        pools: &[RoutePool],
+    ) -> Result<GoRouteIsolatedConfig> {
         let flags = self.route_pools.pair_adapter_flags();
         let accepted_bearers = self
             .route_pools
@@ -86,7 +148,7 @@ impl AdapterBridgeService {
             if enabled_member_count == 0 || spec.members.len() != enabled_member_count {
                 return Err(incompatible_go_config_error());
             }
-            edges.push(go_edge_from_spec(pool, &spec, &accepted_bearers)?);
+            edges.push(go_edge_from_spec(self, pool, &spec, &accepted_bearers)?);
         }
         if edges.is_empty() {
             return Err(go_config_error(
@@ -94,15 +156,15 @@ impl AdapterBridgeService {
             ));
         }
 
-        serde_json::to_vec(&GoRouteIsolatedConfig {
+        Ok(GoRouteIsolatedConfig {
             version: CONFIG_VERSION,
             edges,
         })
-        .map_err(|_| go_config_error("The isolated Go route configuration could not be built."))
     }
 }
 
 fn go_edge_from_spec(
+    service: &AdapterBridgeService,
     pool: &RoutePool,
     spec: &BridgeStartSpec,
     accepted_bearers: &[(String, String)],
@@ -128,7 +190,7 @@ fn go_edge_from_spec(
         let snapshots = index.capability_snapshots();
         spec.members
             .iter()
-            .map(|member| indexed_member(pool.downstream_surface, member, &snapshots))
+            .map(|member| indexed_member(service, pool.downstream_surface, member, &snapshots))
             .collect::<Result<Vec<_>>>()?
     } else {
         let (upstream_auth, upstream_transport) =
@@ -145,6 +207,7 @@ fn go_edge_from_spec(
             .iter()
             .map(|member| {
                 flat_member(
+                    service,
                     member,
                     &spec.upstream.base_url,
                     upstream_auth,
@@ -173,6 +236,7 @@ fn go_edge_from_spec(
 }
 
 fn indexed_member(
+    service: &AdapterBridgeService,
     surface: RouteDownstreamSurface,
     member: &BridgeMemberSpec,
     snapshots: &[MemberCapabilitySnapshot],
@@ -219,6 +283,7 @@ fn indexed_member(
     }
 
     flat_member(
+        service,
         member,
         upstream_base_url.ok_or_else(incompatible_go_config_error)?,
         upstream_auth.ok_or_else(incompatible_go_config_error)?,
@@ -228,15 +293,16 @@ fn indexed_member(
 }
 
 fn flat_member(
+    service: &AdapterBridgeService,
     member: &BridgeMemberSpec,
     upstream_base_url: &str,
     upstream_auth: &'static str,
     upstream_transport: &'static str,
     models: Vec<String>,
 ) -> Result<GoRouteIsolatedMember> {
+    let source_kind = member.source_kind.trim();
     let source_id = member.source_id.trim();
     let id = if member.ticket_id.trim().is_empty() {
-        let source_kind = member.source_kind.trim();
         if source_kind.is_empty() || source_id.is_empty() {
             return Err(incompatible_go_config_error());
         }
@@ -245,11 +311,19 @@ fn flat_member(
         member.ticket_id.trim().to_owned()
     };
     let upstream_key = member.auth.token();
-    if source_id.is_empty() || upstream_key.trim().is_empty() || models.is_empty() {
+    if !matches!(source_kind, "account" | "provider")
+        || source_id.is_empty()
+        || upstream_key.trim().is_empty()
+        || models.is_empty()
+    {
         return Err(incompatible_go_config_error());
     }
+    let refresh_kind = refresh_kind(service, member, upstream_transport);
     Ok(GoRouteIsolatedMember {
         id,
+        source_kind: source_kind.to_owned(),
+        source_id: source_id.to_owned(),
+        refresh_kind,
         upstream_base_url: upstream_base_url.trim_end_matches('/').to_owned(),
         upstream_key,
         upstream_auth,
@@ -259,6 +333,42 @@ fn flat_member(
         models,
         quota_remaining_pct: member.quota_remaining_pct.filter(|value| value.is_finite()),
     })
+}
+
+fn refresh_kind(
+    service: &AdapterBridgeService,
+    member: &BridgeMemberSpec,
+    upstream_transport: &str,
+) -> &'static str {
+    if member.source_kind.trim() != "account" {
+        return REFRESH_NONE;
+    }
+    let source_id = member.source_id.trim();
+    match upstream_transport {
+        TRANSPORT_CODEX_RESPONSES
+            if service
+                .secrets
+                .resolve_codex_subscription_auth(
+                    crate::models::AdapterSourceKind::Account,
+                    source_id,
+                )
+                .is_ok() =>
+        {
+            REFRESH_CODEX_OAUTH
+        }
+        TRANSPORT_GROK_RESPONSES
+            if service
+                .secrets
+                .resolve_grok_subscription_auth(
+                    crate::models::AdapterSourceKind::Account,
+                    source_id,
+                )
+                .is_ok() =>
+        {
+            REFRESH_GROK_OAUTH
+        }
+        _ => REFRESH_NONE,
+    }
 }
 
 fn compatible_protocol(
@@ -375,4 +485,11 @@ fn go_config_error(message: &'static str) -> AppError {
 
 fn incompatible_go_config_error() -> AppError {
     go_config_error("A saved route is not compatible with the isolated Go runtime.")
+}
+
+fn go_oauth_refresh_rejected() -> AppError {
+    AppError::message(
+        "adapter.go_route_oauth_refresh_rejected",
+        "The Go route refresh request is stale or not eligible.",
+    )
 }

@@ -93,12 +93,18 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 	var lastBody []byte
 	var lastStream bool
 	hasLast := false
+	refreshUsed := false
+	var retryMember *PoolMember
 
 	for {
 		if r.Context().Err() != nil {
 			return
 		}
-		member := pool.Pick(model, excluded, time.Now())
+		member := retryMember
+		retryMember = nil
+		if member == nil {
+			member = pool.Pick(model, excluded, time.Now())
+		}
 		if member == nil {
 			if hasLast {
 				writeClientResponse(w, lastStatus, lastHeader, lastBody, lastStream)
@@ -129,6 +135,15 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 			pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
 			excluded = append(excluded, member.ID)
 			continue
+		}
+		if resp.StatusCode == http.StatusUnauthorized && !refreshUsed && member.RefreshKind != refreshNone {
+			refreshUsed = true
+			if refreshed := rt.requestOAuthRefresh(r.Context(), edge.ID, member); refreshed != nil && refreshed.member.serves(model, time.Now()) {
+				_ = resp.Body.Close()
+				pool = refreshed.pool
+				retryMember = refreshed.member
+				continue
+			}
 		}
 
 		if memberStream {

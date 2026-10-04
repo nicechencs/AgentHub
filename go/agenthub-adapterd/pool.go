@@ -24,6 +24,9 @@ const (
 
 type PoolMember struct {
 	ID                string
+	SourceKind        string
+	SourceID          string
+	RefreshKind       string
 	UpstreamBaseURL   string
 	UpstreamKey       string
 	UpstreamAuth      string
@@ -46,6 +49,12 @@ func (m *PoolMember) clone() PoolMember {
 	if m.QuotaRemainingPct != nil {
 		v := *m.QuotaRemainingPct
 		out.QuotaRemainingPct = &v
+	}
+	if m.modelCool != nil {
+		out.modelCool = make(map[string]time.Time, len(m.modelCool))
+		for model, until := range m.modelCool {
+			out.modelCool[model] = until
+		}
 	}
 	return out
 }
@@ -147,6 +156,9 @@ func NewPoolFromFixture(fixture ProbeFixture) (*Pool, error) {
 		}
 		members = append(members, &PoolMember{
 			ID:                id,
+			SourceKind:        strings.TrimSpace(item.SourceKind),
+			SourceID:          strings.TrimSpace(item.SourceID),
+			RefreshKind:       normalizedRefreshKind(item.RefreshKind),
 			UpstreamBaseURL:   strings.TrimRight(base, "/"),
 			UpstreamKey:       item.UpstreamKey,
 			UpstreamAuth:      auth,
@@ -165,6 +177,14 @@ func NewPoolFromFixture(fixture ProbeFixture) (*Pool, error) {
 		members:      members,
 		rrCursors:    map[string]int{},
 	}, nil
+}
+
+func normalizedRefreshKind(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return refreshNone
+	}
+	return raw
 }
 
 func normalizedUpstreamAuth(raw string) string {
@@ -322,6 +342,21 @@ func (p *Pool) Pick(model string, excluded []string, now time.Time) *PoolMember 
 	}
 	out := picked.clone()
 	return &out
+}
+
+func (p *Pool) MemberByIdentity(memberID, sourceKind, sourceID, refreshKind string) *PoolMember {
+	if p == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, member := range p.members {
+		if member.ID == memberID && member.SourceKind == sourceKind && member.SourceID == sourceID && member.RefreshKind == refreshKind {
+			out := member.clone()
+			return &out
+		}
+	}
+	return nil
 }
 
 func (p *Pool) pickRoundRobin(eligible []*PoolMember) *PoolMember {

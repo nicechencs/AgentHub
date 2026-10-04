@@ -6,11 +6,17 @@
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+#[cfg(all(debug_assertions, unix))]
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
+#[cfg(all(debug_assertions, unix))]
+use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(all(debug_assertions, unix))]
+use std::sync::Condvar;
 #[cfg(debug_assertions)]
 use std::sync::Weak;
 use std::sync::{Arc, Mutex};
@@ -26,8 +32,23 @@ const PROTOCOL_VERSION: &str = "route-runtime.v0-isolated";
 const CONFIG_FORMAT_VERSION: &str = "route-config.v0-isolated";
 const PACKAGE_VERSION: &str = "0.0.0-isolated";
 const CONFIG_STREAM_CAPABILITY: &str = "config.stdin_stream.atomic";
+const OAUTH_REFRESH_CAPABILITY: &str = "control.oauth_refresh.v1";
 const ISOLATED_LEASE_BUDGET_MS: i64 = 24 * 60 * 60 * 1_000;
 const OWNER_RENEW_INTERVAL: Duration = Duration::from_secs(30);
+#[cfg(all(debug_assertions, unix))]
+const OAUTH_REFRESH_POLL_WAIT_MS: u64 = 1_000;
+#[cfg(all(debug_assertions, unix))]
+const OAUTH_REFRESH_CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
+#[cfg(all(debug_assertions, unix))]
+const OAUTH_REFRESH_HANDLER_LIMIT: usize = 8;
+#[cfg(all(debug_assertions, unix))]
+const OAUTH_REFRESH_QUEUE_LIMIT: usize = 8;
+#[cfg(all(debug_assertions, unix))]
+const OAUTH_REFRESH_ACTION_GATE_LIMIT: usize = 4_096;
+#[cfg(all(debug_assertions, unix))]
+const OAUTH_REFRESH_COMPLETED_ID_LIMIT: usize = 4_096;
+#[cfg(all(debug_assertions, unix))]
+const OAUTH_REFRESH_COMPLETED_ID_TTL: Duration = Duration::from_secs(90);
 const START_STOP_WAIT: Duration = Duration::from_secs(10);
 const GRACEFUL_STOP_WAIT: Duration = Duration::from_secs(9);
 const CONFIG_WRITE_WAIT: Duration = Duration::from_secs(8);
@@ -103,6 +124,8 @@ struct Inner {
     stable_since: Option<Instant>,
     next_restart_at: Option<Instant>,
     committed_plan: Option<RuntimePlan>,
+    #[cfg(all(debug_assertions, unix))]
+    oauth_refresh_worker_session: Option<(String, i64)>,
 }
 
 #[derive(Clone)]
@@ -119,6 +142,7 @@ struct Session {
     instance_epoch: String,
     port: u16,
     next_owner_renewal: Instant,
+    oauth_refresh_supported: bool,
     config_stdin: Arc<Mutex<ChildStdin>>,
     adapterd: Child,
 }
@@ -177,6 +201,8 @@ impl GoRouteIsolatedHost {
                 stable_since: None,
                 next_restart_at: None,
                 committed_plan: None,
+                #[cfg(all(debug_assertions, unix))]
+                oauth_refresh_worker_session: None,
             }),
             update_gate: Mutex::new(()),
         });
@@ -745,6 +771,31 @@ impl GoRouteIsolatedHost {
             let Some(host) = host.upgrade() else { return };
             #[cfg(unix)]
             {
+                #[cfg(all(debug_assertions, unix))]
+                {
+                    let refresh_worker = {
+                        let mut inner = host.lock();
+                        refresh_locked(&mut inner);
+                        let control = inner.session.as_ref().and_then(|session| {
+                            (session.oauth_refresh_supported
+                                && !inner.oauth_refresh_worker_session.as_ref().is_some_and(
+                                    |(epoch, term)| {
+                                        epoch == &session.instance_epoch
+                                            && *term == session.owner_term
+                                    },
+                                ))
+                            .then(|| ControlSession::from(session))
+                        });
+                        if let Some(control) = control.as_ref() {
+                            inner.oauth_refresh_worker_session =
+                                Some((control.instance_epoch.clone(), control.owner_term));
+                        }
+                        control
+                    };
+                    if let Some(control) = refresh_worker {
+                        Self::spawn_oauth_refresh_worker(Arc::downgrade(&host), control);
+                    }
+                }
                 let renewal = {
                     let mut inner = host.lock();
                     refresh_locked(&mut inner);
@@ -822,6 +873,793 @@ impl GoRouteIsolatedHost {
             }
         }
     }
+
+    #[cfg(all(debug_assertions, unix))]
+    fn spawn_oauth_refresh_worker(host: Weak<Self>, control: ControlSession) {
+        let worker_session = (control.instance_epoch.clone(), control.owner_term);
+        let fallback_host = host.clone();
+        let cleanup_host = host.clone();
+        let cleanup_session = worker_session.clone();
+        let spawn = std::thread::Builder::new()
+            .name("agenthub-go-oauth-refresh".into())
+            .spawn(move || {
+                oauth_refresh_worker(host, control);
+                let Some(host) = cleanup_host.upgrade() else {
+                    return;
+                };
+                let mut inner = host.lock();
+                if inner.oauth_refresh_worker_session.as_ref() == Some(&cleanup_session) {
+                    inner.oauth_refresh_worker_session = None;
+                }
+            });
+        if spawn.is_err() {
+            let Some(host) = fallback_host.upgrade() else {
+                return;
+            };
+            let mut inner = host.lock();
+            if inner.oauth_refresh_worker_session.as_ref() == Some(&worker_session) {
+                inner.oauth_refresh_worker_session = None;
+            }
+            tracing::warn!(
+                target: "core.adapter",
+                code = "go.route.oauth_refresh.worker_start_failed",
+                count = 1_u64,
+                "Go route OAuth refresh worker could not start"
+            );
+        }
+    }
+}
+
+#[cfg(all(debug_assertions, unix))]
+struct OAuthRefreshEvent {
+    refresh_id: String,
+    instance_epoch: String,
+    owner_term: i64,
+    active_hash: String,
+    edge_id: String,
+    member_id: String,
+    source_kind: String,
+    source_id: String,
+    refresh_kind: String,
+}
+
+#[cfg(all(debug_assertions, unix))]
+enum OAuthRefreshCompletion {
+    ConfigApplied(String),
+    NotRefreshed,
+}
+
+#[cfg(all(debug_assertions, unix))]
+#[derive(Default)]
+struct OAuthRefreshWorkerCounters {
+    completed: AtomicU64,
+    rejected: AtomicU64,
+}
+
+/// One refresh action per saved login and Go configuration generation.
+///
+/// Go coalesces identical member attempts, but the same saved login may appear
+/// through multiple edges or member ids. Successful gates retain the completed
+/// action for late events from the same generation. Failed waves wake their
+/// current waiters without sealing the key, so a later event may retry. The
+/// registry evicts its oldest idle gates under bounded-memory pressure.
+#[cfg(all(debug_assertions, unix))]
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct OAuthRefreshActionKey {
+    instance_epoch: String,
+    owner_term: i64,
+    active_hash: String,
+    source_kind: String,
+    source_id: String,
+    refresh_kind: String,
+}
+
+#[cfg(all(debug_assertions, unix))]
+impl From<&OAuthRefreshEvent> for OAuthRefreshActionKey {
+    fn from(event: &OAuthRefreshEvent) -> Self {
+        Self {
+            instance_epoch: event.instance_epoch.clone(),
+            owner_term: event.owner_term,
+            active_hash: event.active_hash.clone(),
+            source_kind: event.source_kind.clone(),
+            source_id: event.source_id.clone(),
+            refresh_kind: event.refresh_kind.clone(),
+        }
+    }
+}
+
+#[cfg(all(debug_assertions, unix))]
+#[derive(Default)]
+struct OAuthRefreshActionState {
+    running: bool,
+    sealed: bool,
+    generation: u64,
+}
+
+#[cfg(all(debug_assertions, unix))]
+#[derive(Default)]
+struct OAuthRefreshActionGate {
+    state: Mutex<OAuthRefreshActionState>,
+    completed: Condvar,
+}
+
+#[cfg(all(debug_assertions, unix))]
+#[derive(Default)]
+struct OAuthRefreshActionRegistry {
+    gates: HashMap<OAuthRefreshActionKey, Arc<OAuthRefreshActionGate>>,
+    fifo: VecDeque<OAuthRefreshActionKey>,
+}
+
+#[cfg(all(debug_assertions, unix))]
+#[derive(Default)]
+struct OAuthRefreshActionCoordinator {
+    registry: Arc<Mutex<OAuthRefreshActionRegistry>>,
+}
+
+#[cfg(all(debug_assertions, unix))]
+enum OAuthRefreshActionRole {
+    Sealed,
+    Wait(u64),
+    Lead(u64),
+}
+
+#[cfg(all(debug_assertions, unix))]
+impl OAuthRefreshActionCoordinator {
+    fn run_once(
+        &self,
+        key: OAuthRefreshActionKey,
+        host: &Weak<GoRouteIsolatedHost>,
+        control: &ControlSession,
+        action: impl FnOnce(),
+    ) -> bool {
+        let active_hash = key.active_hash.clone();
+        let (gate, role) = {
+            let mut registry = self
+                .registry
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let gate = if let Some(gate) = registry.gates.get(&key) {
+                Arc::clone(gate)
+            } else {
+                let gate = Arc::new(OAuthRefreshActionGate::default());
+                registry.fifo.push_back(key.clone());
+                registry.gates.insert(key, Arc::clone(&gate));
+                gate
+            };
+            let role = {
+                let mut state = gate
+                    .state
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if state.sealed {
+                    OAuthRefreshActionRole::Sealed
+                } else if state.running {
+                    OAuthRefreshActionRole::Wait(state.generation)
+                } else {
+                    state.running = true;
+                    state.generation = state.generation.wrapping_add(1);
+                    OAuthRefreshActionRole::Lead(state.generation)
+                }
+            };
+            (gate, role)
+        };
+
+        prune_oauth_refresh_action_gates(&self.registry);
+        match role {
+            OAuthRefreshActionRole::Sealed => true,
+            OAuthRefreshActionRole::Lead(generation) => {
+                let mut leader = OAuthRefreshActionLeader {
+                    gate,
+                    registry: Arc::clone(&self.registry),
+                    generation,
+                    finished: false,
+                };
+                action();
+                let sealed = host
+                    .upgrade()
+                    .and_then(|host| current_committed_hash(&host, control))
+                    .is_some_and(|committed_hash| committed_hash != active_hash);
+                leader.finish(sealed);
+                true
+            }
+            OAuthRefreshActionRole::Wait(generation) => loop {
+                let state = gate
+                    .state
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if !(state.running && state.generation == generation) {
+                    return true;
+                }
+                let (state_after_wait, _) = gate
+                    .completed
+                    .wait_timeout(state, Duration::from_millis(100))
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                drop(state_after_wait);
+                let Some(host) = host.upgrade() else {
+                    return false;
+                };
+                if current_committed_hash(&host, control).is_none() {
+                    return false;
+                }
+            },
+        }
+    }
+}
+
+#[cfg(all(debug_assertions, unix))]
+fn prune_oauth_refresh_action_gates(registry: &Arc<Mutex<OAuthRefreshActionRegistry>>) {
+    let mut registry = registry
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    while registry.gates.len() > OAUTH_REFRESH_ACTION_GATE_LIMIT {
+        let removable = registry.fifo.iter().position(|key| {
+            registry.gates.get(key).is_some_and(|gate| {
+                !gate
+                    .state
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .running
+            })
+        });
+        let Some(index) = removable else {
+            break;
+        };
+        let Some(key) = registry.fifo.remove(index) else {
+            break;
+        };
+        registry.gates.remove(&key);
+    }
+}
+
+#[cfg(all(debug_assertions, unix))]
+struct OAuthRefreshActionLeader {
+    gate: Arc<OAuthRefreshActionGate>,
+    registry: Arc<Mutex<OAuthRefreshActionRegistry>>,
+    generation: u64,
+    finished: bool,
+}
+
+#[cfg(all(debug_assertions, unix))]
+impl OAuthRefreshActionLeader {
+    fn finish(&mut self, sealed: bool) {
+        {
+            let mut state = self
+                .gate
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if state.running && state.generation == self.generation {
+                state.running = false;
+                state.sealed = sealed;
+            }
+            self.finished = true;
+        }
+        self.gate.completed.notify_all();
+        prune_oauth_refresh_action_gates(&self.registry);
+    }
+}
+
+#[cfg(all(debug_assertions, unix))]
+impl Drop for OAuthRefreshActionLeader {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.finish(false);
+        }
+    }
+}
+
+#[cfg(all(debug_assertions, unix))]
+#[derive(Default)]
+struct OAuthRefreshQueueState {
+    events: VecDeque<OAuthRefreshEvent>,
+    active_refresh_ids: HashSet<String>,
+    completed_refresh_ids: HashSet<String>,
+    completed_refresh_fifo: VecDeque<(Instant, String)>,
+    stopped: bool,
+}
+
+#[cfg(all(debug_assertions, unix))]
+impl OAuthRefreshQueueState {
+    fn prune_completed_refresh_ids(&mut self, now: Instant) {
+        loop {
+            let expired = self
+                .completed_refresh_fifo
+                .front()
+                .is_some_and(|(completed_at, _)| {
+                    now.saturating_duration_since(*completed_at) >= OAUTH_REFRESH_COMPLETED_ID_TTL
+                });
+            if !expired && self.completed_refresh_ids.len() <= OAUTH_REFRESH_COMPLETED_ID_LIMIT {
+                break;
+            }
+            let Some((_, refresh_id)) = self.completed_refresh_fifo.pop_front() else {
+                break;
+            };
+            self.completed_refresh_ids.remove(&refresh_id);
+        }
+    }
+}
+
+#[cfg(all(debug_assertions, unix))]
+#[derive(Default)]
+struct OAuthRefreshWorkQueue {
+    state: Mutex<OAuthRefreshQueueState>,
+    event_ready: Condvar,
+    space_ready: Condvar,
+}
+
+#[cfg(all(debug_assertions, unix))]
+impl OAuthRefreshWorkQueue {
+    fn push_for_session(
+        &self,
+        host: &Weak<GoRouteIsolatedHost>,
+        control: &ControlSession,
+        event: OAuthRefreshEvent,
+    ) -> bool {
+        let mut event = Some(event);
+        loop {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if state.stopped {
+                return false;
+            }
+            state.prune_completed_refresh_ids(Instant::now());
+            let refresh_id = &event.as_ref().expect("event retained").refresh_id;
+            if state.active_refresh_ids.contains(refresh_id)
+                || state.completed_refresh_ids.contains(refresh_id)
+            {
+                return true;
+            }
+            if state.events.len() < OAUTH_REFRESH_QUEUE_LIMIT {
+                let Some(event) = event.take() else {
+                    return false;
+                };
+                state.active_refresh_ids.insert(event.refresh_id.clone());
+                state.events.push_back(event);
+                self.event_ready.notify_one();
+                return true;
+            }
+            let (state_after_wait, _) = self
+                .space_ready
+                .wait_timeout(state, Duration::from_millis(100))
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            drop(state_after_wait);
+            let Some(host) = host.upgrade() else {
+                return false;
+            };
+            if current_committed_hash(&host, control).is_none() {
+                return false;
+            }
+        }
+    }
+
+    fn finish(&self, refresh_id: &str) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let now = Instant::now();
+        if state.active_refresh_ids.remove(refresh_id)
+            && state.completed_refresh_ids.insert(refresh_id.to_owned())
+        {
+            state
+                .completed_refresh_fifo
+                .push_back((now, refresh_id.to_owned()));
+        }
+        state.prune_completed_refresh_ids(now);
+        self.space_ready.notify_one();
+    }
+
+    fn pop_for_session(
+        &self,
+        host: &Weak<GoRouteIsolatedHost>,
+        control: &ControlSession,
+    ) -> Option<OAuthRefreshEvent> {
+        loop {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Some(event) = state.events.pop_front() {
+                self.space_ready.notify_one();
+                return Some(event);
+            }
+            if state.stopped {
+                return None;
+            }
+            let (state_after_wait, _) = self
+                .event_ready
+                .wait_timeout(state, Duration::from_millis(100))
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            drop(state_after_wait);
+            let Some(host) = host.upgrade() else {
+                return None;
+            };
+            if current_committed_hash(&host, control).is_none() {
+                return None;
+            }
+        }
+    }
+
+    fn stop(&self) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.stopped = true;
+        self.event_ready.notify_all();
+        self.space_ready.notify_all();
+    }
+}
+
+#[cfg(all(debug_assertions, unix))]
+fn oauth_refresh_worker(host: Weak<GoRouteIsolatedHost>, control: ControlSession) {
+    let queue = Arc::new(OAuthRefreshWorkQueue::default());
+    let counters = Arc::new(OAuthRefreshWorkerCounters::default());
+    let actions = Arc::new(OAuthRefreshActionCoordinator::default());
+    let mut handlers = Vec::with_capacity(OAUTH_REFRESH_HANDLER_LIMIT);
+    for index in 0..OAUTH_REFRESH_HANDLER_LIMIT {
+        let handler_host = host.clone();
+        let handler_control = control.clone();
+        let handler_queue = Arc::clone(&queue);
+        let handler_counters = Arc::clone(&counters);
+        let handler_actions = Arc::clone(&actions);
+        let spawn = std::thread::Builder::new()
+            .name(format!("agenthub-go-oauth-refresh-{index}"))
+            .spawn(move || {
+                while let Some(event) =
+                    handler_queue.pop_for_session(&handler_host, &handler_control)
+                {
+                    let refresh_id = event.refresh_id.clone();
+                    process_oauth_refresh_event(
+                        &handler_host,
+                        &handler_control,
+                        event,
+                        &handler_counters,
+                        &handler_actions,
+                    );
+                    handler_queue.finish(&refresh_id);
+                }
+            });
+        match spawn {
+            Ok(handler) => handlers.push(handler),
+            Err(_) => {
+                let count = counters.rejected.fetch_add(1, Ordering::Relaxed) + 1;
+                tracing::warn!(
+                    target: "core.adapter",
+                    code = "go.route.oauth_refresh.handler_start_failed",
+                    count,
+                    "Go route OAuth refresh handler could not start"
+                );
+            }
+        }
+    }
+    if handlers.is_empty() {
+        return;
+    }
+
+    loop {
+        let Some(host_ref) = host.upgrade() else {
+            break;
+        };
+        if current_committed_hash(&host_ref, &control).is_none() {
+            break;
+        }
+        drop(host_ref);
+
+        let event = match next_oauth_refresh(&control) {
+            Ok(Some(event)) => event,
+            Ok(None) => continue,
+            Err(NextOAuthRefreshError::Transport) => {
+                std::thread::sleep(Duration::from_millis(100));
+                continue;
+            }
+            Err(NextOAuthRefreshError::InvalidEvent) => {
+                let count = counters.rejected.fetch_add(1, Ordering::Relaxed) + 1;
+                tracing::warn!(
+                    target: "core.adapter",
+                    code = "go.route.oauth_refresh.invalid_event",
+                    count,
+                    "Go route OAuth refresh event was rejected"
+                );
+                break;
+            }
+        };
+        if !queue.push_for_session(&host, &control, event) {
+            break;
+        }
+    }
+
+    queue.stop();
+    for handler in handlers {
+        let _ = handler.join();
+    }
+}
+
+#[cfg(all(debug_assertions, unix))]
+fn process_oauth_refresh_event(
+    host: &Weak<GoRouteIsolatedHost>,
+    control: &ControlSession,
+    event: OAuthRefreshEvent,
+    counters: &OAuthRefreshWorkerCounters,
+    actions: &OAuthRefreshActionCoordinator,
+) {
+    let Some(host_ref) = host.upgrade() else {
+        return;
+    };
+    let event_identity_is_current = event.instance_epoch == control.instance_epoch
+        && event.owner_term == control.owner_term
+        && event.source_kind == "account";
+    if !event_identity_is_current {
+        let count = counters.rejected.fetch_add(1, Ordering::Relaxed) + 1;
+        tracing::warn!(
+            target: "core.adapter",
+            code = "go.route.oauth_refresh.identity_rejected",
+            count,
+            "Go route OAuth refresh event identity was rejected"
+        );
+        return;
+    }
+    let event_is_current =
+        current_committed_hash(&host_ref, control).as_deref() == Some(event.active_hash.as_str());
+
+    if event_is_current {
+        if let Some(hub) = host_ref.hub.as_ref().map(Arc::clone) {
+            let account_id = hub.adapter_bridge().resolve_go_route_oauth_refresh(
+                &event.edge_id,
+                &event.member_id,
+                &event.source_id,
+                &event.refresh_kind,
+            );
+            match account_id {
+                Ok(account_id) => {
+                    let key = OAuthRefreshActionKey::from(&event);
+                    let action_completed = actions.run_once(key, host, control, || {
+                        if hub
+                            .accounts()
+                            .reload_oauth_upstream_access(&account_id)
+                            .is_err()
+                        {
+                            let count = counters.rejected.fetch_add(1, Ordering::Relaxed) + 1;
+                            tracing::warn!(
+                                target: "core.adapter",
+                                code = "go.route.oauth_refresh.reload_failed",
+                                count,
+                                "Go route OAuth refresh did not complete"
+                            );
+                        }
+                    });
+                    if !action_completed {
+                        return;
+                    }
+                }
+                Err(_) => {
+                    let count = counters.rejected.fetch_add(1, Ordering::Relaxed) + 1;
+                    tracing::warn!(
+                        target: "core.adapter",
+                        code = "go.route.oauth_refresh.resolve_rejected",
+                        count,
+                        "Go route OAuth refresh event was rejected"
+                    );
+                }
+            }
+        }
+    } else {
+        let count = counters.rejected.fetch_add(1, Ordering::Relaxed) + 1;
+        tracing::warn!(
+            target: "core.adapter",
+            code = "go.route.oauth_refresh.stale_event",
+            count,
+            "Stale Go route OAuth refresh event was rejected"
+        );
+    }
+    drop(host_ref);
+
+    loop {
+        let Some(host_ref) = host.upgrade() else {
+            return;
+        };
+        let Some(current_hash) = current_committed_hash(&host_ref, control) else {
+            return;
+        };
+        let completion = if current_hash != event.active_hash {
+            OAuthRefreshCompletion::ConfigApplied(current_hash)
+        } else {
+            OAuthRefreshCompletion::NotRefreshed
+        };
+        drop(host_ref);
+
+        let completion_request_id = request_id("complete-oauth-refresh");
+        loop {
+            let Some(host_ref) = host.upgrade() else {
+                return;
+            };
+            if current_committed_hash(&host_ref, control).is_none() {
+                return;
+            }
+            drop(host_ref);
+
+            match complete_oauth_refresh(control, &event, &completion, &completion_request_id) {
+                Ok(()) => {
+                    let count = counters.completed.fetch_add(1, Ordering::Relaxed) + 1;
+                    let code = match completion {
+                        OAuthRefreshCompletion::ConfigApplied(_) => {
+                            "go.route.oauth_refresh.config_applied"
+                        }
+                        OAuthRefreshCompletion::NotRefreshed => {
+                            "go.route.oauth_refresh.not_refreshed"
+                        }
+                    };
+                    tracing::info!(
+                        target: "core.adapter",
+                        code,
+                        count,
+                        "Go route OAuth refresh event completed"
+                    );
+                    return;
+                }
+                Err(CompleteOAuthRefreshError::Transport) => {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                Err(CompleteOAuthRefreshError::Rejected) => {
+                    let count = counters.rejected.fetch_add(1, Ordering::Relaxed) + 1;
+                    tracing::warn!(
+                        target: "core.adapter",
+                        code = "go.route.oauth_refresh.completion_rejected",
+                        count,
+                        "Go route OAuth refresh completion was rejected"
+                    );
+                    let Some(host_ref) = host.upgrade() else {
+                        return;
+                    };
+                    let Some(latest_hash) = current_committed_hash(&host_ref, control) else {
+                        return;
+                    };
+                    let completion_was_superseded = match &completion {
+                        OAuthRefreshCompletion::ConfigApplied(attempted_hash) => {
+                            &latest_hash != attempted_hash
+                        }
+                        OAuthRefreshCompletion::NotRefreshed => latest_hash != event.active_hash,
+                    };
+                    if !completion_was_superseded {
+                        return;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
+
+#[cfg(all(debug_assertions, unix))]
+fn current_committed_hash(host: &GoRouteIsolatedHost, control: &ControlSession) -> Option<String> {
+    let inner = host.lock();
+    let session = inner.session.as_ref()?;
+    if !inner.desired
+        || inner.stopping
+        || session.instance_epoch != control.instance_epoch
+        || session.owner_term != control.owner_term
+    {
+        return None;
+    }
+    inner
+        .committed_plan
+        .as_ref()
+        .map(|plan| plan.config_hash.clone())
+}
+
+#[cfg(all(debug_assertions, unix))]
+enum NextOAuthRefreshError {
+    Transport,
+    InvalidEvent,
+}
+
+#[cfg(all(debug_assertions, unix))]
+fn next_oauth_refresh(
+    control: &ControlSession,
+) -> Result<Option<OAuthRefreshEvent>, NextOAuthRefreshError> {
+    let reply = post_control_with_timeout(
+        &control.socket,
+        &json!({
+            "type": "NextOAuthRefresh",
+            "request_id": request_id("next-oauth-refresh"),
+            "instance_epoch": control.instance_epoch,
+            "owner_id": OWNER_ID,
+            "owner_term": control.owner_term,
+            "app_data_dir": control.home.display().to_string(),
+            "payload": { "wait_ms": OAUTH_REFRESH_POLL_WAIT_MS },
+        }),
+        OAUTH_REFRESH_CONTROL_TIMEOUT,
+    )
+    .map_err(|_| NextOAuthRefreshError::Transport)?;
+    let payload = require_ok(&reply).map_err(|_| NextOAuthRefreshError::Transport)?;
+    let Some(event) = payload.get("event") else {
+        return Err(NextOAuthRefreshError::InvalidEvent);
+    };
+    if event.is_null() {
+        return Ok(None);
+    }
+    parse_oauth_refresh_event(event)
+        .map(Some)
+        .ok_or(NextOAuthRefreshError::InvalidEvent)
+}
+
+#[cfg(all(debug_assertions, unix))]
+fn parse_oauth_refresh_event(value: &Value) -> Option<OAuthRefreshEvent> {
+    fn required_string(value: &Value, key: &str) -> Option<String> {
+        let value = value.get(key)?.as_str()?;
+        (!value.is_empty() && value.len() <= 512 && value.trim() == value).then(|| value.to_owned())
+    }
+    fn required_hash(value: &Value, key: &str) -> Option<String> {
+        let value = required_string(value, key)?;
+        (value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())).then_some(value)
+    }
+
+    Some(OAuthRefreshEvent {
+        refresh_id: required_string(value, "refresh_id")?,
+        instance_epoch: required_string(value, "instance_epoch")?,
+        owner_term: value.get("owner_term")?.as_i64()?,
+        active_hash: required_hash(value, "active_hash")?,
+        edge_id: required_string(value, "edge_id")?,
+        member_id: required_string(value, "member_id")?,
+        source_kind: required_string(value, "source_kind")?,
+        source_id: required_string(value, "source_id")?,
+        refresh_kind: required_string(value, "refresh_kind")?,
+    })
+}
+
+#[cfg(all(debug_assertions, unix))]
+fn complete_oauth_refresh(
+    control: &ControlSession,
+    event: &OAuthRefreshEvent,
+    completion: &OAuthRefreshCompletion,
+    completion_request_id: &str,
+) -> Result<(), CompleteOAuthRefreshError> {
+    let (outcome, applied_active_hash) = match completion {
+        OAuthRefreshCompletion::ConfigApplied(hash) => ("config_applied", hash.as_str()),
+        OAuthRefreshCompletion::NotRefreshed => ("not_refreshed", ""),
+    };
+    let reply = post_control_with_timeout(
+        &control.socket,
+        &json!({
+            "type": "CompleteOAuthRefresh",
+            "request_id": completion_request_id,
+            "instance_epoch": control.instance_epoch,
+            "owner_id": OWNER_ID,
+            "owner_term": control.owner_term,
+            "app_data_dir": control.home.display().to_string(),
+            "payload": {
+                "refresh_id": event.refresh_id,
+                "active_hash": event.active_hash,
+                "edge_id": event.edge_id,
+                "member_id": event.member_id,
+                "source_kind": event.source_kind,
+                "source_id": event.source_id,
+                "refresh_kind": event.refresh_kind,
+                "applied_active_hash": applied_active_hash,
+                "outcome": outcome,
+            },
+        }),
+        OAUTH_REFRESH_CONTROL_TIMEOUT,
+    )
+    .map_err(|_| CompleteOAuthRefreshError::Transport)?;
+    let payload = require_ok(&reply).map_err(|_| CompleteOAuthRefreshError::Rejected)?;
+    if payload.get("completed").and_then(Value::as_bool) != Some(true)
+        || payload
+            .get("retry_eligible")
+            .and_then(Value::as_bool)
+            .is_none()
+    {
+        return Err(CompleteOAuthRefreshError::Rejected);
+    }
+    Ok(())
+}
+
+#[cfg(all(debug_assertions, unix))]
+enum CompleteOAuthRefreshError {
+    Transport,
+    Rejected,
 }
 
 #[cfg(not(unix))]
@@ -1001,6 +1839,7 @@ fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
             instance_epoch: session.instance_epoch,
             port: session.port,
             next_owner_renewal: Instant::now() + OWNER_RENEW_INTERVAL,
+            oauth_refresh_supported: session.oauth_refresh_supported,
             config_stdin,
             adapterd,
         },
@@ -1062,6 +1901,7 @@ struct HandshakeMeta {
     owner_term: i64,
     instance_epoch: String,
     port: u16,
+    oauth_refresh_supported: bool,
 }
 
 #[cfg(unix)]
@@ -1088,17 +1928,19 @@ fn handshake_start(
         }),
     )?;
     let hs_payload = require_ok(&hs)?;
-    let supports_config_stream = hs_payload
+    let capabilities = hs_payload
         .get("capabilities")
         .and_then(Value::as_array)
-        .is_some_and(|capabilities| {
-            capabilities
-                .iter()
-                .any(|capability| capability.as_str() == Some(CONFIG_STREAM_CAPABILITY))
-        });
+        .ok_or_else(|| "handshake missing capabilities".to_string())?;
+    let supports_config_stream = capabilities
+        .iter()
+        .any(|capability| capability.as_str() == Some(CONFIG_STREAM_CAPABILITY));
     if !supports_config_stream {
         return Err("Go route config stream is unavailable".into());
     }
+    let oauth_refresh_supported = capabilities
+        .iter()
+        .any(|capability| capability.as_str() == Some(OAUTH_REFRESH_CAPABILITY));
     let instance_epoch = hs_payload
         .get("instance_epoch")
         .and_then(Value::as_str)
@@ -1174,6 +2016,7 @@ fn handshake_start(
         owner_term,
         instance_epoch,
         port,
+        oauth_refresh_supported,
     })
 }
 
@@ -1373,11 +2216,13 @@ fn require_ok(reply: &Value) -> Result<&Value, String> {
 }
 
 fn request_id(kind: &str) -> String {
+    static REQUEST_ID_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    format!("gui-{kind}-{nanos}")
+    let sequence = REQUEST_ID_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("gui-{kind}-{}-{nanos}-{sequence}", std::process::id())
 }
 
 #[cfg(unix)]

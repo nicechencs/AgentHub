@@ -64,7 +64,7 @@ func (rt *Runtime) serveControlHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unable to read body", http.StatusBadRequest)
 		return
 	}
-	reply := rt.HandleControl(raw)
+	reply := rt.HandleControlContext(r.Context(), raw)
 	w.Header().Set("Content-Type", "application/json")
 	if !reply.OK {
 		w.WriteHeader(http.StatusBadRequest)
