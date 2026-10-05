@@ -79,6 +79,8 @@ const ERROR_ISOLATED_UNAVAILABLE: &str = "Go route is unavailable in this build"
 const ERROR_START_FAILED: &str = "Go route could not start";
 const ERROR_CONTROL_UNAVAILABLE: &str = "Go route status is unavailable";
 #[cfg(any(unix, windows))]
+const ERROR_MODE_ACTIVE: &str = "Go route is already active in another mode";
+#[cfg(any(unix, windows))]
 const ERROR_REQUIRED_RELOAD_FAILED: &str = "go.route.required_reload_failed";
 #[cfg(any(unix, windows))]
 const REQUIRED_RELOAD_STOPPED_MESSAGE: &str =
@@ -153,7 +155,6 @@ impl GoRouteRunMode {
 
 pub struct GoRouteIsolatedHost {
     hub: Option<Arc<AgentHub>>,
-    mode: GoRouteRunMode,
     inner: Mutex<Inner>,
     update_gate: Mutex<()>,
     #[cfg(feature = "go-route-bind-probe")]
@@ -176,6 +177,9 @@ impl Drop for GoRouteIsolatedHost {
 struct Inner {
     status: GoRouteIsolatedStatus,
     session: Option<Session>,
+    active_mode: Option<GoRouteRunMode>,
+    lifecycle_generation: u64,
+    lifecycle_in_flight: bool,
     desired: bool,
     stopping: bool,
     recovery_budget_used: u32,
@@ -398,23 +402,35 @@ fn unavailable_status() -> GoRouteIsolatedStatus {
     }
 }
 
+#[cfg(any(unix, windows))]
+fn mode_conflict_status() -> GoRouteIsolatedStatus {
+    GoRouteIsolatedStatus {
+        state: "failed".into(),
+        listen_ready: false,
+        port: None,
+        last_error: Some(ERROR_MODE_ACTIVE.into()),
+        home: None,
+        lifecycle: Some("mode_conflict".into()),
+        in_flight_count: 0,
+        member_count: 0,
+        healthy_member_count: 0,
+        recovering: false,
+        restart_count: 0,
+    }
+}
+
 impl GoRouteIsolatedHost {
     pub fn new(hub: Option<Arc<AgentHub>>) -> Arc<Self> {
-        Self::new_with_mode(hub, GoRouteRunMode::Isolated)
-    }
-
-    /// Dormant construction seam for dedicated runtime probes. Product mode
-    /// is intentionally not selected by AppState or any command/UI path.
-    #[allow(dead_code)]
-    pub(crate) fn new_with_mode(hub: Option<Arc<AgentHub>>, mode: GoRouteRunMode) -> Arc<Self> {
         #[cfg(any(unix, windows))]
         cleanup_stale_scratch_roots();
         let host = Arc::new(Self {
             hub,
-            mode,
             inner: Mutex::new(Inner {
                 status: stopped_status(),
                 session: None,
+                active_mode: None,
+                lifecycle_generation: 0,
+                lifecycle_in_flight: false,
                 desired: false,
                 stopping: false,
                 recovery_budget_used: 0,
@@ -480,12 +496,15 @@ impl GoRouteIsolatedHost {
                     }
                     Ok(_) | Err(_) => {
                         let mut session = inner.session.take();
+                        inner.lifecycle_in_flight = true;
                         mark_runtime_unavailable(&mut inner);
                         drop(inner);
                         if let Some(session) = session.as_mut() {
                             terminate_session(session);
                         }
-                        return self.lock().status.clone();
+                        let mut inner = self.lock();
+                        inner.lifecycle_in_flight = false;
+                        return inner.status.clone();
                     }
                 }
             }
@@ -630,15 +649,40 @@ impl GoRouteIsolatedHost {
     }
 
     pub fn start(&self) -> GoRouteIsolatedStatus {
+        self.start_mode(GoRouteRunMode::Isolated)
+    }
+
+    /// Starts this single process host in the requested mode. A live session
+    /// or desired automatic recovery owns its mode until it is fully stopped.
+    pub(crate) fn start_mode(&self, mode: GoRouteRunMode) -> GoRouteIsolatedStatus {
         #[cfg(not(any(unix, windows)))]
         {
+            let _ = mode;
             return platform_unavailable_status();
         }
         #[cfg(any(unix, windows))]
         {
-            let reload = {
+            let start_generation = {
                 let mut inner = self.lock();
                 refresh_locked(&mut inner);
+                if inner.stopping {
+                    return mode_conflict_status();
+                }
+                if inner.lifecycle_in_flight {
+                    return if inner.active_mode == Some(mode) {
+                        inner.status.clone()
+                    } else {
+                        mode_conflict_status()
+                    };
+                }
+                let mode_owned = inner.session.is_some() || inner.desired;
+                if mode_owned {
+                    match inner.active_mode {
+                        Some(active) if active == mode => {}
+                        Some(_) | None => return mode_conflict_status(),
+                    }
+                }
+                inner.active_mode = Some(mode);
                 inner.desired = true;
                 inner.stopping = false;
                 inner.recovery_budget_used = 0;
@@ -648,18 +692,20 @@ impl GoRouteIsolatedHost {
                     return inner.status.clone();
                 }
                 if inner.session.is_some() {
-                    true
+                    None
                 } else {
                     inner.status.state = "starting".into();
                     inner.status.last_error = None;
                     inner.status.listen_ready = false;
-                    false
+                    inner.lifecycle_generation = inner.lifecycle_generation.wrapping_add(1);
+                    inner.lifecycle_in_flight = true;
+                    Some(inner.lifecycle_generation)
                 }
             };
-            if reload {
-                return self.reload();
+            match start_generation {
+                Some(generation) => self.finish_start(false, generation),
+                None => self.reload(),
             }
-            self.finish_start(false)
         }
     }
 
@@ -680,7 +726,7 @@ impl GoRouteIsolatedHost {
             let Some(hub) = self.hub.as_ref() else {
                 return unavailable_status();
             };
-            let (config_stdin, control, port) = {
+            let (config_stdin, control, port, mode) = {
                 let mut inner = self.lock();
                 refresh_locked(&mut inner);
                 let Some(session) = inner.session.as_ref() else {
@@ -690,11 +736,12 @@ impl GoRouteIsolatedHost {
                     Arc::clone(&session.config_stdin),
                     ControlSession::from(session),
                     session.port,
+                    session.mode,
                 )
             };
-            let runtime_config = match build_runtime_config(hub, self.mode, port) {
+            let runtime_config = match build_runtime_config(hub, mode, port) {
                 Ok(config) => config,
-                Err(_) if self.mode == GoRouteRunMode::Product => {
+                Err(_) if mode == GoRouteRunMode::Product => {
                     let _ = self.fail_required_reload();
                     return self.lock().status.clone();
                 }
@@ -751,7 +798,7 @@ impl GoRouteIsolatedHost {
                 config_hash,
                 port,
                 product_home,
-                mode: self.mode,
+                mode,
             });
             inner.status.clone()
         }
@@ -788,6 +835,7 @@ impl GoRouteIsolatedHost {
                             Arc::clone(&session.config_stdin),
                             ControlSession::from(session),
                             session.port,
+                            session.mode,
                         )
                     })
                 } else {
@@ -796,14 +844,14 @@ impl GoRouteIsolatedHost {
                     };
                 }
             };
-            let Some((config_stdin, control, port)) = session else {
+            let Some((config_stdin, control, port, mode)) = session else {
                 return self.fail_required_reload();
             };
 
             let Some(hub) = self.hub.as_ref() else {
                 return self.fail_required_reload();
             };
-            let runtime_config = match build_runtime_config(hub, self.mode, port) {
+            let runtime_config = match build_runtime_config(hub, mode, port) {
                 Ok(config) => config,
                 Err(_) => return self.fail_required_reload(),
             };
@@ -894,7 +942,7 @@ impl GoRouteIsolatedHost {
                         config_hash: config_hash.clone(),
                         port,
                         product_home,
-                        mode: self.mode,
+                        mode,
                     });
                     true
                 } else {
@@ -933,10 +981,28 @@ impl GoRouteIsolatedHost {
     #[cfg(any(unix, windows))]
     fn fail_required_reload(&self) -> GoRouteRequiredReloadResult {
         let mut inner = self.lock();
+        // Another lifecycle owner can have removed its session before doing
+        // blocking process cleanup. It remains responsible for releasing the
+        // mode: releasing it here would permit another mode to claim the
+        // listener before that cleanup ends.
+        if inner.lifecycle_in_flight && inner.status.state != "starting" {
+            return GoRouteRequiredReloadResult::Failed {
+                code: ERROR_REQUIRED_RELOAD_FAILED.into(),
+            };
+        }
+        // A start has no session yet, but its blocking process creation may
+        // still be in flight. Cancel it in place and leave its mode owned;
+        // finish_start will reap its result and make the host idle.
+        let start_pending = inner.lifecycle_in_flight
+            && inner.session.is_none()
+            && inner.status.state == "starting";
+        if !start_pending {
+            inner.lifecycle_in_flight = true;
+        }
         let mut session = inner.session.take();
         let restart_count = inner.status.restart_count;
         inner.desired = false;
-        inner.stopping = false;
+        inner.stopping = true;
         inner.recovery_budget_used = 0;
         inner.stable_since = None;
         inner.next_restart_at = None;
@@ -958,6 +1024,12 @@ impl GoRouteIsolatedHost {
         if let Some(session) = session.as_mut() {
             terminate_session(session);
         }
+        if !start_pending {
+            let mut inner = self.lock();
+            inner.active_mode = None;
+            inner.lifecycle_in_flight = false;
+            inner.stopping = false;
+        }
         GoRouteRequiredReloadResult::Failed {
             code: ERROR_REQUIRED_RELOAD_FAILED.into(),
         }
@@ -972,11 +1044,15 @@ impl GoRouteIsolatedHost {
             .is_some_and(|session| session.instance_epoch == control.instance_epoch);
         let mut session = same_session.then(|| inner.session.take()).flatten();
         if same_session {
+            inner.lifecycle_in_flight = true;
             mark_runtime_unavailable(&mut inner);
         }
         drop(inner);
         if let Some(session) = session.as_mut() {
             terminate_session(session);
+        }
+        if same_session {
+            self.lock().lifecycle_in_flight = false;
         }
         self.lock().status.clone()
     }
@@ -989,26 +1065,44 @@ impl GoRouteIsolatedHost {
     }
 
     #[cfg(any(unix, windows))]
-    fn finish_start(&self, recovering: bool) -> GoRouteIsolatedStatus {
-        let existing_plan = self.lock().committed_plan.clone();
+    fn finish_start(&self, recovering: bool, generation: u64) -> GoRouteIsolatedStatus {
+        let (existing_plan, active_mode) = {
+            let inner = self.lock();
+            if inner.lifecycle_generation != generation {
+                return inner.status.clone();
+            }
+            (inner.committed_plan.clone(), inner.active_mode)
+        };
         let plan = existing_plan.map(Ok).unwrap_or_else(|| {
-            self.hub
-                .as_ref()
+            active_mode
                 .ok_or_else(|| ERROR_ISOLATED_UNAVAILABLE.to_string())
-                .and_then(|hub| build_runtime_plan(hub, self.mode))
+                .and_then(|mode| {
+                    self.hub
+                        .as_ref()
+                        .ok_or_else(|| ERROR_ISOLATED_UNAVAILABLE.to_string())
+                        .and_then(|hub| build_runtime_plan(hub, mode))
+                })
         });
         let result = plan.and_then(|plan| start_session(&plan).map(|session| (session, plan)));
         match result {
             Ok((mut session, plan)) => {
                 let mut inner = self.lock();
-                if inner.status.state != "starting" || !inner.desired || inner.stopping {
+                if inner.lifecycle_generation != generation
+                    || inner.status.state != "starting"
+                    || !inner.desired
+                    || inner.stopping
+                {
                     drop(inner);
                     terminate_session(&mut session);
                     let mut inner = self.lock();
-                    if !inner.desired {
+                    if inner.lifecycle_generation == generation && !inner.desired {
                         let restart_count = inner.status.restart_count;
                         inner.status = stopped_status();
                         inner.status.restart_count = restart_count;
+                        inner.committed_plan = None;
+                        inner.active_mode = None;
+                        inner.lifecycle_in_flight = false;
+                        inner.stopping = false;
                     }
                     return inner.status.clone();
                 }
@@ -1026,6 +1120,8 @@ impl GoRouteIsolatedHost {
                     restart_count: inner.status.restart_count + u32::from(recovering),
                 };
                 inner.session = Some(session);
+                inner.active_mode = Some(plan.mode);
+                inner.lifecycle_in_flight = false;
                 inner.committed_plan = Some(plan);
                 inner.stable_since = Some(Instant::now());
                 inner.next_restart_at = None;
@@ -1034,8 +1130,24 @@ impl GoRouteIsolatedHost {
             }
             Err(_) => {
                 let mut inner = self.lock();
+                if inner.lifecycle_generation != generation {
+                    return inner.status.clone();
+                }
                 inner.session = None;
+                if !inner.desired {
+                    let restart_count = inner.status.restart_count;
+                    inner.status = stopped_status();
+                    inner.status.restart_count = restart_count;
+                    inner.committed_plan = None;
+                    inner.active_mode = None;
+                    inner.lifecycle_in_flight = false;
+                    inner.stopping = false;
+                    inner.stable_since = None;
+                    inner.next_restart_at = None;
+                    return inner.status.clone();
+                }
                 inner.recovery_budget_used = inner.recovery_budget_used.saturating_add(1);
+                inner.lifecycle_in_flight = false;
                 inner.stable_since = None;
                 inner.next_restart_at =
                     Some(Instant::now() + restart_backoff(inner.recovery_budget_used));
@@ -1067,19 +1179,45 @@ impl GoRouteIsolatedHost {
         }
         #[cfg(any(unix, windows))]
         {
-            {
+            let owns_stop = {
                 let mut inner = self.lock();
-                inner.desired = false;
-                inner.stopping = true;
-                inner.next_restart_at = None;
-                inner.stable_since = None;
-                inner.status.recovering = false;
+                if inner.stopping {
+                    false
+                } else {
+                    inner.desired = false;
+                    inner.stopping = true;
+                    inner.next_restart_at = None;
+                    inner.stable_since = None;
+                    inner.status.recovering = false;
+                    true
+                }
+            };
+            if !owns_stop {
+                let wait_started = Instant::now();
+                loop {
+                    let mut inner = self.lock();
+                    refresh_locked(&mut inner);
+                    if !inner.stopping || wait_started.elapsed() >= START_STOP_WAIT {
+                        return inner.status.clone();
+                    }
+                    drop(inner);
+                    std::thread::sleep(Duration::from_millis(25));
+                }
             }
             let wait_started = Instant::now();
             loop {
                 let mut inner = self.lock();
                 refresh_locked(&mut inner);
+                if inner.lifecycle_in_flight {
+                    if wait_started.elapsed() >= START_STOP_WAIT {
+                        return inner.status.clone();
+                    }
+                    drop(inner);
+                    std::thread::sleep(Duration::from_millis(25));
+                    continue;
+                }
                 if let Some(mut session) = inner.session.take() {
+                    inner.lifecycle_in_flight = true;
                     drop(inner);
                     stop_session(&mut session);
                     let mut inner = self.lock();
@@ -1087,6 +1225,8 @@ impl GoRouteIsolatedHost {
                     inner.status = stopped_status();
                     inner.status.restart_count = restart_count;
                     inner.committed_plan = None;
+                    inner.active_mode = None;
+                    inner.lifecycle_in_flight = false;
                     inner.stopping = false;
                     return inner.status.clone();
                 }
@@ -1096,6 +1236,8 @@ impl GoRouteIsolatedHost {
                     inner.status.restart_count = restart_count;
                     inner.stopping = false;
                     inner.committed_plan = None;
+                    inner.active_mode = None;
+                    inner.lifecycle_in_flight = false;
                     return inner.status.clone();
                 }
                 if wait_started.elapsed() >= START_STOP_WAIT {
@@ -1160,7 +1302,7 @@ impl GoRouteIsolatedHost {
                 host.finish_owner_renewal(control);
                 continue;
             }
-            let should_restart = {
+            let restart_generation = {
                 let mut inner = host.lock();
                 refresh_locked(&mut inner);
                 reset_stable_recovery_budget(&mut inner);
@@ -1170,6 +1312,7 @@ impl GoRouteIsolatedHost {
                     .unwrap_or(true);
                 let should = inner.desired
                     && !inner.stopping
+                    && !inner.lifecycle_in_flight
                     && inner.session.is_none()
                     && inner.status.state != "starting"
                     && inner.recovery_budget_used < MAX_RECOVERY_BUDGET
@@ -1177,13 +1320,18 @@ impl GoRouteIsolatedHost {
                 if should {
                     inner.status.state = "starting".into();
                     inner.status.recovering = true;
+                    inner.lifecycle_generation = inner.lifecycle_generation.wrapping_add(1);
+                    inner.lifecycle_in_flight = true;
+                    Some(inner.lifecycle_generation)
                 } else if inner.recovery_budget_used >= MAX_RECOVERY_BUDGET {
                     inner.status.recovering = false;
+                    None
+                } else {
+                    None
                 }
-                should
             };
-            if should_restart {
-                let _ = host.finish_start(true);
+            if let Some(generation) = restart_generation {
+                let _ = host.finish_start(true, generation);
             }
         });
     }
@@ -1210,11 +1358,13 @@ impl GoRouteIsolatedHost {
             }
             Ok(_) | Err(_) => {
                 let mut session = inner.session.take();
+                inner.lifecycle_in_flight = true;
                 mark_runtime_unavailable(&mut inner);
                 drop(inner);
                 if let Some(session) = session.as_mut() {
                     terminate_session(session);
                 }
+                self.lock().lifecycle_in_flight = false;
             }
         }
     }

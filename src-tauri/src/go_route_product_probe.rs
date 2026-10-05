@@ -8,7 +8,7 @@ use std::fs;
 use std::io::Read;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Barrier};
 use std::time::{Duration, Instant};
 
 use agenthub_core::models::{AdapterSourceKind, AgentId, ProviderInput, RouteDownstreamSurface};
@@ -88,13 +88,13 @@ fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
         "saved product port was not retained",
     )?;
 
-    let host = GoRouteIsolatedHost::new_with_mode(Some(Arc::clone(&hub)), GoRouteRunMode::Product);
+    let host = GoRouteIsolatedHost::new(Some(Arc::clone(&hub)));
     let (preflight_port, preflight_home, config_bytes) = host.probe_product_preflight()?;
     ensure(
         preflight_port == PRODUCT_PORT && config_bytes > 0,
         "Product preflight did not retain the saved port and configuration",
     )?;
-    let started = host.start();
+    let started = host.start_mode(GoRouteRunMode::Product);
     ensure_ready(&started, PRODUCT_PORT, "initial start")?;
     let (first_pid, product_home, first_staging) = host.probe_session_process()?;
     let expected_home = fs::canonicalize(&data_dir)
@@ -113,6 +113,13 @@ fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
 
     let initial_status = host.status();
     ensure_ready(&initial_status, PRODUCT_PORT, "initial status")?;
+    let mode_conflict = host.start();
+    ensure(
+        mode_conflict.state == "failed"
+            && mode_conflict.lifecycle.as_deref() == Some("mode_conflict"),
+        "isolated start changed an active Product host mode",
+    )?;
+    ensure_ready(&host.status(), PRODUCT_PORT, "status after mode conflict")?;
     let hash_before = host
         .probe_config_hash()
         .ok_or_else(|| "initial committed config hash is missing".to_string())?;
@@ -151,6 +158,17 @@ fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
     )?;
 
     host.probe_kill_process()?;
+    let recovering = host.status();
+    ensure(
+        recovering.state == "failed" && recovering.recovering,
+        "killed Product route did not enter desired recovery",
+    )?;
+    let recovery_mode_conflict = host.start();
+    ensure(
+        recovery_mode_conflict.state == "failed"
+            && recovery_mode_conflict.lifecycle.as_deref() == Some("mode_conflict"),
+        "isolated start changed mode while Product recovery was desired",
+    )?;
     let recovery_deadline = Instant::now() + Duration::from_secs(20);
     let recovered = loop {
         let status = host.status();
@@ -181,10 +199,32 @@ fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
         "recovery removed persistent Product home",
     )?;
 
-    let stopped = host.stop();
+    let stop_barrier = Arc::new(Barrier::new(3));
+    let first_stop_host = Arc::clone(&host);
+    let first_stop_barrier = Arc::clone(&stop_barrier);
+    let first_stop = std::thread::spawn(move || {
+        first_stop_barrier.wait();
+        first_stop_host.stop()
+    });
+    let second_stop_host = Arc::clone(&host);
+    let second_stop_barrier = Arc::clone(&stop_barrier);
+    let second_stop = std::thread::spawn(move || {
+        second_stop_barrier.wait();
+        second_stop_host.stop()
+    });
+    stop_barrier.wait();
+    let stopped = first_stop
+        .join()
+        .map_err(|_| "first concurrent stop panicked".to_string())?;
+    let also_stopped = second_stop
+        .join()
+        .map_err(|_| "second concurrent stop panicked".to_string())?;
     ensure(
-        stopped.state == "stopped" && !stopped.listen_ready,
-        "Product route did not stop",
+        stopped.state == "stopped"
+            && !stopped.listen_ready
+            && also_stopped.state == "stopped"
+            && !also_stopped.listen_ready,
+        "concurrent Product stop did not converge",
     )?;
     ensure(
         !second_staging.exists(),
@@ -193,12 +233,30 @@ fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
     verify_product_tree(&data_dir, &product_home, data_mode_before)?;
     let released = wait_for_port_release(PRODUCT_PORT, Duration::from_secs(5));
     ensure(released, "Product port was not released after stop")?;
+    let isolated = host.start();
+    ensure(
+        isolated.state == "ready"
+            && isolated.listen_ready
+            && isolated.port.is_some_and(|port| port != PRODUCT_PORT),
+        "completed Product stop did not release the host for isolated mode",
+    )?;
+    let isolated_port = isolated.port;
+    let isolated_stopped = host.stop();
+    ensure(
+        isolated_stopped.state == "stopped" && !isolated_stopped.listen_ready,
+        "isolated route did not stop after mode release",
+    )?;
 
     Ok(json!({
         "schema": "go-route-product-e2e-probe.v1",
         "status": "ok",
         "port": PRODUCT_PORT,
         "saved_port_preserved": true,
+        "active_mode_change_rejected": true,
+        "recovery_mode_change_rejected": true,
+        "concurrent_stop_converged": true,
+        "stopped_mode_released": true,
+        "isolated_port": isolated_port,
         "reload_committed": true,
         "restart_count": recovered.restart_count,
         "same_port_recovered": true,
