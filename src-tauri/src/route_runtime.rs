@@ -53,12 +53,20 @@ impl std::fmt::Display for ProductHandoffTrialError {
     }
 }
 
+/// Safe failure categories for the in-process-only Product runtime probe.
+#[cfg(feature = "route-runtime-product-handoff-probe")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProductHandoffTrialProbeFailure {
+    RuntimeSecretScan,
+    ProductRequest,
+}
+
 /// In-process-only probe hook invoked while Product Go is running. The hook
-/// can only return a pass/fail result, so no configuration or Key material can
-/// escape through the trial result.
+/// returns only a safe failure category, so configuration or Key material
+/// cannot escape through the trial result.
 #[cfg(feature = "route-runtime-product-handoff-probe")]
 pub(crate) type ProductHandoffTrialRuntimeProbe =
-    Box<dyn FnOnce(&GoRouteIsolatedHost) -> bool + Send>;
+    Box<dyn FnOnce(&GoRouteIsolatedHost) -> Result<(), ProductHandoffTrialProbeFailure> + Send>;
 
 /// Product runtime implementations known by the desktop shell.
 ///
@@ -294,10 +302,19 @@ impl RouteRuntimeManager {
                 .compensate_product_handoff(&snapshot, port, "start_go")
                 .await);
         }
-        if runtime_probe.is_some_and(|probe| !probe(&self.isolated_go)) {
-            return Err(self
-                .compensate_product_handoff(&snapshot, port, "runtime_secret_scan")
-                .await);
+        if let Some(probe) = runtime_probe {
+            let stage = match probe(&self.isolated_go) {
+                Ok(()) => None,
+                Err(ProductHandoffTrialProbeFailure::RuntimeSecretScan) => {
+                    Some("runtime_secret_scan")
+                }
+                Err(ProductHandoffTrialProbeFailure::ProductRequest) => Some("product_request"),
+            };
+            if let Some(stage) = stage {
+                return Err(self
+                    .compensate_product_handoff(&snapshot, port, stage)
+                    .await);
+            }
         }
         let prepared_hash_matched = self.isolated_go.probe_config_hash().as_deref()
             == Some(prepared_summary.expected_config_hash.as_str());

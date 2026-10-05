@@ -23,6 +23,8 @@ EVIDENCE="${SCRATCH}/evidence.json"
 ADAPTERD_BIN="${SCRATCH}/agenthub-adapterd"
 MOCK_PID=""
 PROBE_PID=""
+RESPONSES_SOURCE_KEY="sk-product-handoff-responses-do-not-use-000000"
+MESSAGES_SOURCE_KEY="sk-product-handoff-messages-do-not-use-000000"
 
 cleanup() {
   local status=$?
@@ -67,9 +69,24 @@ PY
 python3 -u - "${UPSTREAM_PORT}" <<'PY' >"${MOCK_LOG}" 2>&1 &
 import json, sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+RESPONSES_SOURCE_KEY = "sk-product-handoff-responses-do-not-use-000000"
+MESSAGES_SOURCE_KEY = "sk-product-handoff-messages-do-not-use-000000"
+RESPONSES_REQUEST = "handoff-responses-request"
+MESSAGES_REQUEST = "handoff-messages-request"
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
+
+    def send_json(self, status, payload):
+        raw = json.dumps(payload, separators=(",", ":")).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
     def do_GET(self):
         raw = json.dumps({"object":"list","data":[{"id":"probe-model"}]}).encode()
         self.send_response(200)
@@ -77,6 +94,77 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
+
+    def do_POST(self):
+        try:
+            length = int(self.headers.get("Content-Length", "-1"))
+            if length < 0 or length > 8192:
+                raise ValueError
+            payload = json.loads(self.rfile.read(length))
+        except Exception:
+            self.send_json(400, {"error":"mock_request_rejected"})
+            print(json.dumps({"event":"rejected"}), flush=True)
+            return
+
+        if self.path == "/v1/chat/completions":
+            model = payload.get("model") if isinstance(payload, dict) else None
+            valid = (
+                self.headers.get("Authorization") == "Bearer " + RESPONSES_SOURCE_KEY
+                and not self.headers.get("X-API-Key")
+                and not self.headers.get("Anthropic-Version")
+                and isinstance(model, str) and bool(model)
+                and payload == {
+                    "model": model,
+                    "messages": [{"role": "user", "content": RESPONSES_REQUEST}],
+                    "stream": False,
+                }
+            )
+            if valid:
+                self.send_json(200, {
+                    "id": "chatcmpl_handoff",
+                    "object": "chat.completion",
+                    "created": 1720000000,
+                    "model": model,
+                    "choices": [{
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "handoff-responses-ok"},
+                        "finish_reason": "stop",
+                    }],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                })
+                print(json.dumps({"event":"responses"}), flush=True)
+                return
+
+        if self.path == "/v1/messages":
+            model = payload.get("model") if isinstance(payload, dict) else None
+            valid = (
+                self.headers.get("X-API-Key") == MESSAGES_SOURCE_KEY
+                and self.headers.get("Anthropic-Version") == "2023-06-01"
+                and not self.headers.get("Authorization")
+                and isinstance(model, str) and bool(model)
+                and payload == {
+                    "model": model,
+                    "max_tokens": 16,
+                    "messages": [{"role": "user", "content": MESSAGES_REQUEST}],
+                    "stream": False,
+                }
+            )
+            if valid:
+                self.send_json(200, {
+                    "id": "msg_handoff",
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "handoff-messages-ok"}],
+                    "model": model,
+                    "stop_reason": "end_turn",
+                    "stop_sequence": None,
+                    "usage": {"input_tokens": 1, "output_tokens": 1},
+                })
+                print(json.dumps({"event":"messages"}), flush=True)
+                return
+
+        self.send_json(400, {"error":"mock_request_rejected"})
+        print(json.dumps({"event":"rejected"}), flush=True)
 ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
 PY
 MOCK_PID=$!
@@ -134,7 +222,8 @@ assert evidence["rust_entry_count"] == 2, evidence
 for key in (
     "detached_caller_drop_compensated", "health_failure_compensated",
     "prepared_hash_matched", "rust_stopped_before_go", "rust_mutator_blocked",
-    "product_health_ready", "go_stopped_before_restore", "rust_exact_restored",
+    "product_health_ready", "synthetic_protocol_requests_succeeded",
+    "go_stopped_before_restore", "rust_exact_restored",
     "database_and_selection_unchanged", "final_port_released", "secret_free_evidence",
 ):
     assert evidence[key] is True, (key, evidence)
@@ -143,12 +232,29 @@ with open(evidence_path, "w", encoding="utf-8") as handle:
     handle.write("\n")
 PY
 
+python3 - "${MOCK_LOG}" <<'PY'
+import json, sys
+events = []
+with open(sys.argv[1], encoding="utf-8") as handle:
+    for line in handle:
+        line = line.strip()
+        if line.startswith("{"):
+            events.append(json.loads(line).get("event"))
+assert events.count("responses") == 1, events
+assert events.count("messages") == 1, events
+assert "rejected" not in events, events
+PY
+
 if grep -F -q \
-  -e "sk-product-handoff-responses-do-not-use-000000" \
-  -e "sk-product-handoff-messages-do-not-use-000000" \
+  -e "${RESPONSES_SOURCE_KEY}" \
+  -e "${MESSAGES_SOURCE_KEY}" \
   -e "ahb-product-handoff-wrong-bearer" \
+  -e "handoff-responses-request" \
+  -e "handoff-messages-request" \
+  -e "handoff-responses-ok" \
+  -e "handoff-messages-ok" \
   "${RUN_LOG}" "${BUILD_LOG}" "${GO_BUILD_LOG}" "${MOCK_LOG}"; then
-  echo "FAIL: synthetic secret leaked into probe logs" >&2
+  echo "FAIL: synthetic Key or request data leaked into probe logs" >&2
   exit 1
 fi
 

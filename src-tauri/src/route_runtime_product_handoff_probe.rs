@@ -14,7 +14,9 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::exit_coordinator::LifecycleShutdownBarrier;
-use crate::route_runtime::{ProductHandoffTrialRuntimeProbe, RouteRuntimeManager};
+use crate::route_runtime::{
+    ProductHandoffTrialProbeFailure, ProductHandoffTrialRuntimeProbe, RouteRuntimeManager,
+};
 
 const PRODUCT_PORT: u16 = 43121;
 const RESPONSES_SOURCE_ID: &str = "product-handoff-probe-responses-source";
@@ -22,6 +24,10 @@ const MESSAGES_SOURCE_ID: &str = "product-handoff-probe-messages-source";
 const RESPONSES_SOURCE_KEY: &str = "sk-product-handoff-responses-do-not-use-000000";
 const MESSAGES_SOURCE_KEY: &str = "sk-product-handoff-messages-do-not-use-000000";
 const WRONG_BEARER: &str = "ahb-product-handoff-wrong-bearer";
+const RESPONSES_REQUEST_MARKER: &str = "handoff-responses-request";
+const MESSAGES_REQUEST_MARKER: &str = "handoff-messages-request";
+const RESPONSES_RESPONSE_MARKER: &str = "handoff-responses-ok";
+const MESSAGES_RESPONSE_MARKER: &str = "handoff-messages-ok";
 
 type ProbeResult<T> = Result<T, String>;
 
@@ -117,6 +123,10 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
         WRONG_BEARER.to_owned(),
         responses_pool.hub_token.clone(),
         messages_pool.hub_token.clone(),
+        RESPONSES_REQUEST_MARKER.to_owned(),
+        MESSAGES_REQUEST_MARKER.to_owned(),
+        RESPONSES_RESPONSE_MARKER.to_owned(),
+        MESSAGES_RESPONSE_MARKER.to_owned(),
     ];
     let flags = hub.route_pools().pair_adapter_flags();
     // Build every Rust start spec before the Product plan is prepared.
@@ -124,6 +134,16 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
         .into_iter()
         .map(|pool| hub.adapter_bridge().pool_listener_spec(pool, flags))
         .collect::<Vec<_>>();
+    let responses_model = specs
+        .first()
+        .and_then(|spec| spec.listed_models.first())
+        .cloned()
+        .ok_or_else(|| "Responses route did not expose a probe model".to_string())?;
+    let messages_model = specs
+        .get(1)
+        .and_then(|spec| spec.listed_models.first())
+        .cloned()
+        .ok_or_else(|| "Messages route did not expose a probe model".to_string())?;
 
     let runtime = Arc::new(RouteRuntimeManager::new_product_handoff_probe(Arc::clone(
         &hub,
@@ -165,7 +185,13 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
                 responses_pool.hub_token.clone(),
                 messages_pool.hub_token.clone(),
             ],
-            Some(product_runtime_secret_probe(secret_values.clone())),
+            Some(product_runtime_protocol_and_secret_probe(
+                secret_values.clone(),
+                responses_pool.hub_token.clone(),
+                messages_pool.hub_token.clone(),
+                responses_model,
+                messages_model,
+            )),
         )
         .await
         .map_err(|_| "successful trial task panicked".to_string())?
@@ -261,6 +287,7 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
         "rust_stopped_before_go": report.rust_stopped_before_go,
         "rust_mutator_blocked": report.rust_mutator_blocked,
         "product_health_ready": report.product_health_ready,
+        "synthetic_protocol_requests_succeeded": true,
         "go_stopped_before_restore": report.go_stopped_before_restore,
         "rust_exact_restored": report.rust_exact_restored,
         "database_and_selection_unchanged": true,
@@ -325,41 +352,170 @@ fn critical_db_hash(data: &Path) -> ProbeResult<String> {
 }
 
 fn product_runtime_secret_probe(secret_values: Vec<String>) -> ProductHandoffTrialRuntimeProbe {
+    Box::new(move |host| {
+        runtime_secrets_are_absent(host, &secret_values)
+            .then_some(())
+            .ok_or(ProductHandoffTrialProbeFailure::RuntimeSecretScan)
+    })
+}
+
+fn product_runtime_protocol_and_secret_probe(
+    secret_values: Vec<String>,
+    responses_bearer: String,
+    messages_bearer: String,
+    responses_model: String,
+    messages_model: String,
+) -> ProductHandoffTrialRuntimeProbe {
+    Box::new(move |host| {
+        if !product_data_plane_is_ready(
+            &responses_bearer,
+            &messages_bearer,
+            &responses_model,
+            &messages_model,
+        ) {
+            return Err(ProductHandoffTrialProbeFailure::ProductRequest);
+        }
+        runtime_secrets_are_absent(host, &secret_values)
+            .then_some(())
+            .ok_or(ProductHandoffTrialProbeFailure::RuntimeSecretScan)
+    })
+}
+
+fn runtime_secrets_are_absent(
+    host: &crate::go_route_isolated::GoRouteIsolatedHost,
+    secret_values: &[String],
+) -> bool {
     #[cfg(all(target_os = "linux", feature = "go-route-tcp-control-probe"))]
     {
-        Box::new(move |host| {
-            let Ok((pid, product_home, staging_home)) = host.probe_session_process() else {
-                return false;
-            };
-            let needles = secret_values
-                .iter()
-                .map(String::as_bytes)
-                .collect::<Vec<_>>();
-            host.probe_tcp_control_startup_secret_scan()
-                .unwrap_or(false)
-                && matches!(
-                    file_contains_any(&PathBuf::from(format!("/proc/{pid}/cmdline")), &needles),
-                    Ok(false)
-                )
-                && matches!(
-                    file_contains_any(&PathBuf::from(format!("/proc/{pid}/environ")), &needles),
-                    Ok(false)
-                )
-                && matches!(
-                    regular_tree_contains_any(&product_home, &needles),
-                    Ok(false)
-                )
-                && matches!(
-                    regular_tree_contains_any(&staging_home, &needles),
-                    Ok(false)
-                )
-        })
+        let Ok((pid, product_home, staging_home)) = host.probe_session_process() else {
+            return false;
+        };
+        let needles = secret_values
+            .iter()
+            .map(String::as_bytes)
+            .collect::<Vec<_>>();
+        host.probe_tcp_control_startup_secret_scan()
+            .unwrap_or(false)
+            && matches!(
+                file_contains_any(&PathBuf::from(format!("/proc/{pid}/cmdline")), &needles),
+                Ok(false)
+            )
+            && matches!(
+                file_contains_any(&PathBuf::from(format!("/proc/{pid}/environ")), &needles),
+                Ok(false)
+            )
+            && matches!(
+                regular_tree_contains_any(&product_home, &needles),
+                Ok(false)
+            )
+            && matches!(
+                regular_tree_contains_any(&staging_home, &needles),
+                Ok(false)
+            )
     }
     #[cfg(not(all(target_os = "linux", feature = "go-route-tcp-control-probe")))]
     {
-        let _ = secret_values;
-        Box::new(|_| false)
+        let _ = (host, secret_values);
+        false
     }
+}
+
+fn product_data_plane_is_ready(
+    responses_bearer: &str,
+    messages_bearer: &str,
+    responses_model: &str,
+    messages_model: &str,
+) -> bool {
+    let responses = post_product_json(
+        "/v1/responses",
+        responses_bearer,
+        json!({
+            "model": responses_model,
+            "input": RESPONSES_REQUEST_MARKER,
+            "stream": false,
+        }),
+    );
+    let messages = post_product_json(
+        "/v1/messages",
+        messages_bearer,
+        json!({
+            "model": messages_model,
+            "max_tokens": 16,
+            "messages": [{"role": "user", "content": MESSAGES_REQUEST_MARKER}],
+            "stream": false,
+        }),
+    );
+    responses.is_some_and(|response| {
+        response.get("object").and_then(Value::as_str) == Some("response")
+            && response.get("status").and_then(Value::as_str) == Some("completed")
+            && response.get("model").and_then(Value::as_str) == Some(responses_model)
+            && response_output_has_text(&response, RESPONSES_RESPONSE_MARKER)
+    }) && messages.is_some_and(|message| {
+        message.get("type").and_then(Value::as_str) == Some("message")
+            && message.get("role").and_then(Value::as_str) == Some("assistant")
+            && message.get("model").and_then(Value::as_str) == Some(messages_model)
+            && message_content_has_text(&message, MESSAGES_RESPONSE_MARKER)
+    })
+}
+
+fn post_product_json(path: &str, bearer: &str, body: Value) -> Option<Value> {
+    const MAX_BODY_BYTES: u64 = 32 * 1024;
+    let request_body = serde_json::to_string(&body).ok()?;
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(2))
+        .redirects(0)
+        .try_proxy_from_env(false)
+        .build();
+    let response = match agent
+        .post(&format!("http://127.0.0.1:{PRODUCT_PORT}{path}"))
+        .set("Authorization", &format!("Bearer {bearer}"))
+        .set("Content-Type", "application/json")
+        .send_string(&request_body)
+    {
+        Ok(response) => response,
+        Err(ureq::Error::Status(_, response)) => response,
+        Err(ureq::Error::Transport(_)) => return None,
+    };
+    if response.status() != 200 {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    response
+        .into_reader()
+        .take(MAX_BODY_BYTES.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() as u64 > MAX_BODY_BYTES {
+        return None;
+    }
+    serde_json::from_slice(&bytes).ok()
+}
+
+fn response_output_has_text(response: &Value, expected: &str) -> bool {
+    response
+        .get("output")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|item| item.get("type").and_then(Value::as_str) == Some("message"))
+        .filter_map(|item| item.get("content").and_then(Value::as_array))
+        .flatten()
+        .any(|part| {
+            part.get("type").and_then(Value::as_str) == Some("output_text")
+                && part.get("text").and_then(Value::as_str) == Some(expected)
+        })
+}
+
+fn message_content_has_text(message: &Value, expected: &str) -> bool {
+    message
+        .get("content")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|part| {
+            part.get("type").and_then(Value::as_str) == Some("text")
+                && part.get("text").and_then(Value::as_str) == Some(expected)
+        })
 }
 
 const MAX_SECRET_SCAN_FILE_BYTES: u64 = 4 * 1024 * 1024;
