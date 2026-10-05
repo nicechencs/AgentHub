@@ -8,11 +8,17 @@ description = "AgentHub business core — shared by GUI and CLI (no Tauri depend
 [features]
 default = []
 go-product-preflight-probe = []
+gateway-snapshot-probe = []
 
 [[example]]
 name = "go_product_preflight_probe"
 path = "examples/go_product_preflight_probe.rs"
 required-features = ["go-product-preflight-probe"]
+
+[[example]]
+name = "gateway_snapshot_probe"
+path = "examples/gateway_snapshot_probe.rs"
+required-features = ["gateway-snapshot-probe"]
 
 [dependencies]
 serde = { workspace = true }

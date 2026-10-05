@@ -2791,6 +2791,22 @@ fn map_bridge_host_error(error: BridgeHostError) -> String {
             "gateway_port_invalid",
             "本机转发端口无效，请点重试。",
         ),
+        BridgeHostError::GatewayTransitionActive => (
+            CODE_BRIDGE_START,
+            "GatewayTransitionActive",
+            "gateway_transition_active",
+            "本机转发正在切换，请稍后点重试。",
+        ),
+        BridgeHostError::GatewaySnapshotUnavailable
+        | BridgeHostError::GatewaySnapshotHostMismatch
+        | BridgeHostError::GatewaySnapshotStopTimeout
+        | BridgeHostError::GatewaySnapshotTaskFailed
+        | BridgeHostError::GatewaySnapshotHealthFailed => (
+            CODE_BRIDGE_START,
+            "GatewaySnapshot",
+            "gateway_snapshot_unavailable",
+            "本机转发状态暂时不可用，请重启应用后点重试。",
+        ),
     };
     tracing::error!(
         target: targets::GUI,

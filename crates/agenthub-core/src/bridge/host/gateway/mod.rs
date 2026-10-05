@@ -51,6 +51,18 @@ pub enum BridgeHostError {
     Bind(#[from] std::io::Error),
     #[error("gateway port must be a non-zero loopback port")]
     InvalidGatewayPort,
+    #[error("bridge gateway transition is already active")]
+    GatewayTransitionActive,
+    #[error("bridge gateway snapshot is unavailable")]
+    GatewaySnapshotUnavailable,
+    #[error("bridge gateway snapshot does not belong to this host")]
+    GatewaySnapshotHostMismatch,
+    #[error("bridge gateway snapshot stop timed out")]
+    GatewaySnapshotStopTimeout,
+    #[error("bridge gateway snapshot operation task failed")]
+    GatewaySnapshotTaskFailed,
+    #[error("restored bridge gateway failed its local health check")]
+    GatewaySnapshotHealthFailed,
 }
 
 /// A tiny cancellation-safe completion primitive. The cleanup task, rather than an RPC caller,
@@ -137,6 +149,14 @@ impl Gateway {
             .map(|(token, pool_id)| (Arc::from(token), Arc::from(pool_id)))
             .collect();
         Ok(())
+    }
+
+    pub(super) fn lock_extra_bearers(
+        &self,
+    ) -> Result<MutexGuard<'_, Vec<(Arc<str>, Arc<str>)>>, BridgeHostError> {
+        self.extra_bearers
+            .lock()
+            .map_err(|_| BridgeHostError::StatePoisoned)
     }
 
     pub(super) fn lock(&self) -> Result<MutexGuard<'_, GatewayRegistry>, BridgeHostError> {

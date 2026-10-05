@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::{Instant, SystemTime};
+use std::sync::{Arc, Mutex, Weak};
+use std::time::{Duration, Instant, SystemTime};
 
 use axum::Router;
+use futures_util::future::join_all;
 use reqwest::Url;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex as AsyncMutex;
@@ -15,6 +17,7 @@ use crate::bridge::route_index::EffectiveRouteIndex;
 use crate::bridge::runtime::{
     BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec, BridgeUpstreamStatus,
 };
+use crate::bridge::BridgeMemberSpec;
 use crate::models::RouteSchedulePolicy;
 
 use super::gateway::{
@@ -47,6 +50,10 @@ pub struct BridgeRuntimeHost {
     /// The first shutdown starts an owned background cleanup. Every later caller joins that same
     /// cleanup, including if the caller that initiated shutdown is cancelled.
     shutdown: Arc<AsyncMutex<Option<Arc<CleanupCompletion>>>>,
+    /// Logical gate for a capture -> stop -> exact restore handoff. Operations
+    /// take short owned permits; no synchronous guard is held across an await
+    /// or while a per-profile gate is acquired.
+    transition: Arc<Mutex<GatewayTransitionState>>,
 }
 
 impl Default for BridgeRuntimeHost {
@@ -59,7 +66,234 @@ impl Default for BridgeRuntimeHost {
             profile_gates: Arc::new(Mutex::new(HashMap::new())),
             registration: Arc::new(AsyncMutex::new(())),
             shutdown: Arc::new(AsyncMutex::new(None)),
+            transition: Arc::new(Mutex::new(GatewayTransitionState::default())),
         }
+    }
+}
+
+#[derive(Default)]
+struct GatewayTransitionState {
+    next_id: u64,
+    mutation_count: usize,
+    active: Option<ActiveGatewayTransition>,
+}
+
+struct ActiveGatewayTransition {
+    id: u64,
+    owner_alive: bool,
+    background_tasks: usize,
+    fail_closed: bool,
+}
+
+struct HostMutationPermit {
+    transition: Arc<Mutex<GatewayTransitionState>>,
+}
+
+impl Drop for HostMutationPermit {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.transition.lock() {
+            state.mutation_count = state.mutation_count.saturating_sub(1);
+        }
+    }
+}
+
+struct SnapshotTaskPermit {
+    transition: Arc<Mutex<GatewayTransitionState>>,
+    id: u64,
+}
+
+impl Drop for SnapshotTaskPermit {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.transition.lock() {
+            let clear = if let Some(active) = state.active.as_mut().filter(|row| row.id == self.id)
+            {
+                active.background_tasks = active.background_tasks.saturating_sub(1);
+                !active.owner_alive && active.background_tasks == 0 && !active.fail_closed
+            } else {
+                false
+            };
+            if clear {
+                state.active = None;
+            }
+        }
+    }
+}
+
+struct GatewaySnapshotContents {
+    port: u16,
+    entries: Vec<GatewaySnapshotEntry>,
+    extra_bearers: Vec<(String, String)>,
+    state: BridgeGatewaySnapshotState,
+    #[cfg(feature = "gateway-snapshot-probe")]
+    probe_faults: GatewaySnapshotProbeFaults,
+}
+
+#[derive(Clone)]
+struct GatewaySnapshotEntry {
+    spec: BridgeStartSpec,
+    observed_upstream: BridgeUpstreamStatus,
+}
+
+#[cfg(feature = "gateway-snapshot-probe")]
+#[derive(Default)]
+struct GatewaySnapshotProbeFaults {
+    stop_error_after_cleanup: bool,
+    fail_second_restore_entry: bool,
+    fail_health: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BridgeGatewaySnapshotState {
+    Captured,
+    Stopped,
+    Restored,
+    Committed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BridgeGatewayStopState {
+    Running,
+    Stopped,
+    Partial,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BridgeGatewayStopReport {
+    pub state: BridgeGatewayStopState,
+    pub stop_error_count: usize,
+}
+
+/// Opaque, process-local handoff state for the in-process Rust gateway.
+///
+/// It intentionally has no `Clone` or serialization implementation. Debug
+/// output contains only counts and the non-secret loopback port.
+pub struct BridgeGatewaySnapshot {
+    contents: Arc<Mutex<GatewaySnapshotContents>>,
+    operation: Arc<AsyncMutex<()>>,
+    transition: Weak<Mutex<GatewayTransitionState>>,
+    transition_id: u64,
+}
+
+impl BridgeGatewaySnapshot {
+    pub fn port(&self) -> u16 {
+        self.contents.lock().map(|row| row.port).unwrap_or_default()
+    }
+
+    pub fn entry_count(&self) -> usize {
+        self.contents
+            .lock()
+            .map(|row| row.entries.len())
+            .unwrap_or_default()
+    }
+
+    pub fn state(&self) -> BridgeGatewaySnapshotState {
+        self.contents
+            .lock()
+            .map(|row| row.state)
+            .unwrap_or(BridgeGatewaySnapshotState::Stopped)
+    }
+
+    #[cfg(feature = "gateway-snapshot-probe")]
+    pub fn probe_set_faults(
+        &self,
+        stop_error_after_cleanup: bool,
+        fail_second_restore_entry: bool,
+        fail_health: bool,
+    ) {
+        if let Ok(mut contents) = self.contents.lock() {
+            contents.probe_faults = GatewaySnapshotProbeFaults {
+                stop_error_after_cleanup,
+                fail_second_restore_entry,
+                fail_health,
+            };
+        }
+    }
+}
+
+impl fmt::Debug for BridgeGatewaySnapshot {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.contents.lock() {
+            Ok(contents) => formatter
+                .debug_struct("BridgeGatewaySnapshot")
+                .field("port", &contents.port)
+                .field("entry_count", &contents.entries.len())
+                .field("extra_bearer_count", &contents.extra_bearers.len())
+                .field("state", &contents.state)
+                .finish(),
+            Err(_) => formatter
+                .debug_struct("BridgeGatewaySnapshot")
+                .field("state", &"unavailable")
+                .finish(),
+        }
+    }
+}
+
+impl Drop for BridgeGatewaySnapshot {
+    fn drop(&mut self) {
+        let Some(transition) = self.transition.upgrade() else {
+            return;
+        };
+        let snapshot_state = self
+            .contents
+            .lock()
+            .map(|contents| contents.state)
+            .unwrap_or(BridgeGatewaySnapshotState::Stopped);
+        if let Ok(mut state) = transition.lock() {
+            let clear = if let Some(active) = state
+                .active
+                .as_mut()
+                .filter(|row| row.id == self.transition_id)
+            {
+                active.owner_alive = false;
+                active.fail_closed = snapshot_state == BridgeGatewaySnapshotState::Stopped;
+                active.background_tasks == 0 && !active.fail_closed
+            } else {
+                false
+            };
+            if clear {
+                state.active = None;
+            }
+        };
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BridgeGatewayCleanupStatus {
+    NotRequired,
+    Complete,
+    Partial,
+    Failed,
+}
+
+#[derive(Debug)]
+pub struct BridgeGatewayRestoreError {
+    cause: BridgeHostError,
+    cleanup: BridgeGatewayCleanupStatus,
+}
+
+impl BridgeGatewayRestoreError {
+    pub fn cause_error(&self) -> &BridgeHostError {
+        &self.cause
+    }
+
+    pub fn cleanup_status(&self) -> BridgeGatewayCleanupStatus {
+        self.cleanup
+    }
+}
+
+impl fmt::Display for BridgeGatewayRestoreError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "bridge gateway restore failed: {}; cleanup={:?}",
+            self.cause, self.cleanup
+        )
+    }
+}
+
+impl std::error::Error for BridgeGatewayRestoreError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.cause)
     }
 }
 
@@ -67,6 +301,9 @@ struct ActiveSocketTask {
     port: u16,
     task: JoinHandle<Result<(), ()>>,
 }
+
+const GATEWAY_SNAPSHOT_STOP_TIMEOUT: Duration = Duration::from_secs(12);
+const GATEWAY_SNAPSHOT_HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 
 impl BridgeRuntimeHost {
     pub fn new() -> Self {
@@ -89,10 +326,613 @@ impl BridgeRuntimeHost {
         self.gateway.route_traces.enable_persist(path);
     }
 
+    fn begin_mutation(&self) -> Result<HostMutationPermit, BridgeHostError> {
+        let mut state = self
+            .transition
+            .lock()
+            .map_err(|_| BridgeHostError::StatePoisoned)?;
+        if state.active.is_some() {
+            return Err(BridgeHostError::GatewayTransitionActive);
+        }
+        state.mutation_count = state.mutation_count.saturating_add(1);
+        Ok(HostMutationPermit {
+            transition: Arc::clone(&self.transition),
+        })
+    }
+
+    fn begin_snapshot_task(&self, id: u64) -> Result<SnapshotTaskPermit, BridgeHostError> {
+        let mut state = self
+            .transition
+            .lock()
+            .map_err(|_| BridgeHostError::StatePoisoned)?;
+        let active = state
+            .active
+            .as_mut()
+            .filter(|row| row.id == id)
+            .ok_or(BridgeHostError::GatewaySnapshotHostMismatch)?;
+        active.background_tasks = active.background_tasks.saturating_add(1);
+        Ok(SnapshotTaskPermit {
+            transition: Arc::clone(&self.transition),
+            id,
+        })
+    }
+
+    fn validate_snapshot(&self, snapshot: &BridgeGatewaySnapshot) -> Result<(), BridgeHostError> {
+        let Some(owner) = snapshot.transition.upgrade() else {
+            return Err(BridgeHostError::GatewaySnapshotHostMismatch);
+        };
+        if !Arc::ptr_eq(&owner, &self.transition) {
+            return Err(BridgeHostError::GatewaySnapshotHostMismatch);
+        }
+        self.validate_snapshot_id(snapshot.transition_id)
+    }
+
+    fn validate_snapshot_id(&self, id: u64) -> Result<(), BridgeHostError> {
+        let state = self
+            .transition
+            .lock()
+            .map_err(|_| BridgeHostError::StatePoisoned)?;
+        if state
+            .active
+            .as_ref()
+            .is_none_or(|active| active.id != id || !active.owner_alive)
+        {
+            return Err(BridgeHostError::GatewaySnapshotHostMismatch);
+        }
+        Ok(())
+    }
+
+    fn finish_snapshot_transition(&self, id: u64) {
+        if let Ok(mut state) = self.transition.lock() {
+            if let Some(active) = state.active.as_mut().filter(|row| row.id == id) {
+                active.owner_alive = false;
+                active.fail_closed = false;
+                if active.background_tasks == 0 {
+                    state.active = None;
+                }
+            }
+        }
+    }
+
+    fn mark_snapshot_stopped(
+        &self,
+        snapshot: &BridgeGatewaySnapshot,
+    ) -> Result<(), BridgeHostError> {
+        {
+            let mut contents = snapshot
+                .contents
+                .lock()
+                .map_err(|_| BridgeHostError::StatePoisoned)?;
+            match contents.state {
+                BridgeGatewaySnapshotState::Captured | BridgeGatewaySnapshotState::Stopped => {
+                    contents.state = BridgeGatewaySnapshotState::Stopped;
+                }
+                BridgeGatewaySnapshotState::Restored | BridgeGatewaySnapshotState::Committed => {
+                    return Err(BridgeHostError::GatewaySnapshotHostMismatch);
+                }
+            }
+        }
+        let mut state = self
+            .transition
+            .lock()
+            .map_err(|_| BridgeHostError::StatePoisoned)?;
+        let active = state
+            .active
+            .as_mut()
+            .filter(|row| row.id == snapshot.transition_id && row.owner_alive)
+            .ok_or(BridgeHostError::GatewaySnapshotHostMismatch)?;
+        active.fail_closed = true;
+        Ok(())
+    }
+
+    /// Capture the exact live Rust gateway without reading or writing storage.
+    /// Dropping an untouched capture releases the transition; after stop begins,
+    /// only an exact restore or explicit stopped commit may release it.
+    pub fn capture_gateway_snapshot(&self) -> Result<BridgeGatewaySnapshot, BridgeHostError> {
+        if self.closing.load(Ordering::SeqCst) {
+            return Err(BridgeHostError::HostClosing);
+        }
+        let transition_id = {
+            let mut state = self
+                .transition
+                .lock()
+                .map_err(|_| BridgeHostError::StatePoisoned)?;
+            if state.active.is_some() || state.mutation_count != 0 {
+                return Err(BridgeHostError::GatewayTransitionActive);
+            }
+            state.next_id = state.next_id.wrapping_add(1).max(1);
+            let id = state.next_id;
+            state.active = Some(ActiveGatewayTransition {
+                id,
+                owner_alive: true,
+                background_tasks: 0,
+                fail_closed: false,
+            });
+            id
+        };
+
+        let captured = (|| {
+            // Authentication reads use this same order. Keeping both guards
+            // alive makes the bearer table and runtime table one capture point.
+            let extra_bearers = self.gateway.lock_extra_bearers()?;
+            let registry = self.gateway.lock()?;
+            let mut live_ports = registry
+                .sockets
+                .iter()
+                .filter(|(_, socket)| socket.task.as_ref().is_some_and(|task| !task.is_finished()))
+                .map(|(port, _)| *port);
+            let port = live_ports
+                .next()
+                .filter(|port| *port != 0)
+                .ok_or(BridgeHostError::GatewaySnapshotUnavailable)?;
+            if live_ports.next().is_some()
+                || registry.sockets.len() != 1
+                || registry.primary_port != Some(port)
+                || registry.runtimes.is_empty()
+                || registry.runtimes.values().any(|runtime| {
+                    runtime.lifecycle != BridgeRuntimeState::Running || runtime.cited_port != port
+                })
+            {
+                return Err(BridgeHostError::GatewaySnapshotUnavailable);
+            }
+            let mut entries = registry
+                .runtimes
+                .values()
+                .map(snapshot_entry_from_runtime)
+                .collect::<Vec<_>>();
+            entries.sort_by(|left, right| left.spec.profile_id.cmp(&right.spec.profile_id));
+            let extra_bearers = extra_bearers
+                .iter()
+                .map(|(token, profile_id)| (token.to_string(), profile_id.to_string()))
+                .collect();
+            Ok(GatewaySnapshotContents {
+                port,
+                entries,
+                extra_bearers,
+                state: BridgeGatewaySnapshotState::Captured,
+                #[cfg(feature = "gateway-snapshot-probe")]
+                probe_faults: GatewaySnapshotProbeFaults::default(),
+            })
+        })();
+
+        match captured {
+            Ok(contents) => Ok(BridgeGatewaySnapshot {
+                contents: Arc::new(Mutex::new(contents)),
+                operation: Arc::new(AsyncMutex::new(())),
+                transition: Arc::downgrade(&self.transition),
+                transition_id,
+            }),
+            Err(error) => {
+                self.finish_snapshot_transition(transition_id);
+                Err(error)
+            }
+        }
+    }
+
+    /// Cancellation-safe, bounded stop of every entry held by `snapshot`.
+    /// Missing entries are already stopped; draining entries are awaited.
+    pub async fn stop_gateway_snapshot(
+        &self,
+        snapshot: &BridgeGatewaySnapshot,
+    ) -> Result<BridgeGatewayStopReport, BridgeHostError> {
+        self.validate_snapshot(snapshot)?;
+        self.mark_snapshot_stopped(snapshot)?;
+        let task_permit = self.begin_snapshot_task(snapshot.transition_id)?;
+        let host = self.clone();
+        let contents = Arc::clone(&snapshot.contents);
+        let operation = Arc::clone(&snapshot.operation);
+        let transition_id = snapshot.transition_id;
+        tokio::spawn(async move {
+            let _task_permit = task_permit;
+            let _operation = operation.lock_owned().await;
+            host.validate_snapshot_id(transition_id)?;
+            host.stop_snapshot_owned(contents, transition_id).await
+        })
+        .await
+        .map_err(|_| BridgeHostError::GatewaySnapshotTaskFailed)?
+    }
+
+    /// Restore every captured entry on the exact cited port, then authenticate
+    /// a local `/health` request for every edge before releasing the transition.
+    pub async fn restore_gateway_snapshot(
+        &self,
+        snapshot: &BridgeGatewaySnapshot,
+    ) -> Result<(), BridgeGatewayRestoreError> {
+        self.validate_snapshot(snapshot)
+            .map_err(|cause| BridgeGatewayRestoreError {
+                cause,
+                cleanup: BridgeGatewayCleanupStatus::Failed,
+            })?;
+        self.mark_snapshot_stopped(snapshot)
+            .map_err(|cause| BridgeGatewayRestoreError {
+                cause,
+                cleanup: BridgeGatewayCleanupStatus::Failed,
+            })?;
+        let task_permit = self
+            .begin_snapshot_task(snapshot.transition_id)
+            .map_err(|cause| BridgeGatewayRestoreError {
+                cause,
+                cleanup: BridgeGatewayCleanupStatus::Failed,
+            })?;
+        let host = self.clone();
+        let contents = Arc::clone(&snapshot.contents);
+        let operation = Arc::clone(&snapshot.operation);
+        let transition_id = snapshot.transition_id;
+        tokio::spawn(async move {
+            let _task_permit = task_permit;
+            let _operation = operation.lock_owned().await;
+            host.validate_snapshot_id(transition_id).map_err(|cause| {
+                BridgeGatewayRestoreError {
+                    cause,
+                    cleanup: BridgeGatewayCleanupStatus::Failed,
+                }
+            })?;
+            host.restore_snapshot_owned(contents, transition_id).await
+        })
+        .await
+        .map_err(|_| BridgeGatewayRestoreError {
+            cause: BridgeHostError::GatewaySnapshotTaskFailed,
+            cleanup: BridgeGatewayCleanupStatus::Failed,
+        })?
+    }
+
+    /// Explicitly accept a fully stopped Rust gateway. This is reserved for a
+    /// future backend-switch saga after the replacement runtime is healthy.
+    /// Dropping a stopped snapshot without this call remains fail-closed.
+    pub async fn commit_stopped_gateway_snapshot(
+        &self,
+        snapshot: &BridgeGatewaySnapshot,
+    ) -> Result<(), BridgeHostError> {
+        self.validate_snapshot(snapshot)?;
+        let _operation = snapshot.operation.lock().await;
+        self.validate_snapshot(snapshot)?;
+        if snapshot.state() != BridgeGatewaySnapshotState::Stopped
+            || self.observe_snapshot_stop(&snapshot.contents)? != BridgeGatewayStopState::Stopped
+        {
+            return Err(BridgeHostError::GatewaySnapshotUnavailable);
+        }
+        snapshot
+            .contents
+            .lock()
+            .map_err(|_| BridgeHostError::StatePoisoned)?
+            .state = BridgeGatewaySnapshotState::Committed;
+        self.finish_snapshot_transition(snapshot.transition_id);
+        Ok(())
+    }
+
+    async fn stop_snapshot_owned(
+        &self,
+        contents: Arc<Mutex<GatewaySnapshotContents>>,
+        transition_id: u64,
+    ) -> Result<BridgeGatewayStopReport, BridgeHostError> {
+        let profile_ids = {
+            let snapshot = contents
+                .lock()
+                .map_err(|_| BridgeHostError::StatePoisoned)?;
+            snapshot
+                .entries
+                .iter()
+                .map(|entry| entry.spec.profile_id.clone())
+                .collect::<Vec<_>>()
+        };
+        let stops = profile_ids.iter().map(|profile_id| {
+            self.stop_inner(profile_id, Some((Arc::clone(&contents), transition_id)))
+        });
+        let mut stop_error_count = 0;
+        for result in join_all(stops).await {
+            match result {
+                Ok(_) | Err(BridgeHostError::NotRunning | BridgeHostError::Stopping) => {}
+                Err(_) => stop_error_count += 1,
+            }
+        }
+
+        #[cfg(feature = "gateway-snapshot-probe")]
+        if contents
+            .lock()
+            .map_err(|_| BridgeHostError::StatePoisoned)?
+            .probe_faults
+            .stop_error_after_cleanup
+        {
+            stop_error_count += 1;
+        }
+
+        let deadline = Instant::now() + GATEWAY_SNAPSHOT_STOP_TIMEOUT;
+        loop {
+            let state = self.observe_snapshot_stop(&contents)?;
+            match state {
+                BridgeGatewayStopState::Stopped => {
+                    self.gateway.set_extra_bearers(Vec::new())?;
+                    return Ok(BridgeGatewayStopReport {
+                        state,
+                        stop_error_count,
+                    });
+                }
+                BridgeGatewayStopState::Running => {
+                    return Ok(BridgeGatewayStopReport {
+                        state,
+                        stop_error_count,
+                    });
+                }
+                BridgeGatewayStopState::Partial if Instant::now() >= deadline => {
+                    return Ok(BridgeGatewayStopReport {
+                        state,
+                        stop_error_count,
+                    });
+                }
+                BridgeGatewayStopState::Partial => {}
+            }
+            tokio::time::sleep(TASK_POLL_INTERVAL).await;
+        }
+    }
+
+    fn observe_snapshot_stop(
+        &self,
+        contents: &Arc<Mutex<GatewaySnapshotContents>>,
+    ) -> Result<BridgeGatewayStopState, BridgeHostError> {
+        let registry = self.gateway.lock()?;
+        let contents = contents
+            .lock()
+            .map_err(|_| BridgeHostError::StatePoisoned)?;
+        let port = contents.port;
+        if registry.runtimes.is_empty() && !registry.sockets.contains_key(&port) {
+            return Ok(BridgeGatewayStopState::Stopped);
+        }
+        let socket_live = registry
+            .sockets
+            .get(&port)
+            .is_some_and(|socket| socket.task.as_ref().is_some_and(|task| !task.is_finished()));
+        let fully_running = socket_live
+            && registry.sockets.len() == 1
+            && registry.runtimes.len() == contents.entries.len()
+            && contents.entries.iter().all(|entry| {
+                registry
+                    .runtimes
+                    .get(&entry.spec.profile_id)
+                    .is_some_and(|runtime| {
+                        runtime.lifecycle == BridgeRuntimeState::Running
+                            && runtime.cited_port == port
+                    })
+            });
+        Ok(if fully_running {
+            BridgeGatewayStopState::Running
+        } else {
+            BridgeGatewayStopState::Partial
+        })
+    }
+
+    async fn restore_snapshot_owned(
+        &self,
+        contents: Arc<Mutex<GatewaySnapshotContents>>,
+        transition_id: u64,
+    ) -> Result<(), BridgeGatewayRestoreError> {
+        let stopped = self
+            .stop_snapshot_owned(Arc::clone(&contents), transition_id)
+            .await
+            .map_err(|cause| BridgeGatewayRestoreError {
+                cause,
+                cleanup: BridgeGatewayCleanupStatus::Failed,
+            })?;
+        match stopped.state {
+            BridgeGatewayStopState::Stopped => {}
+            BridgeGatewayStopState::Partial => {
+                return Err(BridgeGatewayRestoreError {
+                    cause: BridgeHostError::GatewaySnapshotStopTimeout,
+                    cleanup: BridgeGatewayCleanupStatus::Partial,
+                });
+            }
+            BridgeGatewayStopState::Running => {
+                return Err(BridgeGatewayRestoreError {
+                    cause: BridgeHostError::GatewaySnapshotStopTimeout,
+                    cleanup: BridgeGatewayCleanupStatus::Failed,
+                });
+            }
+        }
+        let (port, entries, extra_bearers) = {
+            let snapshot = contents.lock().map_err(|_| BridgeGatewayRestoreError {
+                cause: BridgeHostError::StatePoisoned,
+                cleanup: BridgeGatewayCleanupStatus::Complete,
+            })?;
+            (
+                snapshot.port,
+                snapshot.entries.clone(),
+                snapshot.extra_bearers.clone(),
+            )
+        };
+        let mut started = Vec::new();
+        for (index, entry) in entries.iter().enumerate() {
+            let _ = index;
+            #[cfg(feature = "gateway-snapshot-probe")]
+            if index == 1
+                && contents
+                    .lock()
+                    .map_err(|_| BridgeGatewayRestoreError {
+                        cause: BridgeHostError::StatePoisoned,
+                        cleanup: BridgeGatewayCleanupStatus::Failed,
+                    })?
+                    .probe_faults
+                    .fail_second_restore_entry
+            {
+                return Err(self
+                    .restore_failure(
+                        BridgeHostError::StatePoisoned,
+                        &contents,
+                        transition_id,
+                        &started,
+                    )
+                    .await);
+            }
+            match self.start_inner(entry.spec.clone()).await {
+                Ok(status)
+                    if status.running
+                        && status.state == BridgeRuntimeState::Running
+                        && status.port == port =>
+                {
+                    started.push(status.profile_id.clone());
+                    if let Err(cause) = self
+                        .restore_snapshot_observation(&status.profile_id, entry.observed_upstream)
+                    {
+                        return Err(self
+                            .restore_failure(cause, &contents, transition_id, &started)
+                            .await);
+                    }
+                }
+                Ok(status) => {
+                    started.push(status.profile_id);
+                    return Err(self
+                        .restore_failure(
+                            BridgeHostError::GatewaySnapshotUnavailable,
+                            &contents,
+                            transition_id,
+                            &started,
+                        )
+                        .await);
+                }
+                Err(cause) => {
+                    return Err(self
+                        .restore_failure(cause, &contents, transition_id, &started)
+                        .await);
+                }
+            }
+        }
+        if let Err(cause) = self.gateway.set_extra_bearers(extra_bearers) {
+            return Err(self
+                .restore_failure(cause, &contents, transition_id, &started)
+                .await);
+        }
+        #[cfg(feature = "gateway-snapshot-probe")]
+        let fail_health = contents
+            .lock()
+            .map_err(|_| BridgeGatewayRestoreError {
+                cause: BridgeHostError::StatePoisoned,
+                cleanup: BridgeGatewayCleanupStatus::Failed,
+            })?
+            .probe_faults
+            .fail_health;
+        #[cfg(not(feature = "gateway-snapshot-probe"))]
+        let fail_health = false;
+        let health = if fail_health {
+            Err(BridgeHostError::GatewaySnapshotHealthFailed)
+        } else {
+            self.verify_restored_snapshot(port, &entries).await
+        };
+        if let Err(cause) = health {
+            return Err(self
+                .restore_failure(cause, &contents, transition_id, &started)
+                .await);
+        }
+        contents
+            .lock()
+            .map_err(|_| BridgeGatewayRestoreError {
+                cause: BridgeHostError::StatePoisoned,
+                cleanup: BridgeGatewayCleanupStatus::Failed,
+            })?
+            .state = BridgeGatewaySnapshotState::Restored;
+        self.finish_snapshot_transition(transition_id);
+        Ok(())
+    }
+
+    async fn restore_failure(
+        &self,
+        cause: BridgeHostError,
+        contents: &Arc<Mutex<GatewaySnapshotContents>>,
+        transition_id: u64,
+        started: &[String],
+    ) -> BridgeGatewayRestoreError {
+        if started.is_empty() {
+            return BridgeGatewayRestoreError {
+                cause,
+                cleanup: BridgeGatewayCleanupStatus::NotRequired,
+            };
+        }
+        let cleanup = match self
+            .stop_snapshot_owned(Arc::clone(contents), transition_id)
+            .await
+        {
+            Ok(report) if report.state == BridgeGatewayStopState::Stopped => {
+                BridgeGatewayCleanupStatus::Complete
+            }
+            Ok(report) if report.state == BridgeGatewayStopState::Partial => {
+                BridgeGatewayCleanupStatus::Partial
+            }
+            Ok(_) => BridgeGatewayCleanupStatus::Failed,
+            Err(_) => BridgeGatewayCleanupStatus::Failed,
+        };
+        BridgeGatewayRestoreError { cause, cleanup }
+    }
+
+    async fn verify_restored_snapshot(
+        &self,
+        port: u16,
+        entries: &[GatewaySnapshotEntry],
+    ) -> Result<(), BridgeHostError> {
+        {
+            let registry = self.gateway.lock()?;
+            if registry.primary_port != Some(port)
+                || registry.sockets.len() != 1
+                || !registry.sockets.contains_key(&port)
+                || registry.runtimes.len() != entries.len()
+                || entries.iter().any(|entry| {
+                    registry
+                        .runtimes
+                        .get(&entry.spec.profile_id)
+                        .is_none_or(|runtime| {
+                            runtime.lifecycle != BridgeRuntimeState::Running
+                                || runtime.cited_port != port
+                                || runtime.state.observed_upstream() != entry.observed_upstream
+                        })
+                })
+            {
+                return Err(BridgeHostError::GatewaySnapshotUnavailable);
+            }
+        }
+        let client = reqwest::Client::builder()
+            .connect_timeout(GATEWAY_SNAPSHOT_HEALTH_TIMEOUT)
+            .timeout(GATEWAY_SNAPSHOT_HEALTH_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::none())
+            .no_proxy()
+            .build()
+            .map_err(|_| BridgeHostError::GatewaySnapshotHealthFailed)?;
+        let url = format!("http://127.0.0.1:{port}/health");
+        for entry in entries {
+            let response = client
+                .get(&url)
+                .bearer_auth(&entry.spec.local_token)
+                .send()
+                .await
+                .map_err(|_| BridgeHostError::GatewaySnapshotHealthFailed)?;
+            if response.status() != reqwest::StatusCode::OK {
+                return Err(BridgeHostError::GatewaySnapshotHealthFailed);
+            }
+        }
+        Ok(())
+    }
+
+    fn restore_snapshot_observation(
+        &self,
+        profile_id: &str,
+        observed_upstream: BridgeUpstreamStatus,
+    ) -> Result<(), BridgeHostError> {
+        let registry = self.gateway.lock()?;
+        let runtime = registry
+            .runtimes
+            .get(profile_id)
+            .ok_or(BridgeHostError::GatewaySnapshotUnavailable)?;
+        runtime.state.record_upstream(observed_upstream);
+        Ok(())
+    }
+
     /// Starts an edge and ensures a loopback socket. Repeating an exact live start is
     /// idempotent; attempting to start while a matching profile drains fails rather than
     /// racing a second edge.
     pub async fn start(
+        &self,
+        spec: BridgeStartSpec,
+    ) -> Result<BridgeRuntimeStatus, BridgeHostError> {
+        let _mutation = self.begin_mutation()?;
+        self.start_inner(spec).await
+    }
+
+    async fn start_inner(
         &self,
         spec: BridgeStartSpec,
     ) -> Result<BridgeRuntimeStatus, BridgeHostError> {
@@ -194,6 +1034,7 @@ impl BridgeRuntimeHost {
         &self,
         rows: Vec<(String, String)>,
     ) -> Result<(), BridgeHostError> {
+        let _mutation = self.begin_mutation()?;
         self.gateway.set_extra_bearers(rows)
     }
 
@@ -255,6 +1096,27 @@ impl BridgeRuntimeHost {
             .collect())
     }
 
+    /// Acquires one real request-admission slot for the disposable gateway
+    /// snapshot process probe. Production builds expose no such bypass.
+    #[cfg(feature = "gateway-snapshot-probe")]
+    pub fn probe_hold_admission(
+        &self,
+        profile_id: &str,
+    ) -> Result<tokio::sync::OwnedSemaphorePermit, BridgeHostError> {
+        let admission = self
+            .gateway
+            .lock()?
+            .runtimes
+            .get(profile_id)
+            .ok_or(BridgeHostError::NotRunning)?
+            .state
+            .admission
+            .clone();
+        admission
+            .try_acquire_owned()
+            .map_err(|_| BridgeHostError::StatePoisoned)
+    }
+
     /// Records the last observed health or request outcome. Status/health reads
     /// later report this stored value and must not issue a new upstream probe.
     pub fn record_upstream_outcome(
@@ -262,6 +1124,7 @@ impl BridgeRuntimeHost {
         profile_id: &str,
         status: BridgeUpstreamStatus,
     ) -> Result<Option<BridgeRuntimeStatus>, BridgeHostError> {
+        let _mutation = self.begin_mutation()?;
         let registry = self.gateway.lock()?;
         let Some(runtime) = registry.runtimes.get(profile_id) else {
             return Ok(None);
@@ -278,6 +1141,7 @@ impl BridgeRuntimeHost {
         source_id: &str,
         health: crate::bridge::account::MemberHealth,
     ) -> Result<(), BridgeHostError> {
+        let _mutation = self.begin_mutation()?;
         let registry = self.gateway.lock()?;
         let runtime = registry
             .runtimes
@@ -311,6 +1175,7 @@ impl BridgeRuntimeHost {
         pool_id: &str,
         policy: RouteSchedulePolicy,
     ) -> Result<usize, BridgeHostError> {
+        let _mutation = self.begin_mutation()?;
         let pool_id = pool_id.trim();
         if pool_id.is_empty() {
             return Ok(0);
@@ -339,6 +1204,7 @@ impl BridgeRuntimeHost {
         fresh_until: Option<SystemTime>,
         credit: bool,
     ) -> Result<usize, BridgeHostError> {
+        let _mutation = self.begin_mutation()?;
         let source_id = source_id.trim();
         if source_id.is_empty() {
             return Ok(0);
@@ -383,6 +1249,16 @@ impl BridgeRuntimeHost {
     }
 
     pub async fn stop(&self, profile_id: &str) -> Result<BridgeRuntimeStatus, BridgeHostError> {
+        let _mutation = self.begin_mutation()?;
+        self.stop_inner(profile_id, None).await
+    }
+
+    async fn stop_inner(
+        &self,
+        profile_id: &str,
+        snapshot: Option<(Arc<Mutex<GatewaySnapshotContents>>, u64)>,
+    ) -> Result<BridgeRuntimeStatus, BridgeHostError> {
+        let strict_snapshot = snapshot.is_some();
         let gate = self.profile_gate(profile_id)?;
         let profile_operation = gate.lock_owned().await;
         let (edge, cited_port, stopped, completion) = {
@@ -392,16 +1268,18 @@ impl BridgeRuntimeHost {
                 .runtimes
                 .get_mut(profile_id)
                 .ok_or(BridgeHostError::NotRunning)?;
-            if runtime.lifecycle == BridgeRuntimeState::Stopping {
+            if runtime.lifecycle == BridgeRuntimeState::Stopping && !strict_snapshot {
                 return Err(BridgeHostError::Stopping);
             }
-            if !sockets_live {
+            if !sockets_live && !strict_snapshot {
                 registry.runtimes.remove(profile_id);
                 return Err(BridgeHostError::NotRunning);
             }
             runtime.lifecycle = BridgeRuntimeState::Stopping;
             runtime.state.stopping.store(true, Ordering::SeqCst);
-            runtime.state.record_upstream(BridgeUpstreamStatus::Stopped);
+            if !strict_snapshot {
+                runtime.state.record_upstream(BridgeUpstreamStatus::Stopped);
+            }
             let stopped = runtime.stopped_status();
             let completion = Arc::new(CleanupCompletion::new());
             runtime.stop_completion = Some(completion.clone());
@@ -414,11 +1292,21 @@ impl BridgeRuntimeHost {
         };
 
         let gateway = self.gateway.clone();
+        let snapshot_task = snapshot
+            .as_ref()
+            .map(|(_, transition_id)| self.begin_snapshot_task(*transition_id))
+            .transpose()?;
+        let snapshot_contents = snapshot.map(|(contents, _)| contents);
         let profile_id = profile_id.to_owned();
         let cleanup_completion = completion.clone();
         tokio::spawn(async move {
+            let _snapshot_task = snapshot_task;
             let _profile_operation = profile_operation;
-            drain_edge(&edge).await;
+            let fully_drained = drain_edge(&edge).await;
+            if strict_snapshot && !fully_drained {
+                cleanup_completion.finish(false);
+                return;
+            }
             let sockets = {
                 let mut registry = match gateway.lock() {
                     Ok(registry) => registry,
@@ -427,6 +1315,11 @@ impl BridgeRuntimeHost {
                         return;
                     }
                 };
+                if let Some(contents) = snapshot_contents.as_ref() {
+                    if let Some(runtime) = registry.runtimes.get(&profile_id) {
+                        reconcile_snapshot_entry(contents, runtime);
+                    }
+                }
                 registry.runtimes.remove(&profile_id);
                 take_unbind_tasks(&mut registry, cited_port, &profile_id)
             };
@@ -441,6 +1334,7 @@ impl BridgeRuntimeHost {
     /// Stops every edge and unbinds remaining sockets. All accepts are closed before any
     /// listener is awaited; after a short drain deadline remaining socket tasks are aborted.
     pub async fn shutdown(&self) -> Result<(), BridgeHostError> {
+        let _mutation = self.begin_mutation()?;
         let (completion, starts_cleanup) = {
             let mut shutdown = self.shutdown.lock().await;
             if let Some(completion) = shutdown.as_ref() {
@@ -487,6 +1381,7 @@ impl BridgeRuntimeHost {
     /// ports unchanged. Edges that already share the old primary follow the new
     /// port; explicit alias ports stay bound until they have no remaining citers.
     pub async fn set_gateway_port(&self, port: u16) -> Result<u16, BridgeHostError> {
+        let _mutation = self.begin_mutation()?;
         if port == 0 {
             return Err(BridgeHostError::InvalidGatewayPort);
         }
@@ -749,7 +1644,7 @@ async fn run_shutdown(gateway: Gateway, completion: Arc<CleanupCompletion>) {
     completion.finish(failed);
 }
 
-async fn drain_edge(state: &EdgeState) {
+async fn drain_edge(state: &EdgeState) -> bool {
     let deadline = Instant::now() + DRAIN_TIMEOUT;
     while state.admission.available_permits() < MAX_IN_FLIGHT_REQUESTS_PER_PROFILE
         && Instant::now() < deadline
@@ -765,6 +1660,7 @@ async fn drain_edge(state: &EdgeState) {
             tokio::time::sleep(TASK_POLL_INTERVAL).await;
         }
     }
+    state.admission.available_permits() == MAX_IN_FLIGHT_REQUESTS_PER_PROFILE
 }
 
 async fn drain_socket_tasks(mut tasks: Vec<ActiveSocketTask>) -> bool {
@@ -833,6 +1729,63 @@ fn runtime_matches_pool(runtime: &super::gateway::EdgeRuntime, pool_id: &str) ->
             .route_index
             .as_ref()
             .is_some_and(|index| index.route_id == pool_id)
+}
+
+fn snapshot_spec_from_runtime(runtime: &super::gateway::EdgeRuntime) -> BridgeStartSpec {
+    let mut spec = runtime.spec.clone();
+    spec.port = runtime.cited_port;
+    spec.schedule_policy = runtime.state.account_picker.schedule_policy();
+    spec.multi_account = runtime.state.account_picker.multi_account();
+    spec.members = runtime
+        .state
+        .account_picker
+        .members()
+        .iter()
+        .map(|member| BridgeMemberSpec {
+            ticket_id: member.ticket_id.clone(),
+            source_kind: member.source_kind.clone(),
+            source_id: member.source_id.clone(),
+            label: member.label.clone(),
+            auth: member.auth.clone(),
+            reload: member.reload.clone(),
+            health: member.health(),
+            priority: member.priority,
+            position: member.position,
+            quota_remaining_pct: member.quota_remaining_pct(),
+            quota_reset_at: member.quota_reset_at(),
+            quota_fresh_until: member.quota_fresh_until(),
+            quota_credit: member.quota_credit(),
+            kiro_http: member.kiro_http.clone(),
+        })
+        .collect();
+    if let Some(lead) = spec.members.first() {
+        spec.upstream.auth = lead.auth.clone();
+    }
+    spec
+}
+
+fn snapshot_entry_from_runtime(runtime: &super::gateway::EdgeRuntime) -> GatewaySnapshotEntry {
+    GatewaySnapshotEntry {
+        spec: snapshot_spec_from_runtime(runtime),
+        observed_upstream: runtime.state.observed_upstream(),
+    }
+}
+
+fn reconcile_snapshot_entry(
+    contents: &Arc<Mutex<GatewaySnapshotContents>>,
+    runtime: &super::gateway::EdgeRuntime,
+) {
+    let Ok(mut contents) = contents.lock() else {
+        return;
+    };
+    let updated = snapshot_entry_from_runtime(runtime);
+    if let Some(entry) = contents
+        .entries
+        .iter_mut()
+        .find(|entry| entry.spec.profile_id == updated.spec.profile_id)
+    {
+        *entry = updated;
+    }
 }
 
 fn validate_start_spec(spec: &BridgeStartSpec) -> Result<Url, BridgeHostError> {

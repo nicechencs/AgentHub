@@ -7,7 +7,10 @@
 
 use std::sync::Arc;
 
-use agenthub_core::bridge::host::{RouteTraceDeleteResult, RouteTracePage, RouteTraceQuery};
+use agenthub_core::bridge::host::{
+    BridgeGatewayRestoreError, BridgeGatewaySnapshot, BridgeGatewayStopReport, BridgeHostError,
+    RouteTraceDeleteResult, RouteTracePage, RouteTraceQuery,
+};
 use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::logging::{self, targets};
 use agenthub_core::models::RouteSchedulePolicy;
@@ -165,6 +168,37 @@ impl RouteRuntimeManager {
         self.gateway_observation()
             .ok()
             .and_then(|snapshot| snapshot.active_route_count)
+    }
+
+    /// Capture the fixed active Rust gateway for an in-memory backend handoff.
+    /// This does not select, persist, start, or construct a Product Go host.
+    #[allow(dead_code)]
+    pub(crate) fn capture_active_gateway(&self) -> Result<BridgeGatewaySnapshot, BridgeHostError> {
+        self.rust.capture_gateway_snapshot()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) async fn stop_active_gateway_snapshot(
+        &self,
+        snapshot: &BridgeGatewaySnapshot,
+    ) -> Result<BridgeGatewayStopReport, BridgeHostError> {
+        self.rust.stop_gateway_snapshot(snapshot).await
+    }
+
+    #[allow(dead_code)]
+    pub(crate) async fn restore_active_gateway_snapshot(
+        &self,
+        snapshot: &BridgeGatewaySnapshot,
+    ) -> Result<(), BridgeGatewayRestoreError> {
+        self.rust.restore_gateway_snapshot(snapshot).await
+    }
+
+    #[allow(dead_code)]
+    pub(crate) async fn commit_active_gateway_stopped(
+        &self,
+        snapshot: &BridgeGatewaySnapshot,
+    ) -> Result<(), BridgeHostError> {
+        self.rust.commit_stopped_gateway_snapshot(snapshot).await
     }
 
     /// Hot-apply one pool schedule without changing the selected runtime.

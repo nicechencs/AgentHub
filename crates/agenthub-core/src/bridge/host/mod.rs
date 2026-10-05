@@ -29,7 +29,10 @@ pub use gateway::BridgeHostError;
 pub(super) use gateway::CleanupCompletion;
 pub use inbound::InboundRequestRecord;
 pub use inbound::InboundRequestStats;
-pub use lifecycle::BridgeRuntimeHost;
+pub use lifecycle::{
+    BridgeGatewayCleanupStatus, BridgeGatewayRestoreError, BridgeGatewaySnapshot,
+    BridgeGatewaySnapshotState, BridgeGatewayStopReport, BridgeGatewayStopState, BridgeRuntimeHost,
+};
 pub use route_trace::RouteRequestTrace;
 pub use route_trace::RouteTraceDeleteResult;
 pub use route_trace::RouteTraceEndpointKind;
