@@ -158,12 +158,23 @@ function Assert-PrivateDacl {
     }
 }
 
-function Assert-NoSyntheticKeyInLogs {
-    param([Parameter(Mandatory = $true)][string[]]$Paths)
+function Assert-NoSyntheticRequestDataInLogs {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$Paths,
+        [Parameter(Mandatory = $true)][string]$Upstream
+    )
 
-    $matches = Select-String -LiteralPath $Paths -Pattern 'sk-product-go-route-probe-do-not-use-000000' -SimpleMatch -ErrorAction SilentlyContinue
-    if ($null -ne $matches) {
-        throw 'FAIL: synthetic upstream key leaked into probe logs'
+    foreach ($value in @(
+        'sk-product-go-route-probe-do-not-use-000000',
+        'ahb-product-probe-wrong-bearer',
+        'product-usage-request-body',
+        'product-usage-response-ok',
+        $Upstream
+    )) {
+        $matches = Select-String -LiteralPath $Paths -Pattern $value -SimpleMatch -ErrorAction SilentlyContinue
+        if ($null -ne $matches) {
+            throw 'FAIL: synthetic request data leaked into probe logs'
+        }
     }
 }
 
@@ -225,15 +236,65 @@ $ErrorActionPreference = 'Stop'
 $listener = [Net.HttpListener]::new()
 $listener.Prefixes.Add(("http://127.0.0.1:{0}/" -f $Port))
 $listener.Start()
+$sourceKey = 'sk-product-go-route-probe-do-not-use-000000'
+$requestMarker = 'product-usage-request-body'
+$responseMarker = 'product-usage-response-ok'
+function Write-JsonResponse {
+    param([Parameter(Mandatory = $true)][System.Net.HttpListenerResponse]$Response, [Parameter(Mandatory = $true)][int]$Status, [Parameter(Mandatory = $true)][string]$Json)
+
+    $payload = [Text.Encoding]::UTF8.GetBytes($Json)
+    $Response.StatusCode = $Status
+    $Response.ContentType = 'application/json'
+    $Response.ContentLength64 = $payload.Length
+    $Response.OutputStream.Write($payload, 0, $payload.Length)
+    $Response.Close()
+}
 try {
     while ($listener.IsListening) {
         $context = $listener.GetContext()
-        $payload = [Text.Encoding]::UTF8.GetBytes('{"object":"list","data":[{"id":"probe-model"}]}')
-        $context.Response.StatusCode = 200
-        $context.Response.ContentType = 'application/json'
-        $context.Response.ContentLength64 = $payload.Length
-        $context.Response.OutputStream.Write($payload, 0, $payload.Length)
-        $context.Response.Close()
+        if ($context.Request.HttpMethod -eq 'GET') {
+            Write-JsonResponse -Response $context.Response -Status 200 -Json '{"object":"list","data":[{"id":"probe-model"}]}'
+            continue
+        }
+        if ($context.Request.HttpMethod -ne 'POST' -or $context.Request.Url.AbsolutePath -ne '/v1/chat/completions') {
+            Write-JsonResponse -Response $context.Response -Status 400 -Json '{"error":"mock_request_rejected"}'
+            [Console]::Out.WriteLine('{"event":"rejected"}')
+            continue
+        }
+        try {
+            $reader = [IO.StreamReader]::new($context.Request.InputStream, [Text.Encoding]::UTF8, $false, 8192, $true)
+            try {
+                $raw = $reader.ReadToEnd()
+            } finally {
+                $reader.Dispose()
+            }
+            $body = $raw | ConvertFrom-Json -ErrorAction Stop
+            $properties = @($body.PSObject.Properties.Name)
+            $messages = @($body.messages)
+            $valid = (
+                $context.Request.Headers['Authorization'] -eq ('Bearer ' + $sourceKey) -and
+                [string]::IsNullOrEmpty($context.Request.Headers['X-API-Key']) -and
+                [string]::IsNullOrEmpty($context.Request.Headers['Anthropic-Version']) -and
+                $properties.Count -eq 3 -and
+                $properties -contains 'model' -and $properties -contains 'messages' -and $properties -contains 'stream' -and
+                $body.model -is [string] -and -not [string]::IsNullOrWhiteSpace($body.model) -and
+                $body.stream -is [bool] -and
+                $body.stream -eq $false -and
+                $messages.Count -eq 1 -and
+                @($messages[0].PSObject.Properties.Name).Count -eq 2 -and
+                $messages[0].role -eq 'user' -and $messages[0].content -eq $requestMarker
+            )
+        } catch {
+            $valid = $false
+        }
+        if (-not $valid) {
+            Write-JsonResponse -Response $context.Response -Status 400 -Json '{"error":"mock_request_rejected"}'
+            [Console]::Out.WriteLine('{"event":"rejected"}')
+            continue
+        }
+        $json = ('{{"id":"chatcmpl_product_usage","object":"chat.completion","created":1720000000,"model":{0},"choices":[{{"index":0,"message":{{"role":"assistant","content":{1}}},"finish_reason":"stop"}}],"usage":{{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}}}' -f ($body.model | ConvertTo-Json -Compress), ($responseMarker | ConvertTo-Json -Compress))
+        Write-JsonResponse -Response $context.Response -Status 200 -Json $json
+        [Console]::Out.WriteLine('{"event":"responses"}')
     }
 } finally {
     $listener.Close()
@@ -276,7 +337,8 @@ try {
         Assert-TrueEvidenceFields -Evidence $normalEvidence -Description 'normal Product lifecycle' -Fields @(
             'saved_port_preserved', 'reload_committed', 'same_port_recovered',
             'product_home_preserved', 'staging_cleaned', 'port_released',
-            'runtime_secret_scan', 'data_dir_mode_unchanged'
+            'runtime_secret_scan', 'usage_jsonl_recorded', 'usage_spool_and_logs_secret_scan',
+            'usage_request_database_and_wal_unchanged', 'data_dir_mode_unchanged'
         )
         if ($normalEvidence.restart_count -lt 1) {
             throw 'FAIL: normal Product lifecycle did not recover after a killed Go process'
@@ -349,7 +411,12 @@ try {
         Assert-LoopbackPortAvailable -Port 43121 -Step 'forced Rust parent termination'
         $heldProbeProcess = $null
 
-        Assert-NoSyntheticKeyInLogs -Paths @(
+        $mockEvents = @(Get-Content -LiteralPath $mockLog | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($mockEvents.Count -ne 2 -or @($mockEvents | Where-Object { $_ -eq '{"event":"responses"}' }).Count -ne 2 -or
+            @($mockEvents | Where-Object { $_ -eq '{"event":"rejected"}' }).Count -ne 0) {
+            throw 'FAIL: loopback mock did not observe exactly the normal and held Product usage requests'
+        }
+        Assert-NoSyntheticRequestDataInLogs -Upstream $upstream -Paths @(
             $goBuildLog, $cargoBuildLog, $mockLog, $mockErrorLog,
             $normalLog, $reparseLog, $holdStdout, $holdStderr
         )

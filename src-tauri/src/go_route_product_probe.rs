@@ -22,6 +22,9 @@ const PRODUCT_PORT: u16 = 43121;
 const SOURCE_ID: &str = "product-go-route-probe-source";
 const SOURCE_KEY: &str = "sk-product-go-route-probe-do-not-use-000000";
 const WRONG_BEARER: &str = "ahb-product-probe-wrong-bearer";
+const USAGE_REQUEST_MARKER: &str = "product-usage-request-body";
+const USAGE_RESPONSE_MARKER: &str = "product-usage-response-ok";
+const MAX_PROBE_RESPONSE_BYTES: u64 = 32 * 1024;
 
 type ProbeResult<T> = Result<T, String>;
 
@@ -148,6 +151,7 @@ fn run(root: PathBuf, upstream: String, hold_evidence: Option<PathBuf>) -> Probe
         .map_err(|error| format!("change synthetic route configuration: {error}"))?;
     let started = host.start_prepared_product(prepared);
     ensure_ready(&started, PRODUCT_PORT, "initial start")?;
+    let database_before = database_and_wal_snapshot(&data_dir)?;
     let (first_pid, product_home, first_staging) = host.probe_session_process()?;
     let expected_home = fs::canonicalize(&data_dir)
         .map_err(|error| format!("canonicalize data directory: {error}"))?
@@ -190,6 +194,29 @@ fn run(root: PathBuf, upstream: String, hold_evidence: Option<PathBuf>) -> Probe
     ensure(
         hash_before == prepared_summary.expected_config_hash,
         "prepared Product start rebuilt configuration from saved state",
+    )?;
+    ensure(
+        product_usage_request_succeeds(&pool.hub_token, "probe-model"),
+        "Product route did not complete the synthetic usage request",
+    )?;
+    verify_product_usage_spool(&data_dir, &pool.id)?;
+    let usage_scan_values = [
+        SOURCE_KEY.as_bytes(),
+        pool.hub_token.as_bytes(),
+        WRONG_BEARER.as_bytes(),
+        USAGE_REQUEST_MARKER.as_bytes(),
+        USAGE_RESPONSE_MARKER.as_bytes(),
+        upstream.as_bytes(),
+    ];
+    ensure(
+        !tree_contains_any(&data_dir.join("usage-gateway"), &usage_scan_values)?
+            && !tree_contains_any(&product_home.join("logs"), &usage_scan_values)?
+            && optional_file_is_free_of(&root.join("run.log"), &usage_scan_values)?,
+        "Product usage spool or probe logs exposed synthetic request data",
+    )?;
+    ensure(
+        database_and_wal_snapshot(&data_dir)? == database_before,
+        "Product usage request changed the database or WAL",
     )?;
     let reloaded = host.reload();
     ensure_ready(&reloaded, PRODUCT_PORT, "reload")?;
@@ -315,7 +342,6 @@ fn run(root: PathBuf, upstream: String, hold_evidence: Option<PathBuf>) -> Probe
         isolated_stopped.state == "stopped" && !isolated_stopped.listen_ready,
         "isolated route did not stop after mode release",
     )?;
-
     Ok(json!({
         "schema": "go-route-product-e2e-probe.v1",
         "status": "ok",
@@ -342,6 +368,9 @@ fn run(root: PathBuf, upstream: String, hold_evidence: Option<PathBuf>) -> Probe
         "port_released": released,
         "startup_control_secret_scan": startup_control_secret_scan,
         "runtime_secret_scan": true,
+        "usage_jsonl_recorded": true,
+        "usage_spool_and_logs_secret_scan": true,
+        "usage_request_database_and_wal_unchanged": true,
         "data_dir_mode_unchanged": true,
     }))
 }
@@ -511,6 +540,232 @@ fn create_hold_evidence_temp(path: &Path) -> ProbeResult<(fs::File, PathBuf)> {
         }
     }
     Err("create unique hold evidence temporary file".into())
+}
+
+fn product_usage_request_succeeds(bearer: &str, model: &str) -> bool {
+    let Some((status, body)) = post_product_bytes(
+        "/v1/responses",
+        bearer,
+        json!({
+            "model": model,
+            "input": USAGE_REQUEST_MARKER,
+            "stream": false,
+        }),
+    ) else {
+        return false;
+    };
+    if status != 200 {
+        return false;
+    }
+    let Ok(response) = serde_json::from_slice::<Value>(&body) else {
+        return false;
+    };
+    response.get("object").and_then(Value::as_str) == Some("response")
+        && response.get("status").and_then(Value::as_str) == Some("completed")
+        && response.get("model").and_then(Value::as_str) == Some(model)
+        && response_output_has_text(&response, USAGE_RESPONSE_MARKER)
+}
+
+fn post_product_bytes(path: &str, bearer: &str, body: Value) -> Option<(u16, Vec<u8>)> {
+    let request_body = serde_json::to_string(&body).ok()?;
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(2))
+        .redirects(0)
+        .try_proxy_from_env(false)
+        .build();
+    let response = match agent
+        .post(&format!("http://127.0.0.1:{PRODUCT_PORT}{path}"))
+        .set("Authorization", &format!("Bearer {bearer}"))
+        .set("Content-Type", "application/json")
+        .send_string(&request_body)
+    {
+        Ok(response) => response,
+        Err(ureq::Error::Status(_, response)) => response,
+        Err(ureq::Error::Transport(_)) => return None,
+    };
+    let status = response.status();
+    let mut bytes = Vec::new();
+    response
+        .into_reader()
+        .take(MAX_PROBE_RESPONSE_BYTES.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .ok()?;
+    (bytes.len() as u64 <= MAX_PROBE_RESPONSE_BYTES).then_some((status, bytes))
+}
+
+fn response_output_has_text(response: &Value, expected: &str) -> bool {
+    response
+        .get("output")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|item| item.get("type").and_then(Value::as_str) == Some("message"))
+        .filter_map(|item| item.get("content").and_then(Value::as_array))
+        .flatten()
+        .any(|part| {
+            part.get("type").and_then(Value::as_str) == Some("output_text")
+                && part.get("text").and_then(Value::as_str) == Some(expected)
+        })
+}
+
+fn verify_product_usage_spool(data_dir: &Path, expected_profile_id: &str) -> ProbeResult<()> {
+    const ALLOWED_FIELDS: &[&str] = &[
+        "request_id",
+        "ts",
+        "profile_id",
+        "surface",
+        "upstream_channel",
+        "ticket_id",
+        "account_source_kind",
+        "account_source_id",
+        "model",
+        "upstream_model",
+        "input_tokens",
+        "output_tokens",
+        "status",
+        "status_code",
+        "error_class",
+        "latency_ms",
+        "ttft_ms",
+        "attempts",
+    ];
+
+    let spool_dir = data_dir.join("usage-gateway");
+    let mut files = fs::read_dir(&spool_dir)
+        .map_err(|error| format!("read Product usage spool: {error}"))?
+        .map(|entry| entry.map_err(|error| format!("read Product usage spool entry: {error}")))
+        .collect::<Result<Vec<_>, _>>()?;
+    ensure(
+        files.len() == 1 && files[0].file_type().is_ok_and(|kind| kind.is_file()),
+        "Product usage spool did not contain exactly one JSONL file",
+    )?;
+    let file = files.pop().expect("exactly one file checked above");
+    let name = file
+        .file_name()
+        .into_string()
+        .map_err(|_| "Product usage spool filename was not UTF-8".to_string())?;
+    let day = usage_spool_filename_day(&name)?;
+    let bytes =
+        fs::read(file.path()).map_err(|error| format!("read Product usage spool row: {error}"))?;
+    ensure(
+        bytes.ends_with(b"\n"),
+        "Product usage spool row did not end with a newline",
+    )?;
+    let text = std::str::from_utf8(&bytes)
+        .map_err(|_| "Product usage spool row was not UTF-8 JSONL".to_string())?;
+    let row = text
+        .strip_suffix('\n')
+        .filter(|row| !row.is_empty() && !row.contains('\n'))
+        .ok_or_else(|| "Product usage spool did not contain exactly one JSONL row".to_string())?;
+    let event = serde_json::from_str::<Value>(row)
+        .map_err(|_| "Product usage spool row was not valid JSON".to_string())?;
+    let fields = event
+        .as_object()
+        .ok_or_else(|| "Product usage spool row was not a JSON object".to_string())?;
+    ensure(
+        fields
+            .keys()
+            .all(|key| ALLOWED_FIELDS.contains(&key.as_str())),
+        "Product usage spool row contained an unsupported field",
+    )?;
+    ensure(
+        fields
+            .get("request_id")
+            .and_then(Value::as_str)
+            .is_some_and(is_uuid_v4),
+        "Product usage spool row omitted a v4 request id",
+    )?;
+    let timestamp = fields
+        .get("ts")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "Product usage spool row omitted its timestamp".to_string())?;
+    ensure(
+        usage_timestamp_day(timestamp).as_deref() == Some(day.as_str()),
+        "Product usage spool filename did not match its timestamp",
+    )?;
+    ensure(
+        fields.get("profile_id").and_then(Value::as_str) == Some(expected_profile_id)
+            && fields.get("surface").and_then(Value::as_str) == Some("responses")
+            && fields.get("upstream_channel").and_then(Value::as_str) == Some("openai_chat")
+            && fields.get("account_source_kind").and_then(Value::as_str) == Some("provider")
+            && fields.get("account_source_id").and_then(Value::as_str) == Some(SOURCE_ID)
+            && fields.get("model").and_then(Value::as_str) == Some("probe-model")
+            && fields.get("upstream_model").and_then(Value::as_str) == Some("probe-model")
+            && fields.get("input_tokens").and_then(Value::as_u64) == Some(0)
+            && fields.get("output_tokens").and_then(Value::as_u64) == Some(0)
+            && fields.get("status").and_then(Value::as_str) == Some("ok")
+            && fields.get("status_code").and_then(Value::as_u64) == Some(200)
+            && fields.get("latency_ms").and_then(Value::as_u64).is_some()
+            && fields.get("attempts").and_then(Value::as_u64) == Some(1)
+            && !fields.contains_key("error_class")
+            && !fields.contains_key("ttft_ms"),
+        "Product usage spool row did not contain the expected public success fields",
+    )
+}
+
+fn usage_spool_filename_day(name: &str) -> ProbeResult<String> {
+    let day = name
+        .strip_prefix("gateway-")
+        .and_then(|name| name.strip_suffix(".jsonl"))
+        .filter(|day| day.len() == 8 && day.bytes().all(|byte| byte.is_ascii_digit()))
+        .ok_or_else(|| "Product usage spool filename was invalid".to_string())?;
+    Ok(day.to_owned())
+}
+
+fn usage_timestamp_day(timestamp: &str) -> Option<String> {
+    let bytes = timestamp.as_bytes();
+    (bytes.len() >= 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && [0, 1, 2, 3, 5, 6, 8, 9]
+            .into_iter()
+            .all(|index| bytes[index].is_ascii_digit()))
+    .then(|| {
+        format!(
+            "{}{}{}",
+            &timestamp[0..4],
+            &timestamp[5..7],
+            &timestamp[8..10]
+        )
+    })
+}
+
+fn is_uuid_v4(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 36
+        && [8, 13, 18, 23]
+            .into_iter()
+            .all(|index| bytes[index] == b'-')
+        && bytes[14] == b'4'
+        && matches!(bytes[19], b'8' | b'9' | b'a' | b'b')
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit())
+}
+
+fn database_and_wal_snapshot(data_dir: &Path) -> ProbeResult<Vec<(String, Option<Vec<u8>>)>> {
+    ["agenthub.db", "agenthub.db-wal"]
+        .into_iter()
+        .map(|name| {
+            let path = data_dir.join(name);
+            let contents = if path.exists() {
+                Some(fs::read(&path).map_err(|error| {
+                    format!("read Product database snapshot {}: {error}", path.display())
+                })?)
+            } else {
+                None
+            };
+            Ok((name.to_owned(), contents))
+        })
+        .collect()
+}
+
+fn optional_file_is_free_of(path: &Path, needles: &[&[u8]]) -> ProbeResult<bool> {
+    if !path.exists() {
+        return Ok(true);
+    }
+    tree_contains_any(path, needles).map(|contains| !contains)
 }
 
 fn ensure_ready(

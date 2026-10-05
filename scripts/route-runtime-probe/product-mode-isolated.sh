@@ -67,16 +67,74 @@ PY
 python3 -u - "${UPSTREAM_PORT}" <<'PY' >"${MOCK_LOG}" 2>&1 &
 import json, sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+SOURCE_KEY = "sk-product-go-route-probe-do-not-use-000000"
+REQUEST_MARKER = "product-usage-request-body"
+RESPONSE_MARKER = "product-usage-response-ok"
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
+
+    def send_json(self, status, payload):
+        raw = json.dumps(payload, separators=(",", ":")).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
     def do_GET(self):
+        if self.path != "/v1/models":
+            self.send_json(404, {"error":"mock_request_rejected"})
+            print(json.dumps({"event":"rejected"}), flush=True)
+            return
         raw = json.dumps({"object":"list","data":[{"id":"probe-model"}]}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
+
+    def do_POST(self):
+        try:
+            length = int(self.headers.get("Content-Length", "-1"))
+            if length < 0 or length > 8192:
+                raise ValueError
+            payload = json.loads(self.rfile.read(length))
+        except Exception:
+            self.send_json(400, {"error":"mock_request_rejected"})
+            print(json.dumps({"event":"rejected"}), flush=True)
+            return
+        model = payload.get("model") if isinstance(payload, dict) else None
+        valid = (
+            self.path == "/v1/chat/completions"
+            and self.headers.get("Authorization") == "Bearer " + SOURCE_KEY
+            and not self.headers.get("X-API-Key")
+            and not self.headers.get("Anthropic-Version")
+            and isinstance(model, str) and bool(model)
+            and payload == {
+                "model": model,
+                "messages": [{"role":"user", "content":REQUEST_MARKER}],
+                "stream": False,
+            }
+        )
+        if not valid:
+            self.send_json(400, {"error":"mock_request_rejected"})
+            print(json.dumps({"event":"rejected"}), flush=True)
+            return
+        self.send_json(200, {
+            "id": "chatcmpl_product_usage",
+            "object": "chat.completion",
+            "created": 1720000000,
+            "model": model,
+            "choices": [{
+                "index": 0,
+                "message": {"role":"assistant", "content":RESPONSE_MARKER},
+                "finish_reason": "stop",
+            }],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        })
+        print(json.dumps({"event":"responses"}), flush=True)
 ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
 PY
 MOCK_PID=$!
@@ -133,7 +191,8 @@ assert evidence["port"] == 43121, evidence
 for key in (
     "saved_port_preserved", "reload_committed", "same_port_recovered",
     "product_home_preserved", "staging_cleaned", "port_released",
-    "startup_control_secret_scan", "runtime_secret_scan", "data_dir_mode_unchanged",
+    "startup_control_secret_scan", "runtime_secret_scan", "usage_jsonl_recorded",
+    "usage_spool_and_logs_secret_scan", "usage_request_database_and_wal_unchanged", "data_dir_mode_unchanged",
 ):
     assert evidence[key] is True, (key, evidence)
 assert evidence["restart_count"] >= 1, evidence
@@ -142,11 +201,24 @@ with open(evidence_path, "w", encoding="utf-8") as handle:
     handle.write("\n")
 PY
 
-if grep -F -q "sk-product-go-route-probe-do-not-use-000000" \
-  "${RUN_LOG}" "${BUILD_LOG}" "${GO_BUILD_LOG}" "${MOCK_LOG}"; then
-  echo "FAIL: synthetic upstream key leaked into probe logs" >&2
-  exit 1
-fi
+python3 - "${MOCK_LOG}" "${RUN_LOG}" "${BUILD_LOG}" "${GO_BUILD_LOG}" \
+  "http://127.0.0.1:${UPSTREAM_PORT}/v1" <<'PY'
+import pathlib, sys
+
+mock_log, *logs, upstream = sys.argv[1:]
+events = [line.strip() for line in pathlib.Path(mock_log).read_text(encoding="utf-8").splitlines() if line.strip()]
+assert events == ['{"event": "responses"}'], events
+for path in logs + [mock_log]:
+    contents = pathlib.Path(path).read_text(encoding="utf-8", errors="replace")
+    for value in (
+        "sk-product-go-route-probe-do-not-use-000000",
+        "ahb-product-probe-wrong-bearer",
+        "product-usage-request-body",
+        "product-usage-response-ok",
+        upstream,
+    ):
+        assert value not in contents, (path, "synthetic request data leaked into probe logs")
+PY
 
 cat "${EVIDENCE}"
 echo "PASS: dormant Product-mode Go route real-process probe"
