@@ -14,6 +14,7 @@ mod go_route_isolated;
 pub mod go_route_product_probe;
 #[cfg(feature = "plugin-write-probe")]
 pub mod plugin_write_probe;
+mod route_runtime;
 mod shell_open_chat;
 mod skill_watch;
 mod state;
@@ -124,7 +125,9 @@ pub fn run() {
                     return;
                 }
                 let bridge_active = exit_coordinator::ExitCoordinator::requires_impact_confirmation(
-                    state.exit_coordinator().prepare_exit(&state.bridge_host()),
+                    state
+                        .exit_coordinator()
+                        .prepare_exit(state.route_runtime().as_ref()),
                 );
                 if decide_close_action(state.should_exit(), state.close_to_tray(), bridge_active)
                     == CloseAction::HideToTray
@@ -394,11 +397,9 @@ pub fn run() {
                             api.prevent_exit();
                             if !state.exit_coordinator().shutdown_in_progress() {
                                 state.request_exit();
-                                let _ = state.exit_coordinator().request_exit(
-                                    app_handle.clone(),
-                                    state.bridge_host(),
-                                    state.go_route_isolated(),
-                                );
+                                let _ = state
+                                    .exit_coordinator()
+                                    .request_exit(app_handle.clone(), state.route_runtime());
                             }
                         }
                     }

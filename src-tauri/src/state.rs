@@ -12,14 +12,15 @@ use crate::adapter_bridge_controller::AdapterSagaCoordinator;
 use crate::adapter_control_host::DesktopAdapterControl;
 use crate::exit_coordinator::{ExitCoordinator, LifecycleShutdownBarrier};
 use crate::go_route_isolated::GoRouteIsolatedHost;
+use crate::route_runtime::RouteRuntimeManager;
 use crate::window_policy::{self, parse_bool_setting};
 
 /// Shared GUI state: one AgentHub opened at process start.
 pub struct AppState {
     hub: Result<Arc<AgentHub>, String>,
-    /// Process-owned loopback bridge listeners. The GUI owns this host because
-    /// it can keep running in the tray after the main window is hidden.
-    bridge_host: Arc<BridgeRuntimeHost>,
+    /// Single authority for process-owned route runtimes. Rust remains the
+    /// fixed active product backend in this phase.
+    route_runtime: Arc<RouteRuntimeManager>,
     /// Process-local authority for every adapter bridge lifecycle saga.
     bridge_saga_coordinator: Arc<AdapterSagaCoordinator>,
     /// Coordinates every controllable process exit through bridge shutdown.
@@ -36,8 +37,6 @@ pub struct AppState {
     local_gateway_restarting: Arc<AtomicBool>,
     /// Folder from `--open-chat` / file-manager, consumed once by the GUI.
     pending_open_chat_cwd: Mutex<Option<String>>,
-    /// Isolated Go route supervisor. Scratch-only; not the default gateway.
-    go_route_isolated: Arc<GoRouteIsolatedHost>,
 }
 
 impl AppState {
@@ -86,9 +85,11 @@ impl AppState {
             Ok(path) => bridge_host.set_route_trace_persist_path(path),
             Err(error) => logging::log_app_error(targets::GUI, "route_traces_persist_path", &error),
         }
+        let bridge_host = Arc::new(bridge_host);
+        let go_route_isolated = GoRouteIsolatedHost::new(go_route_hub);
         Self {
             hub,
-            bridge_host: Arc::new(bridge_host),
+            route_runtime: Arc::new(RouteRuntimeManager::new(bridge_host, go_route_isolated)),
             bridge_saga_coordinator: Arc::new(AdapterSagaCoordinator::new()),
             exit_coordinator: ExitCoordinator::new(),
             exit_confirmation_pending: AtomicBool::new(false),
@@ -96,7 +97,6 @@ impl AppState {
             close_to_tray: AtomicBool::new(close_to_tray),
             local_gateway_restarting: Arc::new(AtomicBool::new(false)),
             pending_open_chat_cwd: Mutex::new(None),
-            go_route_isolated: GoRouteIsolatedHost::new(go_route_hub),
         }
     }
 
@@ -112,11 +112,14 @@ impl AppState {
             .map_err(|error| error.to_owned())
     }
 
-    /// Shared bridge listener host. Construction does not start or restore any
-    /// adapter profile; that is intentionally owned by a later control-plane
-    /// command layer.
+    pub(crate) fn route_runtime(&self) -> Arc<RouteRuntimeManager> {
+        Arc::clone(&self.route_runtime)
+    }
+
+    /// Transitional Rust-only controller seam. New process-level observation
+    /// and shutdown code must use `route_runtime` instead.
     pub(crate) fn bridge_host(&self) -> Arc<BridgeRuntimeHost> {
-        Arc::clone(&self.bridge_host)
+        self.route_runtime.rust_host()
     }
 
     pub(crate) fn bridge_saga_coordinator(&self) -> Arc<AdapterSagaCoordinator> {
@@ -150,7 +153,7 @@ impl AppState {
     }
 
     pub(crate) fn go_route_isolated(&self) -> Arc<GoRouteIsolatedHost> {
-        Arc::clone(&self.go_route_isolated)
+        self.route_runtime.isolated_go_host()
     }
 
     /// Claim the one outstanding bridge-impact confirmation dialog.

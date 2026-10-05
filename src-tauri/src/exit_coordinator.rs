@@ -2,19 +2,35 @@
 //!
 //! Bridge listeners belong to the desktop process rather than an independent
 //! daemon.  Any controllable exit therefore acquires this coordinator before
-//! waiting for [`BridgeRuntimeHost::shutdown`].  The atomic gate makes repeated
+//! waiting for the route runtime manager to shut down. The atomic gate makes repeated
 //! tray clicks and overlapping Tauri exit events harmless.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 #[cfg(test)]
-use agenthub_core::bridge::BridgeHostError;
-use agenthub_core::bridge::BridgeRuntimeHost;
+use agenthub_core::bridge::{BridgeHostError, BridgeRuntimeHost};
 use tauri::{AppHandle, Runtime};
 use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 
-use crate::go_route_isolated::GoRouteIsolatedHost;
+use crate::route_runtime::RouteRuntimeManager;
+
+pub(crate) trait ExitImpactSource {
+    fn active_route_count(&self) -> Option<usize>;
+}
+
+impl ExitImpactSource for RouteRuntimeManager {
+    fn active_route_count(&self) -> Option<usize> {
+        self.exit_impact_count()
+    }
+}
+
+#[cfg(test)]
+impl ExitImpactSource for BridgeRuntimeHost {
+    fn active_route_count(&self) -> Option<usize> {
+        self.statuses().ok().map(|statuses| statuses.len())
+    }
+}
 
 /// Prevents a host shutdown from racing an in-flight bridge lifecycle saga.
 ///
@@ -134,9 +150,9 @@ impl ExitCoordinator {
     ///
     /// A poisoned host registry must not block shutdown, so it is represented
     /// as `None` rather than silently reported as zero listeners.
-    pub(crate) fn prepare_exit(&self, host: &BridgeRuntimeHost) -> ExitPreparation {
+    pub(crate) fn prepare_exit(&self, runtime: &impl ExitImpactSource) -> ExitPreparation {
         ExitPreparation {
-            active_bridge_count: host.statuses().ok().map(|statuses| statuses.len()),
+            active_bridge_count: runtime.active_route_count(),
         }
     }
 
@@ -148,7 +164,7 @@ impl ExitCoordinator {
 
     /// Atomically claims the shutdown flow.  Once a caller succeeds, all
     /// subsequent exit requests are ignored until process termination.
-    pub(crate) fn begin_shutdown(&self, host: &BridgeRuntimeHost) -> ExitBegin {
+    pub(crate) fn begin_shutdown(&self, runtime: &impl ExitImpactSource) -> ExitBegin {
         if self
             .shutdown_started
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -162,7 +178,7 @@ impl ExitCoordinator {
         // host shutdown.
         self.lifecycle_barrier.close();
 
-        ExitBegin::Started(self.prepare_exit(host))
+        ExitBegin::Started(self.prepare_exit(runtime))
     }
 
     pub(crate) fn lifecycle_barrier(&self) -> Arc<LifecycleShutdownBarrier> {
@@ -186,15 +202,9 @@ impl ExitCoordinator {
     pub(crate) fn request_exit<R: Runtime>(
         &self,
         app: AppHandle<R>,
-        host: Arc<BridgeRuntimeHost>,
-        go_route_isolated: Arc<GoRouteIsolatedHost>,
+        runtime: Arc<RouteRuntimeManager>,
     ) -> bool {
-        self.request_shutdown(
-            app,
-            host,
-            go_route_isolated,
-            CoordinatedShutdownAction::Exit,
-        )
+        self.request_shutdown(app, runtime, CoordinatedShutdownAction::Exit)
     }
 
     /// Same exclusive bridge drain as a normal exit, but request a Tauri
@@ -203,25 +213,18 @@ impl ExitCoordinator {
     pub(crate) fn request_restart<R: Runtime>(
         &self,
         app: AppHandle<R>,
-        host: Arc<BridgeRuntimeHost>,
-        go_route_isolated: Arc<GoRouteIsolatedHost>,
+        runtime: Arc<RouteRuntimeManager>,
     ) -> bool {
-        self.request_shutdown(
-            app,
-            host,
-            go_route_isolated,
-            CoordinatedShutdownAction::Restart,
-        )
+        self.request_shutdown(app, runtime, CoordinatedShutdownAction::Restart)
     }
 
     fn request_shutdown<R: Runtime>(
         &self,
         app: AppHandle<R>,
-        host: Arc<BridgeRuntimeHost>,
-        go_route_isolated: Arc<GoRouteIsolatedHost>,
+        runtime: Arc<RouteRuntimeManager>,
         action: CoordinatedShutdownAction,
     ) -> bool {
-        let ExitBegin::Started(preparation) = self.begin_shutdown(&host) else {
+        let ExitBegin::Started(preparation) = self.begin_shutdown(runtime.as_ref()) else {
             return false;
         };
 
@@ -235,35 +238,22 @@ impl ExitCoordinator {
         let exit_ready = Arc::clone(&self.exit_ready);
         let lifecycle_barrier = self.lifecycle_barrier();
         tauri::async_runtime::spawn(async move {
-            // Keep this exclusive permit until `host.shutdown` returns. The
+            // Keep this exclusive permit until runtime shutdown returns. The
             // fixed lock ordering is barrier -> profile -> target/core, so no
             // bridge lifecycle operation can deadlock shutdown.
             //
             // Total watchdog: per-edge drain already has DRAIN_TIMEOUT, but
-            // wait_for_sagas / host.shutdown as a whole previously had no
+            // wait_for_sagas / runtime shutdown as a whole previously had no
             // ceiling — a stuck saga left the process undead with no feedback.
             const EXIT_DRAIN_WATCHDOG: std::time::Duration = std::time::Duration::from_secs(12);
             let drain = async {
-                let go_shutdown =
-                    tauri::async_runtime::spawn_blocking(move || go_route_isolated.stop());
-                let bridge_shutdown = async {
-                    let _exclusive_permit = lifecycle_barrier.wait_for_sagas().await;
-                    if let Err(error) = host.shutdown().await {
-                        tracing::warn!(
-                            target: "gui",
-                            op = "exit",
-                            error = %error,
-                            "bridge shutdown failed while exiting"
-                        );
-                    }
-                };
-                let (go_result, ()) = tokio::join!(go_shutdown, bridge_shutdown);
-                if let Err(error) = go_result {
+                let _exclusive_permit = lifecycle_barrier.wait_for_sagas().await;
+                if let Err(error) = runtime.shutdown().await {
                     tracing::warn!(
                         target: "gui",
                         op = "exit",
                         error = %error,
-                        "isolated Go route shutdown failed while exiting"
+                        "route runtime shutdown failed while exiting"
                     );
                 }
             };

@@ -134,7 +134,9 @@ fn request_app_shutdown<R: Runtime>(
         return ExitRequestDisposition::CoordinatedShutdown;
     }
 
-    let preparation = state.exit_coordinator().prepare_exit(&state.bridge_host());
+    let preparation = state
+        .exit_coordinator()
+        .prepare_exit(state.route_runtime().as_ref());
     if crate::exit_coordinator::ExitCoordinator::requires_impact_confirmation(preparation) {
         if !state.begin_exit_confirmation() {
             return ExitRequestDisposition::ConfirmationPending;
@@ -155,18 +157,14 @@ fn request_coordinated_shutdown<R: Runtime>(app: &AppHandle<R>, action: Coordina
     state.request_exit();
     match action {
         CoordinatedShutdownAction::Exit => {
-            let _ = state.exit_coordinator().request_exit(
-                app.clone(),
-                state.bridge_host(),
-                state.go_route_isolated(),
-            );
+            let _ = state
+                .exit_coordinator()
+                .request_exit(app.clone(), state.route_runtime());
         }
         CoordinatedShutdownAction::Restart => {
-            let _ = state.exit_coordinator().request_restart(
-                app.clone(),
-                state.bridge_host(),
-                state.go_route_isolated(),
-            );
+            let _ = state
+                .exit_coordinator()
+                .request_restart(app.clone(), state.route_runtime());
         }
     }
 }
