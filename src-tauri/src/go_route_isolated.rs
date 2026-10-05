@@ -2185,17 +2185,24 @@ fn build_runtime_config(
     mode: GoRouteRunMode,
     expected_port: u16,
 ) -> Result<RuntimeConfigSnapshot, String> {
-    let pools = hub
-        .route_pools()
-        .list_gateway_listener_pools()
-        .map_err(|error| error.to_string())?;
-    if mode == GoRouteRunMode::Product && product_gateway_port(&pools)? != expected_port {
-        return Err("saved Go route port changed while the runtime was active".into());
-    }
-    let config = hub
-        .adapter_bridge()
-        .build_go_route_isolated_config(&pools)
-        .map_err(|error| error.to_string())?;
+    let config = match mode {
+        GoRouteRunMode::Isolated => {
+            let pools = hub
+                .route_pools()
+                .list_gateway_listener_pools()
+                .map_err(|error| error.to_string())?;
+            hub.adapter_bridge()
+                .build_go_route_isolated_config(&pools)
+                .map_err(|error| error.to_string())?
+        }
+        GoRouteRunMode::Product => {
+            let (port, config) = prepare_product_runtime(hub)?;
+            if port != expected_port {
+                return Err("saved Go route port changed while the runtime was active".into());
+            }
+            config
+        }
+    };
     let product_home = match mode {
         GoRouteRunMode::Isolated => None,
         GoRouteRunMode::Product => Some(resolve_product_home(hub)?),
@@ -2208,18 +2215,20 @@ fn build_runtime_config(
 
 #[cfg(any(unix, windows))]
 fn build_runtime_plan(hub: &AgentHub, mode: GoRouteRunMode) -> Result<RuntimePlan, String> {
-    let pools = hub
-        .route_pools()
-        .list_gateway_listener_pools()
-        .map_err(|error| error.to_string())?;
-    let port = match mode {
-        GoRouteRunMode::Isolated => pick_loopback_port()?,
-        GoRouteRunMode::Product => product_gateway_port(&pools)?,
+    let (port, config) = match mode {
+        GoRouteRunMode::Isolated => {
+            let pools = hub
+                .route_pools()
+                .list_gateway_listener_pools()
+                .map_err(|error| error.to_string())?;
+            let config = hub
+                .adapter_bridge()
+                .build_go_route_isolated_config(&pools)
+                .map_err(|error| error.to_string())?;
+            (pick_loopback_port()?, config)
+        }
+        GoRouteRunMode::Product => prepare_product_runtime(hub)?,
     };
-    let config = hub
-        .adapter_bridge()
-        .build_go_route_isolated_config(&pools)
-        .map_err(|error| error.to_string())?;
     Ok(RuntimePlan {
         config_hash: sha256_hex(&config),
         config,
@@ -2233,22 +2242,25 @@ fn build_runtime_plan(hub: &AgentHub, mode: GoRouteRunMode) -> Result<RuntimePla
 }
 
 #[cfg(any(unix, windows))]
-fn product_gateway_port(pools: &[agenthub_core::models::RoutePool]) -> Result<u16, String> {
-    if pools.is_empty() || pools.iter().any(|pool| pool.gateway_port.is_none()) {
-        return Err("product Go route requires one saved gateway port".into());
+fn prepare_product_runtime(hub: &AgentHub) -> Result<(u16, Vec<u8>), String> {
+    let prepared = hub
+        .adapter_bridge()
+        .prepare_go_product_config()
+        .map_err(|error| error.to_string())?;
+    let summary = prepared.summary();
+    if !summary.eligible() {
+        return Err(format!(
+            "product Go route preflight rejected: {}",
+            summary.reason.as_str()
+        ));
     }
-    let ports: HashSet<u16> = pools.iter().filter_map(|pool| pool.gateway_port).collect();
-    if ports.len() != 1 {
-        return Err("product Go route requires one saved gateway port".into());
-    }
-    let port = *ports
-        .iter()
-        .next()
-        .ok_or_else(|| "product Go route requires one saved gateway port".to_string())?;
-    if port == 0 {
-        return Err("product Go route requires a non-zero saved gateway port".into());
-    }
-    Ok(port)
+    let port = summary
+        .port
+        .ok_or_else(|| "eligible Product preflight omitted its saved port".to_string())?;
+    let config = prepared
+        .into_config()
+        .ok_or_else(|| "eligible Product preflight omitted its configuration".to_string())?;
+    Ok((port, config))
 }
 
 #[cfg(any(unix, windows))]

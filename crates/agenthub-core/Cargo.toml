@@ -5,6 +5,15 @@ edition.workspace = true
 license.workspace = true
 description = "AgentHub business core — shared by GUI and CLI (no Tauri dependency)"
 
+[features]
+default = []
+go-product-preflight-probe = []
+
+[[example]]
+name = "go_product_preflight_probe"
+path = "examples/go_product_preflight_probe.rs"
+required-features = ["go-product-preflight-probe"]
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }

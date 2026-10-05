@@ -482,6 +482,9 @@ mod removal;
 mod rules;
 
 pub use finalize::{RestoreSourceFailure, RestoreSourceFailureKind};
+pub use go_route_config::{
+    GoProductPreflightReason, GoProductPreflightSummary, PreparedGoProductConfig,
+};
 pub use persist_saga::{should_make_bridge_current, BridgeProviderSnapshot};
 
 use rules::*;
@@ -1267,6 +1270,26 @@ impl AdapterBridgeService {
         flags: (bool, bool),
         prior: Option<&EffectiveRouteIndex>,
     ) -> BridgeStartSpec {
+        self.pool_listener_spec_inner(pool, flags, prior, true)
+    }
+
+    /// Product preflight variant: derive the same listener material without
+    /// refreshing or persisting a source model catalog.
+    fn pool_listener_spec_read_only(
+        &self,
+        pool: &RoutePool,
+        flags: (bool, bool),
+    ) -> BridgeStartSpec {
+        self.pool_listener_spec_inner(pool, flags, None, false)
+    }
+
+    fn pool_listener_spec_inner(
+        &self,
+        pool: &RoutePool,
+        flags: (bool, bool),
+        prior: Option<&EffectiveRouteIndex>,
+        refresh_model_catalog: bool,
+    ) -> BridgeStartSpec {
         let surface = match pool.downstream_surface {
             RouteDownstreamSurface::Messages => BridgeLocalSurface::Messages,
             RouteDownstreamSurface::ChatCompletions => BridgeLocalSurface::ChatCompletions,
@@ -1323,14 +1346,17 @@ impl AdapterBridgeService {
             .filter(|auth| auth.has_token())
             .unwrap_or_else(|| ResolvedAuth::bearer("pending"));
         let custom = crate::services::adapter_route_constants::is_custom_openai_compat_url(&url);
-        let listed = self
-            .route_pools
-            .list_upstream_models_for_pool(&pool.id)
-            .ok()
-            .filter(|models| !models.is_empty())
-            .unwrap_or_else(|| {
-                listed_models_for_bridge(product, pool.target_agent_id, &model, custom, &configured)
-            });
+        let fallback_models =
+            || listed_models_for_bridge(product, pool.target_agent_id, &model, custom, &configured);
+        let listed = if refresh_model_catalog {
+            self.route_pools
+                .list_upstream_models_for_pool(&pool.id)
+                .ok()
+                .filter(|models| !models.is_empty())
+                .unwrap_or_else(fallback_models)
+        } else {
+            fallback_models()
+        };
         let spec = BridgeStartSpec::new(
             pool.id.clone(),
             port,

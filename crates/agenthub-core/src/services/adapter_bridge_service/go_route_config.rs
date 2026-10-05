@@ -3,6 +3,7 @@ use std::fmt;
 use std::net::IpAddr;
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 use super::AdapterBridgeService;
 use crate::bridge::{
@@ -29,6 +30,89 @@ const CREDENTIAL_CLASS_LOCAL: &str = "local";
 const REFRESH_NONE: &str = "none";
 const REFRESH_CODEX_OAUTH: &str = "codex_oauth";
 const REFRESH_GROK_OAUTH: &str = "grok_oauth";
+
+/// Stable outcome of the read-only Product Go route eligibility check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GoProductPreflightReason {
+    NoPool,
+    MissingSavedPort,
+    ZeroSavedPort,
+    MultipleSavedPorts,
+    UncoveredLegacyProfile,
+    ProfilePortMismatch,
+    ConfigIncompatible,
+    Eligible,
+}
+
+impl GoProductPreflightReason {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NoPool => "no_pool",
+            Self::MissingSavedPort => "missing_saved_port",
+            Self::ZeroSavedPort => "zero_saved_port",
+            Self::MultipleSavedPorts => "multiple_saved_ports",
+            Self::UncoveredLegacyProfile => "uncovered_legacy_profile",
+            Self::ProfilePortMismatch => "profile_port_mismatch",
+            Self::ConfigIncompatible => "config_incompatible",
+            Self::Eligible => "eligible",
+        }
+    }
+}
+
+/// Credential-free Product eligibility evidence suitable for command/UI DTOs.
+///
+/// The complete generated configuration is deliberately absent: it contains
+/// live login information and only stays inside [`PreparedGoProductConfig`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoProductPreflightSummary {
+    pub reason: GoProductPreflightReason,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    pub pool_count: usize,
+    pub legacy_profile_count: usize,
+    pub uncovered_profile_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_len: Option<usize>,
+}
+
+impl GoProductPreflightSummary {
+    pub fn eligible(&self) -> bool {
+        self.reason == GoProductPreflightReason::Eligible
+    }
+}
+
+/// In-process handoff from Core to the desktop supervisor.
+///
+/// This type is intentionally not serializable and redacts the configuration
+/// from `Debug`. Only an eligible result carries configuration bytes.
+pub struct PreparedGoProductConfig {
+    summary: GoProductPreflightSummary,
+    config: Option<Vec<u8>>,
+}
+
+impl fmt::Debug for PreparedGoProductConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PreparedGoProductConfig")
+            .field("summary", &self.summary)
+            .field("config", &self.config.as_ref().map(Vec::len))
+            .finish()
+    }
+}
+
+impl PreparedGoProductConfig {
+    pub fn summary(&self) -> &GoProductPreflightSummary {
+        &self.summary
+    }
+
+    pub fn into_config(self) -> Option<Vec<u8>> {
+        self.config
+    }
+}
 
 #[derive(Serialize)]
 struct GoRouteIsolatedConfig {
@@ -90,15 +174,145 @@ struct TrustedUpstreamSource {
 }
 
 impl AdapterBridgeService {
+    /// Evaluate whether the persisted route state can be handed to the dormant
+    /// Product Go supervisor without changing that state or opening a socket.
+    ///
+    /// A legacy profile is covered when an included listener pool has the same
+    /// target/surface and an enabled member with the profile's source identity.
+    /// Pool ids are not a relationship key: a source can legitimately be
+    /// represented in more than one matching pool.
+    pub fn prepare_go_product_config(&self) -> Result<PreparedGoProductConfig> {
+        let port_integrity = self.route_pools.gateway_listener_port_integrity()?;
+        if port_integrity.count == 0 {
+            return Ok(product_preflight(
+                GoProductPreflightReason::NoPool,
+                None,
+                0,
+                0,
+                0,
+            ));
+        }
+        if port_integrity.has_missing {
+            return Ok(product_preflight(
+                GoProductPreflightReason::MissingSavedPort,
+                None,
+                port_integrity.count,
+                0,
+                0,
+            ));
+        }
+        if port_integrity.has_zero {
+            return Ok(product_preflight(
+                GoProductPreflightReason::ZeroSavedPort,
+                None,
+                port_integrity.count,
+                0,
+                0,
+            ));
+        }
+        let pools = self.route_pools.list_gateway_listener_pools()?;
+        let pool_count = pools.len();
+        if pool_count != port_integrity.count {
+            return Err(AppError::message(
+                "adapter.go_product_preflight_stale",
+                "saved route state changed during Product preflight",
+            ));
+        }
+        let ports = pools
+            .iter()
+            .filter_map(|pool| pool.gateway_port)
+            .collect::<HashSet<_>>();
+        if ports.len() != 1 {
+            return Ok(product_preflight(
+                GoProductPreflightReason::MultipleSavedPorts,
+                None,
+                pool_count,
+                0,
+                0,
+            ));
+        }
+        let port = ports.into_iter().next();
+
+        let profiles = self.list_auto_start_profiles()?;
+        let mut uncovered_profile_count = 0;
+        for profile in &profiles {
+            let expected_surface = RouteDownstreamSurface::for_agent(profile.target_agent_id);
+            let mut covered = false;
+            for pool in pools.iter().filter(|pool| {
+                pool.target_agent_id == profile.target_agent_id
+                    && Some(pool.downstream_surface) == expected_surface
+            }) {
+                if self
+                    .route_pools
+                    .list_members(&pool.id)?
+                    .into_iter()
+                    .any(|member| {
+                        member.enabled
+                            && member.source_kind == profile.source_kind
+                            && member.source_id == profile.source_id
+                    })
+                {
+                    covered = true;
+                    break;
+                }
+            }
+            if !covered {
+                uncovered_profile_count += 1;
+            }
+        }
+        if uncovered_profile_count != 0 {
+            return Ok(product_preflight(
+                GoProductPreflightReason::UncoveredLegacyProfile,
+                port,
+                pool_count,
+                profiles.len(),
+                uncovered_profile_count,
+            ));
+        }
+        if profiles.iter().any(|profile| profile.local_port != port) {
+            return Ok(product_preflight(
+                GoProductPreflightReason::ProfilePortMismatch,
+                port,
+                pool_count,
+                profiles.len(),
+                0,
+            ));
+        }
+
+        let config = match self.build_go_route_config(&pools, true) {
+            Ok(config) => config,
+            Err(_) => {
+                return Ok(product_preflight(
+                    GoProductPreflightReason::ConfigIncompatible,
+                    port,
+                    pool_count,
+                    profiles.len(),
+                    0,
+                ));
+            }
+        };
+        let config_sha256 = format!("{:x}", Sha256::digest(&config));
+        Ok(PreparedGoProductConfig {
+            summary: GoProductPreflightSummary {
+                reason: GoProductPreflightReason::Eligible,
+                port,
+                pool_count,
+                legacy_profile_count: profiles.len(),
+                uncovered_profile_count: 0,
+                config_sha256: Some(config_sha256),
+                config_len: Some(config.len()),
+            },
+            config: Some(config),
+        })
+    }
+
     /// Resolve saved RoutePools into the isolated Go runner's in-memory config.
     ///
     /// The returned bytes contain live login information. Callers must hand them
     /// directly to the child process and must not log, persist, or return them to
     /// a command/UI boundary.
     pub fn build_go_route_isolated_config(&self, pools: &[RoutePool]) -> Result<Vec<u8>> {
-        let config = self.build_go_route_isolated_config_model(pools)?;
-        serde_json::to_vec(&config)
-            .map_err(|_| go_config_error("The isolated Go route configuration could not be built."))
+        self.build_go_route_config(pools, false)
     }
 
     /// Resolve an auth-refresh request against the complete configuration that
@@ -117,7 +331,7 @@ impl AdapterBridgeService {
             .list_gateway_listener_pools()
             .map_err(|_| go_oauth_refresh_rejected())?;
         let config = self
-            .build_go_route_isolated_config_model(&pools)
+            .build_go_route_config_model(&pools, false)
             .map_err(|_| go_oauth_refresh_rejected())?;
         let edge_id = edge_id.trim();
         let member_id = member_id.trim();
@@ -148,9 +362,16 @@ impl AdapterBridgeService {
         Ok(member.source_id.clone())
     }
 
-    fn build_go_route_isolated_config_model(
+    fn build_go_route_config(&self, pools: &[RoutePool], read_only: bool) -> Result<Vec<u8>> {
+        let config = self.build_go_route_config_model(pools, read_only)?;
+        serde_json::to_vec(&config)
+            .map_err(|_| go_config_error("The isolated Go route configuration could not be built."))
+    }
+
+    fn build_go_route_config_model(
         &self,
         pools: &[RoutePool],
+        read_only: bool,
     ) -> Result<GoRouteIsolatedConfig> {
         let flags = self.route_pools.pair_adapter_flags();
         let accepted_bearers = self
@@ -166,7 +387,11 @@ impl AdapterBridgeService {
                 .into_iter()
                 .filter(|member| member.enabled)
                 .count();
-            let spec = self.pool_listener_spec(pool, flags);
+            let spec = if read_only {
+                self.pool_listener_spec_read_only(pool, flags)
+            } else {
+                self.pool_listener_spec(pool, flags)
+            };
             if enabled_member_count == 0 || spec.members.len() != enabled_member_count {
                 return Err(incompatible_go_config_error());
             }
@@ -182,6 +407,27 @@ impl AdapterBridgeService {
             version: CONFIG_VERSION,
             edges,
         })
+    }
+}
+
+fn product_preflight(
+    reason: GoProductPreflightReason,
+    port: Option<u16>,
+    pool_count: usize,
+    legacy_profile_count: usize,
+    uncovered_profile_count: usize,
+) -> PreparedGoProductConfig {
+    PreparedGoProductConfig {
+        summary: GoProductPreflightSummary {
+            reason,
+            port,
+            pool_count,
+            legacy_profile_count,
+            uncovered_profile_count,
+            config_sha256: None,
+            config_len: None,
+        },
+        config: None,
     }
 }
 

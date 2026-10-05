@@ -49,6 +49,12 @@ pub struct RoutePoolService {
     entry_keys: LocalEntryKeyRepo,
 }
 
+pub(crate) struct GatewayListenerPortIntegrity {
+    pub count: usize,
+    pub has_missing: bool,
+    pub has_zero: bool,
+}
+
 impl RoutePoolService {
     pub fn new(db: Database) -> Self {
         Self {
@@ -199,6 +205,48 @@ impl RoutePoolService {
                 .then_with(|| left.id.cmp(&right.id))
         });
         Ok(pools)
+    }
+
+    /// Read the port shape before decoding RoutePool rows so Product preflight
+    /// can classify a persisted zero port instead of collapsing it into the
+    /// repository's generic corrupt-row error. The predicate mirrors
+    /// `pool_needs_listener`; this is read-only and never reserves a socket.
+    pub(crate) fn gateway_listener_port_integrity(&self) -> Result<GatewayListenerPortIntegrity> {
+        if !self.enabled()? {
+            return Ok(GatewayListenerPortIntegrity {
+                count: 0,
+                has_missing: false,
+                has_zero: false,
+            });
+        }
+        self.db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                r#"
+                SELECT pool.gateway_port
+                FROM route_pools pool
+                WHERE pool.is_default = 1
+                   OR pool.unified_gateway_enrolled = 1
+                   OR EXISTS (
+                       SELECT 1 FROM local_entry_keys entry
+                       WHERE entry.pool_id = pool.id AND trim(entry.token) <> ''
+                   )
+                   OR EXISTS (
+                       SELECT 1 FROM route_pools default_pool
+                       WHERE default_pool.is_default = 1
+                         AND default_pool.target_agent_id = pool.target_agent_id
+                         AND default_pool.downstream_surface = pool.downstream_surface
+                   )
+                "#,
+            )?;
+            let ports = stmt
+                .query_map([], |row| row.get::<_, Option<i64>>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            Ok(GatewayListenerPortIntegrity {
+                count: ports.len(),
+                has_missing: ports.iter().any(Option::is_none),
+                has_zero: ports.iter().flatten().any(|port| *port == 0),
+            })
+        })
     }
 
     /// Loopback bearers for the tokens page. Empty when the pool flag is off.
