@@ -109,7 +109,7 @@ func threeEdgeConfig(upstream string) *RuntimeConfig {
 }
 
 func TestLoadRuntimeConfigValidatesSchemaWithoutEchoingSecrets(t *testing.T) {
-	raw := `{"version":"route-config.v0-isolated","edges":[{"id":"edge","ingress_key":"ingress-secret","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"upstream-secret","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","priority":0,"position":0,"models":["model"]}]}]}`
+	raw := `{"version":"route-config.v1-usage-spool","edges":[{"id":"edge","ingress_key":"ingress-secret","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"upstream-secret","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","priority":0,"position":0,"models":["model"]}]}]}`
 	config, err := LoadRuntimeConfig(strings.NewReader(raw))
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestLoadRuntimeConfigValidatesSchemaWithoutEchoingSecrets(t *testing.T) {
 func TestRuntimeConfigIngressAliasesAreDeduplicatedPerEdgeAndUniqueAcrossEdges(t *testing.T) {
 	const primary = "ahb_alias_test_primary_synthetic"
 	const alias = "ahb_alias_test_extra_synthetic"
-	raw := `{"version":"route-config.v0-isolated","edges":[{"id":"edge","ingress_key":"` + primary + `","ingress_keys":["` + primary + `","` + alias + `","` + alias + `"],"surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"upstream-secret","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","priority":0,"position":0,"models":["model"]}]}]}`
+	raw := `{"version":"route-config.v1-usage-spool","edges":[{"id":"edge","ingress_key":"` + primary + `","ingress_keys":["` + primary + `","` + alias + `","` + alias + `"],"surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"upstream-secret","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","priority":0,"position":0,"models":["model"]}]}]}`
 	config, err := LoadRuntimeConfig(strings.NewReader(raw))
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +179,7 @@ func TestRuntimeConfigIngressAliasesAreDeduplicatedPerEdgeAndUniqueAcrossEdges(t
 }
 
 func TestRuntimeConfigRejectionMessageDoesNotEchoInput(t *testing.T) {
-	raw := `{"version":"route-config.v0-isolated","edges":[{"id":"malicious-id-must-not-echo","ingress_key":"secret","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"model","members":[]}],"unknown-field-must-not-echo":true}`
+	raw := `{"version":"route-config.v1-usage-spool","edges":[{"id":"malicious-id-must-not-echo","ingress_key":"secret","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"model","members":[]}],"unknown-field-must-not-echo":true}`
 	config, digest, rejection := loadRuntimeConfigForRun(strings.NewReader(raw))
 	if config != nil || rejection != runtimeConfigRejectedMessage {
 		t.Fatalf("config=%v digest=%q rejection=%q", config, digest, rejection)
@@ -217,7 +217,7 @@ func TestOneShotRuntimeConfigHasCompleteStatusIdentity(t *testing.T) {
 }
 
 func TestRuntimeConfigDialectMustMatchSurface(t *testing.T) {
-	raw := `{"version":"route-config.v0-isolated","edges":[{"id":"edge","ingress_key":"secret","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"upstream","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","priority":0,"position":0,"models":["model"]}]}]}`
+	raw := `{"version":"route-config.v1-usage-spool","edges":[{"id":"edge","ingress_key":"secret","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"upstream","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","priority":0,"position":0,"models":["model"]}]}]}`
 	for _, mismatch := range []string{`"dialect":"codex"`, `"dialect":"generic"`, `"dialect":"anthropic"`} {
 		invalid := strings.Replace(raw, `"dialect":"claude"`, mismatch, 1)
 		if _, err := LoadRuntimeConfig(strings.NewReader(invalid)); err == nil {
@@ -227,7 +227,7 @@ func TestRuntimeConfigDialectMustMatchSurface(t *testing.T) {
 }
 
 func TestRuntimeConfigAllowsResponsesToChatTransport(t *testing.T) {
-	raw := `{"version":"route-config.v0-isolated","edges":[{"id":"edge","ingress_key":"secret","surface":"responses","dialect":"codex","schedule_policy":"priority_failover","fixture_model":"model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"upstream","upstream_auth":"bearer","upstream_transport":"openai_chat_completions","priority":0,"position":0,"models":["model"]}]}]}`
+	raw := `{"version":"route-config.v1-usage-spool","edges":[{"id":"edge","ingress_key":"secret","surface":"responses","dialect":"codex","schedule_policy":"priority_failover","fixture_model":"model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"upstream","upstream_auth":"bearer","upstream_transport":"openai_chat_completions","priority":0,"position":0,"models":["model"]}]}]}`
 	config, err := LoadRuntimeConfig(strings.NewReader(raw))
 	if err != nil {
 		t.Fatal(err)
@@ -296,7 +296,7 @@ func TestRuntimeUpstreamURLPolicy(t *testing.T) {
 }
 
 func TestOfficialAnthropicConfigAndHeaders(t *testing.T) {
-	raw := `{"version":"route-config.v0-isolated","edges":[{"id":"edge","ingress_key":"ingress","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"claude-model","members":[{"id":"member","upstream_base_url":"https://api.anthropic.com/v1","upstream_key":"synthetic-anthropic-key","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","upstream_target":"anthropic_api","credential_class":"api_key","priority":0,"position":0,"models":["claude-model"]}]}]}`
+	raw := `{"version":"route-config.v1-usage-spool","edges":[{"id":"edge","ingress_key":"ingress","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"claude-model","members":[{"id":"member","upstream_base_url":"https://api.anthropic.com/v1","upstream_key":"synthetic-anthropic-key","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","upstream_target":"anthropic_api","credential_class":"api_key","priority":0,"position":0,"models":["claude-model"]}]}]}`
 	config, err := LoadRuntimeConfig(strings.NewReader(raw))
 	if err != nil {
 		t.Fatal(err)

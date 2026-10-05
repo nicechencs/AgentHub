@@ -164,7 +164,7 @@ mkdir -p "$AGENTHUB_HOME"/{config,run,logs}
 
 Status replies must not include the entry key or upstream credentials.
 Application-managed runs use `--runtime-config-stdin-stream` and provide one or
-more length-framed `route-config.v0-isolated` documents on stdin. Each frame is
+more length-framed `route-config.v1-usage-spool` documents on stdin. Each frame is
 a four-byte big-endian length followed by the exact JSON bytes. A valid update
 atomically replaces the complete edge table without changing the process or
 listen port; requests already in flight retain the table they selected. A

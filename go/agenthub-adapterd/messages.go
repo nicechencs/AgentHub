@@ -29,8 +29,9 @@ const (
 // material cannot enter the per-edge status counters.
 type edgeStatusResponseWriter struct {
 	http.ResponseWriter
-	status    int
-	writeFail bool
+	status     int
+	writeFail  bool
+	firstWrite time.Time
 }
 
 func newEdgeStatusResponseWriter(w http.ResponseWriter) *edgeStatusResponseWriter {
@@ -49,6 +50,9 @@ func (w *edgeStatusResponseWriter) Write(body []byte) (int, error) {
 		w.status = http.StatusOK
 	}
 	n, err := w.ResponseWriter.Write(body)
+	if n > 0 && w.firstWrite.IsZero() {
+		w.firstWrite = time.Now()
+	}
 	if err != nil {
 		w.writeFail = true
 	}
@@ -74,6 +78,10 @@ func (w *edgeStatusResponseWriter) statusCode() int {
 
 func (w *edgeStatusResponseWriter) downstreamWriteFailed() bool {
 	return w.writeFail
+}
+
+func (w *edgeStatusResponseWriter) firstWriteAt() time.Time {
+	return w.firstWrite
 }
 
 func edgeRequestStatusErrorCode(status int, requestCanceled, downstreamWriteFailed bool) string {
@@ -154,15 +162,22 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 		writeMessagesError(w, http.StatusUnauthorized, "invalid_api_key", "Invalid local bearer token.", "invalid_request_error")
 		return
 	}
+	observed := newEdgeStatusResponseWriter(w)
+	w = observed
+	usage := rt.beginUsageCapture(edge, surface)
+	defer func() {
+		// Read cancellation at completion, not when registering the defer: a
+		// client can disconnect after the request has already entered routing.
+		usage.finish(rt, observed, r.Context().Err() != nil)
+	}()
 	if !rt.tryAcquireRequestSlot() {
 		edge.rejectRequest(edgeStatusRouteBusy)
+		usage.markFailure(edgeStatusRouteBusy)
 		w.Header().Set("Retry-After", "1")
 		writeMessagesError(w, http.StatusServiceUnavailable, "route_busy", "The local route is busy. Try again shortly.", "api_error")
 		return
 	}
 	defer rt.releaseRequestSlot()
-	observed := newEdgeStatusResponseWriter(w)
-	w = observed
 	// OAuth refresh can replace edge for an upstream retry. Status remains
 	// attributed to the authenticated ingress edge that accepted this request.
 	statusEdge := edge
@@ -208,6 +223,7 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 	if model == "" {
 		model = pool.FixtureModel()
 	}
+	usage.setModel(model)
 	if !pool.HasModel(model) {
 		writeMessagesError(w, http.StatusNotFound, "model_not_found", "Unknown model.", "invalid_request_error")
 		return
@@ -322,6 +338,10 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 				return
 			}
 		}
+		if downstreamStream {
+			usage.markStreaming()
+		}
+		usage.observeAttempt(member, model)
 
 		resp, err := doMemberMessagesWithIdentity(r.Context(), client, member, memberPath, memberBody, upstreamStream, grokPrepared)
 		if err != nil {
@@ -391,7 +411,11 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 
 		if downstreamStream {
 			if convertChatResponse {
-				outcome := dispatchConvertedChatStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy)
+				streamFailed := false
+				outcome := dispatchConvertedChatStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy, &streamFailed)
+				if streamFailed {
+					usage.markFailure(edgeStatusUpstreamUnavailable)
+				}
 				lastStream = false
 				if outcome == dispatchContinue {
 					if continuation {
@@ -408,7 +432,11 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 					sanitizer = sanitizeCodexOfficialSSEEventForGrok
 				}
 				var streamAffinity officialStreamAffinity
-				outcome := dispatchOfficialResponsesStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy, sanitizer, &streamAffinity)
+				streamFailed := false
+				outcome := dispatchOfficialResponsesStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy, sanitizer, &streamAffinity, &streamFailed)
+				if streamFailed {
+					usage.markFailure(edgeStatusUpstreamUnavailable)
+				}
 				if outcome == dispatchDone && streamAffinity.Completed {
 					edge.GrokAffinity.storeResponse(streamAffinity.ResponseID, member.ID)
 					edge.GrokAffinity.storeSeed(affinitySeed, member.ID)
@@ -435,7 +463,11 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 					sanitizer = sanitizeGrokOfficialSSEEventForCodex
 				}
 				var streamAffinity officialStreamAffinity
-				outcome := dispatchGrokResponsesStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy, sanitizer, &streamAffinity)
+				streamFailed := false
+				outcome := dispatchGrokResponsesStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy, sanitizer, &streamAffinity, &streamFailed)
+				if streamFailed {
+					usage.markFailure(edgeStatusUpstreamUnavailable)
+				}
 				if outcome == dispatchDone && streamAffinity.Completed {
 					edge.GrokAffinity.storeResponse(streamAffinity.ResponseID, member.ID)
 					edge.GrokAffinity.storeSeed(affinitySeed, member.ID)
@@ -454,7 +486,11 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 				lastStream = true
 				return
 			}
-			outcome := dispatchMemberStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy)
+			streamFailed := false
+			outcome := dispatchMemberStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy, &streamFailed)
+			if streamFailed {
+				usage.markFailure(edgeStatusUpstreamUnavailable)
+			}
 			lastStream = true
 			if outcome == dispatchContinue {
 				if continuation {
@@ -605,6 +641,7 @@ func dispatchConvertedChatStream(
 	lastBody *[]byte,
 	hasLast *bool,
 	policy routeHTTPSafetyPolicy,
+	streamFailed *bool,
 ) int {
 	defer resp.Body.Close()
 	class := classifyHTTP(resp.StatusCode)
@@ -643,6 +680,9 @@ func dispatchConvertedChatStream(
 	outputBytes := 0
 	failStream := func() int {
 		if committed {
+			if streamFailed != nil {
+				*streamFailed = true
+			}
 			pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
 			failure := translator.fail()
 			if len(failure) > 0 {
@@ -785,6 +825,7 @@ func dispatchMemberStream(
 	lastBody *[]byte,
 	hasLast *bool,
 	policy routeHTTPSafetyPolicy,
+	streamFailed *bool,
 ) int {
 	defer resp.Body.Close()
 	class := classifyHTTP(resp.StatusCode)
@@ -811,6 +852,9 @@ func dispatchMemberStream(
 	}
 	pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
 	if committed {
+		if streamFailed != nil {
+			*streamFailed = true
+		}
 		writeSafeSSETermination(w)
 		return dispatchDone
 	}

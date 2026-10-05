@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"sync"
 )
 
 const (
-	runtimeConfigVersion = "route-config.v0-isolated"
+	runtimeConfigVersion = "route-config.v1-usage-spool"
 	maxRuntimeConfigSize = 8 << 20
 
 	surfaceMessages        = "messages"
@@ -43,8 +44,9 @@ const (
 // RuntimeConfig is supplied once on stdin before the control socket starts.
 // It is retained only in memory and is never returned through control replies.
 type RuntimeConfig struct {
-	Version string              `json:"version"`
-	Edges   []RuntimeEdgeConfig `json:"edges"`
+	Version       string              `json:"version"`
+	UsageSpoolDir string              `json:"usage_spool_dir,omitempty"`
+	Edges         []RuntimeEdgeConfig `json:"edges"`
 }
 
 type RuntimeEdgeConfig struct {
@@ -62,6 +64,7 @@ type RuntimeEdgeConfig struct {
 
 type RuntimeMemberConfig struct {
 	ID                string   `json:"id"`
+	TicketID          string   `json:"ticket_id,omitempty"`
 	SourceKind        string   `json:"source_kind,omitempty"`
 	SourceID          string   `json:"source_id,omitempty"`
 	RefreshKind       string   `json:"refresh_kind,omitempty"`
@@ -72,6 +75,7 @@ type RuntimeMemberConfig struct {
 	UpstreamTarget    string   `json:"upstream_target,omitempty"`
 	CredentialClass   string   `json:"credential_class,omitempty"`
 	OfficialAccountID string   `json:"official_account_id,omitempty"`
+	UpstreamModel     string   `json:"upstream_model,omitempty"`
 	Priority          int64    `json:"priority"`
 	Position          int64    `json:"position"`
 	Models            []string `json:"models"`
@@ -247,6 +251,10 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 	if config.Version != runtimeConfigVersion {
 		return fmt.Errorf("runtime config version is not accepted")
 	}
+	config.UsageSpoolDir = strings.TrimSpace(config.UsageSpoolDir)
+	if config.UsageSpoolDir != "" && !filepath.IsAbs(config.UsageSpoolDir) {
+		return fmt.Errorf("runtime config usage spool directory is not absolute")
+	}
 	if len(config.Edges) == 0 {
 		return fmt.Errorf("runtime config requires at least one edge")
 	}
@@ -309,6 +317,7 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 		for memberIndex := range edge.Members {
 			member := &edge.Members[memberIndex]
 			member.ID = strings.TrimSpace(member.ID)
+			member.TicketID = strings.TrimSpace(member.TicketID)
 			member.SourceKind = strings.TrimSpace(member.SourceKind)
 			member.SourceID = strings.TrimSpace(member.SourceID)
 			member.RefreshKind = strings.TrimSpace(member.RefreshKind)
@@ -318,6 +327,7 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 			member.UpstreamTarget = strings.TrimSpace(member.UpstreamTarget)
 			member.CredentialClass = strings.TrimSpace(member.CredentialClass)
 			member.OfficialAccountID = strings.TrimSpace(member.OfficialAccountID)
+			member.UpstreamModel = strings.TrimSpace(member.UpstreamModel)
 			if member.ID == "" || member.UpstreamBaseURL == "" || member.UpstreamKey == "" {
 				return fmt.Errorf("runtime edge %s member %d is incomplete", edge.ID, memberIndex)
 			}
@@ -366,6 +376,16 @@ func validateRuntimeConfig(config *RuntimeConfig) error {
 		}
 	}
 	return nil
+}
+
+func usageSpoolFromConfig(config *RuntimeConfig, current *usageSpool) *usageSpool {
+	if config == nil || config.UsageSpoolDir == "" {
+		return nil
+	}
+	if current != nil && filepath.Clean(current.dir) == filepath.Clean(config.UsageSpoolDir) {
+		return current
+	}
+	return newUsageSpool(config.UsageSpoolDir)
 }
 
 func officialDialectAllowed(edge *RuntimeEdgeConfig, member *RuntimeMemberConfig) bool {
@@ -464,6 +484,7 @@ func runtimeEdges(config *RuntimeConfig) ([]*RuntimeEdge, error) {
 		for _, member := range edge.Members {
 			members = append(members, ProbeMember{
 				ID:                member.ID,
+				TicketID:          member.TicketID,
 				SourceKind:        member.SourceKind,
 				SourceID:          member.SourceID,
 				RefreshKind:       member.RefreshKind,
@@ -474,6 +495,7 @@ func runtimeEdges(config *RuntimeConfig) ([]*RuntimeEdge, error) {
 				UpstreamTarget:    member.UpstreamTarget,
 				CredentialClass:   member.CredentialClass,
 				OfficialAccountID: member.OfficialAccountID,
+				UpstreamModel:     member.UpstreamModel,
 				Priority:          member.Priority,
 				Position:          member.Position,
 				Models:            append([]string(nil), member.Models...),

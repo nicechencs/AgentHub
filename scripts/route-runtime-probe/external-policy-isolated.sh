@@ -143,7 +143,7 @@ inspect_config() {
     python3 -c '
 import json, sys
 config = json.load(sys.stdin)
-assert config["version"] == "route-config.v0-isolated", config
+assert config["version"] == "route-config.v1-usage-spool", config
 assert len(config["edges"]) == 1, config
 edge = config["edges"][0]
 assert len(edge["members"]) == 1, edge
@@ -241,7 +241,7 @@ sys.stdout.buffer.write(raw)
   epoch="$(post_control "${socket_path}" "$(python3 - "${home_dir}" <<'PY'
 import json, sys
 home = sys.argv[1]
-print(json.dumps({"type":"Handshake","request_id":"external-policy-handshake","app_data_dir":home,"payload":{"protocol_version":"route-runtime.v0-isolated","config_format_version":"route-config.v0-isolated","package_version":"0.0.0-isolated","app_data_dir":home}}))
+print(json.dumps({"type":"Handshake","request_id":"external-policy-handshake","app_data_dir":home,"payload":{"protocol_version":"route-runtime.v0-isolated","config_format_version":"route-config.v1-usage-spool","package_version":"0.0.0-isolated","app_data_dir":home}}))
 PY
 )" | python3 -c 'import json,sys; reply=json.load(sys.stdin); assert reply["ok"], reply; print(reply["payload"]["instance_epoch"])')"
   term="$(post_control "${socket_path}" "$(python3 - "${epoch}" "${home_dir}" <<'PY'

@@ -102,7 +102,14 @@ pub fn logs_dir(data_dir: &Path) -> PathBuf {
 /// written by the local bridge and ingested into the `gateway_usage` table by
 /// the usage collect pipeline.
 pub fn usage_gateway_dir() -> Result<PathBuf> {
-    Ok(resolve_data_dir(None)?.join("usage-gateway"))
+    Ok(usage_gateway_dir_at(&resolve_data_dir(None)?))
+}
+
+/// Spool directory for a specific resolved AgentHub data directory. This lets
+/// disposable Product runtime probes keep their JSONL evidence beside their
+/// own database rather than consulting process-global environment state.
+pub fn usage_gateway_dir_at(data_dir: &Path) -> PathBuf {
+    data_dir.join("usage-gateway")
 }
 
 /// Disposable sqlite file for Activity / route monitoring traces.

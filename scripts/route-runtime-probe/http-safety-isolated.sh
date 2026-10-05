@@ -203,7 +203,7 @@ AGENTHUB_HOME="${HOME_DIR}" "${BIN}" run --home "${HOME_DIR}" --listen-port "${L
   < <(python3 - <<PY
 import json
 models = ["ok", "error", "redirect", "oversize", "sse-wrong", "sse-oversize", "sse-idle", "body-stall", "slow-drip", "stall"]
-print(json.dumps({"version":"route-config.v0-isolated","edges":[{
+print(json.dumps({"version":"route-config.v1-usage-spool","edges":[{
   "id":"http-safety","ingress_key":"${ENTRY_KEY}","surface":"messages","dialect":"claude",
   "schedule_policy":"priority_failover","fixture_model":"ok","members":[{
     "id":"malicious-loopback","upstream_base_url":"http://127.0.0.1:${UPSTREAM_PORT}/v1",
@@ -254,7 +254,7 @@ json_get() {
 HS="$(post_control "$(python3 - <<PY
 import json
 home="${HOME_DIR}"
-print(json.dumps({"type":"Handshake","request_id":"safety-hs","app_data_dir":home,"payload":{"protocol_version":"route-runtime.v0-isolated","config_format_version":"route-config.v0-isolated","package_version":"0.0.0-isolated","app_data_dir":home}}))
+print(json.dumps({"type":"Handshake","request_id":"safety-hs","app_data_dir":home,"payload":{"protocol_version":"route-runtime.v0-isolated","config_format_version":"route-config.v1-usage-spool","package_version":"0.0.0-isolated","app_data_dir":home}}))
 PY
 )")"
 EPOCH="$(printf '%s' "${HS}" | json_get payload.instance_epoch)"

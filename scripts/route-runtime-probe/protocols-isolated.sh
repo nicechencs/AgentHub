@@ -322,7 +322,7 @@ members = {
     "slow": [member("cross-slow", slow, 0, 0)],
 }[kind]
 print(json.dumps({
-    "version": "route-config.v0-isolated",
+    "version": "route-config.v1-usage-spool",
     "edges": [{
         "id": "responses-to-openai-chat",
         "ingress_key": ingress,
@@ -377,7 +377,7 @@ print(json.dumps({
     "app_data_dir": home,
     "payload": {
         "protocol_version": "route-runtime.v0-isolated",
-        "config_format_version": "route-config.v0-isolated",
+        "config_format_version": "route-config.v1-usage-spool",
         "package_version": "0.0.0-isolated",
         "app_data_dir": home,
     },

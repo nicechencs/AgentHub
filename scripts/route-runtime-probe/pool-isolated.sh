@@ -318,7 +318,7 @@ print(json.dumps({
     "app_data_dir": home,
     "payload": {
         "protocol_version": "route-runtime.v0-isolated",
-        "config_format_version": "route-config.v0-isolated",
+        "config_format_version": "route-config.v1-usage-spool",
         "package_version": "0.0.0-isolated",
         "app_data_dir": home,
     },

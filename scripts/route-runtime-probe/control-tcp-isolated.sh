@@ -96,7 +96,7 @@ import hashlib, json, os, struct, sys
 fd, port = sys.argv[1:]
 with os.fdopen(3, "r") as secret_fd:
     ingress, upstream_key, model = secret_fd.read().splitlines()
-config={"version":"route-config.v0-isolated","edges":[{
+config={"version":"route-config.v1-usage-spool","edges":[{
  "id":"tcp-edge","ingress_key":ingress,"ingress_keys":[ingress],"surface":"messages",
  "dialect":"claude","schedule_policy":"priority_failover","fixture_model":model,
  "members":[{"id":"tcp-member","upstream_base_url":f"http://127.0.0.1:{port}/v1",
@@ -390,7 +390,7 @@ UNAUTH_HS="$(python3 - "${HOME_DIR}" <<'PY'
 import json,sys
 home=sys.argv[1]
 print(json.dumps({"type":"Handshake","request_id":"tcp-auth-guard","app_data_dir":home,"payload":{
- "protocol_version":"route-runtime.v0-isolated","config_format_version":"route-config.v0-isolated",
+ "protocol_version":"route-runtime.v0-isolated","config_format_version":"route-config.v1-usage-spool",
  "package_version":"0.0.0-isolated","app_data_dir":home}}))
 PY
 )"

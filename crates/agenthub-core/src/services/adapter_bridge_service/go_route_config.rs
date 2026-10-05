@@ -1,6 +1,7 @@
 use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 use std::net::IpAddr;
+use std::path::Path;
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -12,7 +13,10 @@ use crate::bridge::{
 use crate::error::{AppError, Result};
 use crate::models::{AdapterSourceKind, AdapterSourceProduct, RouteDownstreamSurface, RoutePool};
 
-const CONFIG_VERSION: &str = "route-config.v0-isolated";
+// The child config carries an optional usage JSONL directory as of v1. Bump
+// the version rather than relying on an optional field so an older sidecar
+// rejects the configuration before it can serve Product traffic.
+const CONFIG_VERSION: &str = "route-config.v1-usage-spool";
 const PRODUCT_DEFAULT_PORT: u16 = 43121;
 const TRANSPORT_ANTHROPIC_MESSAGES: &str = "anthropic_messages";
 const TRANSPORT_CODEX_RESPONSES: &str = "codex_responses";
@@ -117,6 +121,8 @@ impl PreparedGoProductConfig {
 #[derive(Serialize)]
 struct GoRouteIsolatedConfig {
     version: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    usage_spool_dir: Option<String>,
     edges: Vec<GoRouteIsolatedEdge>,
 }
 
@@ -125,6 +131,7 @@ impl fmt::Debug for GoRouteIsolatedConfig {
         formatter
             .debug_struct("GoRouteIsolatedConfig")
             .field("version", &self.version)
+            .field("usage_spool_enabled", &self.usage_spool_dir.is_some())
             .field("edge_count", &self.edges.len())
             .finish()
     }
@@ -148,6 +155,8 @@ struct GoRouteIsolatedEdge {
 #[derive(Serialize)]
 struct GoRouteIsolatedMember {
     id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ticket_id: Option<String>,
     source_kind: String,
     source_id: String,
     refresh_kind: &'static str,
@@ -159,6 +168,8 @@ struct GoRouteIsolatedMember {
     credential_class: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     official_account_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    upstream_model: Option<String>,
     priority: i64,
     position: i64,
     models: Vec<String>,
@@ -182,6 +193,16 @@ impl AdapterBridgeService {
     /// Pool ids are not a relationship key: a source can legitimately be
     /// represented in more than one matching pool.
     pub fn prepare_go_product_config(&self) -> Result<PreparedGoProductConfig> {
+        self.prepare_go_product_config_with_usage_spool(None)
+    }
+
+    /// Product-only variant that gives the child a durable usage JSONL spool.
+    /// The path stays inside the stdin-only configuration and is excluded from
+    /// every safe summary and Debug representation.
+    pub fn prepare_go_product_config_with_usage_spool(
+        &self,
+        usage_spool_dir: Option<&Path>,
+    ) -> Result<PreparedGoProductConfig> {
         let port_integrity = self.route_pools.gateway_listener_port_integrity()?;
         if port_integrity.count == 0 {
             return Ok(product_preflight(
@@ -279,7 +300,7 @@ impl AdapterBridgeService {
             ));
         }
 
-        let config = match self.build_go_route_config(&pools, true) {
+        let config = match self.build_go_route_config(&pools, true, usage_spool_dir) {
             Ok(config) => config,
             Err(_) => {
                 return Ok(product_preflight(
@@ -312,7 +333,17 @@ impl AdapterBridgeService {
     /// directly to the child process and must not log, persist, or return them to
     /// a command/UI boundary.
     pub fn build_go_route_isolated_config(&self, pools: &[RoutePool]) -> Result<Vec<u8>> {
-        self.build_go_route_config(pools, false)
+        self.build_go_route_isolated_config_with_usage_spool(pools, None)
+    }
+
+    /// Resolve an isolated configuration with an explicitly supplied spool.
+    /// Ordinary isolated runs pass `None`, keeping usage capture disabled.
+    pub fn build_go_route_isolated_config_with_usage_spool(
+        &self,
+        pools: &[RoutePool],
+        usage_spool_dir: Option<&Path>,
+    ) -> Result<Vec<u8>> {
+        self.build_go_route_config(pools, false, usage_spool_dir)
     }
 
     /// Resolve an auth-refresh request against the complete configuration that
@@ -331,7 +362,7 @@ impl AdapterBridgeService {
             .list_gateway_listener_pools()
             .map_err(|_| go_oauth_refresh_rejected())?;
         let config = self
-            .build_go_route_config_model(&pools, false)
+            .build_go_route_config_model(&pools, false, None)
             .map_err(|_| go_oauth_refresh_rejected())?;
         let edge_id = edge_id.trim();
         let member_id = member_id.trim();
@@ -362,8 +393,13 @@ impl AdapterBridgeService {
         Ok(member.source_id.clone())
     }
 
-    fn build_go_route_config(&self, pools: &[RoutePool], read_only: bool) -> Result<Vec<u8>> {
-        let config = self.build_go_route_config_model(pools, read_only)?;
+    fn build_go_route_config(
+        &self,
+        pools: &[RoutePool],
+        read_only: bool,
+        usage_spool_dir: Option<&Path>,
+    ) -> Result<Vec<u8>> {
+        let config = self.build_go_route_config_model(pools, read_only, usage_spool_dir)?;
         serde_json::to_vec(&config)
             .map_err(|_| go_config_error("The isolated Go route configuration could not be built."))
     }
@@ -372,6 +408,7 @@ impl AdapterBridgeService {
         &self,
         pools: &[RoutePool],
         read_only: bool,
+        usage_spool_dir: Option<&Path>,
     ) -> Result<GoRouteIsolatedConfig> {
         let flags = self.route_pools.pair_adapter_flags();
         let accepted_bearers = self
@@ -405,6 +442,7 @@ impl AdapterBridgeService {
 
         Ok(GoRouteIsolatedConfig {
             version: CONFIG_VERSION,
+            usage_spool_dir: normalize_usage_spool_dir(usage_spool_dir)?,
             edges,
         })
     }
@@ -429,6 +467,26 @@ fn product_preflight(
         },
         config: None,
     }
+}
+
+fn normalize_usage_spool_dir(usage_spool_dir: Option<&Path>) -> Result<Option<String>> {
+    let Some(path) = usage_spool_dir else {
+        return Ok(None);
+    };
+    if !path.is_absolute() {
+        return Err(go_config_error(
+            "The Go route usage spool directory must be absolute.",
+        ));
+    }
+    let path = path.to_str().ok_or_else(|| {
+        go_config_error("The Go route usage spool directory cannot be encoded for the child.")
+    })?;
+    if path.is_empty() {
+        return Err(go_config_error(
+            "The Go route usage spool directory is unavailable.",
+        ));
+    }
+    Ok(Some(path.to_owned()))
 }
 
 fn go_edge_from_spec(
@@ -652,6 +710,7 @@ fn flat_member(
     }
     Ok(GoRouteIsolatedMember {
         id,
+        ticket_id: optional_trimmed(&member.ticket_id),
         source_kind: source_kind.to_owned(),
         source_id: source_id.to_owned(),
         refresh_kind,
@@ -662,11 +721,27 @@ fn flat_member(
         upstream_target: trusted_source.target,
         credential_class: trusted_source.credential_class,
         official_account_id,
+        // The current isolated route only accepts identity model mappings.
+        // Preserve the exact static value when there is one; multi-model
+        // requests record their actual forwarded model at dispatch time.
+        upstream_model: single_model(&models),
         priority: member.priority,
         position: member.position,
         models,
         quota_remaining_pct: member.quota_remaining_pct.filter(|value| value.is_finite()),
     })
+}
+
+fn optional_trimmed(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_owned())
+}
+
+fn single_model(models: &[String]) -> Option<String> {
+    (models.len() == 1)
+        .then(|| models[0].trim())
+        .filter(|model| !model.is_empty())
+        .map(str::to_owned)
 }
 
 fn official_account_id(

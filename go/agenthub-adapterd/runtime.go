@@ -49,6 +49,7 @@ type Runtime struct {
 	probe          *ProbeFixture
 	pool           *Pool
 	edges          []*RuntimeEdge
+	usageSpool     *usageSpool
 	configRevision uint64
 	configHash     string
 
@@ -230,6 +231,11 @@ func (rt *Runtime) replaceRuntimeConfig(config *RuntimeConfig, digest string, al
 	if err := validateRuntimeConfig(config); err != nil {
 		return err
 	}
+	if config.UsageSpoolDir != "" && rt.runtimeScope != runtimeScopeProduct {
+		// Only the prepared Product lifecycle is allowed to grant a durable
+		// spool sink. Keep the rejection path free of the configured path.
+		return fmt.Errorf("runtime config usage spool is Product-only")
+	}
 	edges, err := runtimeEdges(config)
 	if err != nil {
 		return err
@@ -243,6 +249,7 @@ func (rt *Runtime) replaceRuntimeConfig(config *RuntimeConfig, digest string, al
 	if allowServing {
 		carryForwardRuntimeEdgeStatuses(rt.edges, edges)
 	}
+	rt.usageSpool = usageSpoolFromConfig(config, rt.usageSpool)
 	rt.edges = edges
 	rt.configRevision = rt.configRevision + 1
 	rt.configHash = digest

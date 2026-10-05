@@ -11,7 +11,7 @@ import (
 // RouteRuntimeControl versions and must not be treated as a cutover contract.
 const (
 	protocolVersion     = "route-runtime.v0-isolated"
-	configFormatVersion = "route-config.v0-isolated"
+	configFormatVersion = "route-config.v1-usage-spool"
 	extensionID         = "agenthub.routes"
 
 	typeHandshake            = "Handshake"
@@ -180,6 +180,7 @@ type ProbeFixture struct {
 
 type ProbeMember struct {
 	ID                string   `json:"id"`
+	TicketID          string   `json:"ticket_id,omitempty"`
 	SourceKind        string   `json:"source_kind,omitempty"`
 	SourceID          string   `json:"source_id,omitempty"`
 	RefreshKind       string   `json:"refresh_kind,omitempty"`
@@ -190,6 +191,7 @@ type ProbeMember struct {
 	UpstreamTarget    string   `json:"-"`
 	CredentialClass   string   `json:"-"`
 	OfficialAccountID string   `json:"-"`
+	UpstreamModel     string   `json:"-"`
 	Priority          int64    `json:"priority"`
 	Position          int64    `json:"position"`
 	Models            []string `json:"models,omitempty"`

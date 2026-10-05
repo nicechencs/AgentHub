@@ -46,7 +46,7 @@ func main() {
 	controlSocket := fs.String("control-socket", os.Getenv("AGENTHUB_ADAPTERD_CONTROL_SOCKET"), "absolute unix control socket (default $AGENTHUB_HOME/run/adapterd.sock)")
 	controlListen := fs.String("control-listen", os.Getenv("AGENTHUB_ADAPTERD_CONTROL_LISTEN"), "authenticated TCP control address (production requires 127.0.0.1:0)")
 	controlTokenStdin := fs.Bool("control-token-stdin", false, "read a framed control authentication token from stdin")
-	runtimeConfigStdin := fs.Bool("runtime-config-stdin", false, "read one route-config.v0-isolated JSON value from stdin")
+	runtimeConfigStdin := fs.Bool("runtime-config-stdin", false, "read one route-config.v1-usage-spool JSON value from stdin")
 	runtimeConfigStdinStream := fs.Bool("runtime-config-stdin-stream", false, "read length-framed route configs from stdin and accept atomic updates")
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: agenthub-adapterd run --home DIR --listen-port PORT [--runtime-config-stdin | --runtime-config-stdin-stream]\n")

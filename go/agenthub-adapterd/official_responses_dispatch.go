@@ -59,6 +59,7 @@ func dispatchOfficialResponsesStream(
 	policy routeHTTPSafetyPolicy,
 	sanitize officialSSEEventSanitizer,
 	affinity *officialStreamAffinity,
+	streamFailed *bool,
 ) int {
 	defer resp.Body.Close()
 	if !isEventStreamMediaType(resp.Header.Get("Content-Type")) {
@@ -84,6 +85,9 @@ func dispatchOfficialResponsesStream(
 		return dispatchDone
 	}
 	if errors.Is(relayErr, errOfficialResponsesFailure) {
+		if streamFailed != nil {
+			*streamFailed = true
+		}
 		pool.ReportFailure(member.ID, model, classRequest, 0, time.Now())
 		if !committed {
 			refreshDownstreamWriteDeadline(w, policy.DownstreamWriteTimeout)
@@ -95,6 +99,9 @@ func dispatchOfficialResponsesStream(
 	}
 	pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
 	if committed {
+		if streamFailed != nil {
+			*streamFailed = true
+		}
 		writeSafeResponsesSSETermination(w, safeSequence, policy.DownstreamWriteTimeout)
 		return dispatchDone
 	}
@@ -230,6 +237,7 @@ func dispatchGrokResponsesStream(
 	policy routeHTTPSafetyPolicy,
 	sanitize officialSSEEventSanitizer,
 	affinity *officialStreamAffinity,
+	streamFailed *bool,
 ) int {
 	defer resp.Body.Close()
 	if !isEventStreamMediaType(resp.Header.Get("Content-Type")) {
@@ -254,6 +262,9 @@ func dispatchGrokResponsesStream(
 		return dispatchDone
 	}
 	if errors.Is(relayErr, errOfficialResponsesFailure) {
+		if streamFailed != nil {
+			*streamFailed = true
+		}
 		pool.ReportFailure(member.ID, model, classRequest, 0, time.Now())
 		if !committed {
 			refreshDownstreamWriteDeadline(w, policy.DownstreamWriteTimeout)
@@ -265,6 +276,9 @@ func dispatchGrokResponsesStream(
 	}
 	pool.ReportFailure(member.ID, model, classTransient, 0, time.Now())
 	if committed {
+		if streamFailed != nil {
+			*streamFailed = true
+		}
 		writeSafeGrokPairSSETermination(w, safeSequence, policy.DownstreamWriteTimeout, sanitize != nil)
 		return dispatchDone
 	}

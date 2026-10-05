@@ -80,7 +80,7 @@ func TestRuntimeConfigStreamRejectsOversizeBeforeReadingPayload(t *testing.T) {
 func TestRuntimeConfigStreamInvalidPayloadErrorsDoNotEchoSecrets(t *testing.T) {
 	invalidPayloads := [][]byte{
 		[]byte(`{"secret":"` + streamIngressSecret),
-		[]byte(`{"version":"route-config.v0-isolated","edges":[{"id":"` + streamIngressSecret + `","ingress_key":"` + streamIngressSecret + `","surface":"secret-unsupported","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"` + streamUpstreamSecret + `","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","models":["model"]}]}]}`),
+		[]byte(`{"version":"route-config.v1-usage-spool","edges":[{"id":"` + streamIngressSecret + `","ingress_key":"` + streamIngressSecret + `","surface":"secret-unsupported","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"` + streamUpstreamSecret + `","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","models":["model"]}]}]}`),
 	}
 	for _, payload := range invalidPayloads {
 		var stream bytes.Buffer
@@ -203,7 +203,7 @@ func (secretErrorWriter) Write([]byte) (int, error) {
 }
 
 func streamRuntimeConfigJSON(edgeID, ingressKey, upstreamKey string) []byte {
-	return []byte(`{"version":"route-config.v0-isolated","edges":[{"id":"` + edgeID + `","ingress_key":"` + ingressKey + `","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"claude-stream-model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"` + upstreamKey + `","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","priority":0,"position":0,"models":["claude-stream-model"]}]}]}`)
+	return []byte(`{"version":"route-config.v1-usage-spool","edges":[{"id":"` + edgeID + `","ingress_key":"` + ingressKey + `","surface":"messages","dialect":"claude","schedule_policy":"priority_failover","fixture_model":"claude-stream-model","members":[{"id":"member","upstream_base_url":"http://127.0.0.1:18080","upstream_key":"` + upstreamKey + `","upstream_auth":"x_api_key","upstream_transport":"anthropic_messages","priority":0,"position":0,"models":["claude-stream-model"]}]}]}`)
 }
 
 func assertRuntimeConfigStreamErrorIsSafe(t *testing.T, err error) {

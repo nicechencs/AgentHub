@@ -137,7 +137,7 @@ if kind == "invalid":
     # One accepted Key may never select more than one edge.
     edges.append(edge("stream-conflict", ingress + "-other", [ingress_alias], "conflict-member"))
 config = {
-    "version": "route-config.v0-isolated",
+    "version": "route-config.v1-usage-spool",
     "edges": edges,
 }
 payload = json.dumps(config, separators=(",", ":")).encode()
@@ -177,7 +177,7 @@ import json, sys
 home = sys.argv[1]
 print(json.dumps({"type":"Handshake", "request_id":"stream-hs", "app_data_dir":home,
   "payload":{"protocol_version":"route-runtime.v0-isolated",
-  "config_format_version":"route-config.v0-isolated", "package_version":"0.0.0-isolated",
+  "config_format_version":"route-config.v1-usage-spool", "package_version":"0.0.0-isolated",
   "app_data_dir":home}}))
 PY
 )")"

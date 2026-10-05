@@ -68,7 +68,7 @@ def member(member_id, key, auth, transport, model):
     return {"id": member_id, "upstream_base_url": upstream, "upstream_key": key,
             "upstream_auth": auth, "upstream_transport": transport,
             "priority": 0, "position": 0, "models": [model]}
-print(json.dumps({"version": "route-config.v0-isolated", "edges": [
+print(json.dumps({"version": "route-config.v1-usage-spool", "edges": [
     {"id": "messages", "ingress_key": "${ENTRY_MESSAGES}", "surface": "messages",
      "dialect": "claude", "schedule_policy": "priority_failover", "fixture_model": "claude-stdin-model",
      "members": [member("messages-member", "${UPSTREAM_MESSAGES}", "x_api_key", "anthropic_messages", "claude-stdin-model")]},
@@ -126,7 +126,7 @@ print(d)' "$1"
 HS="$(post_control "$(python3 - <<PY
 import json
 home="${HOME_DIR}"
-print(json.dumps({"type":"Handshake","request_id":"flow-hs","app_data_dir":home,"payload":{"protocol_version":"route-runtime.v0-isolated","config_format_version":"route-config.v0-isolated","package_version":"0.0.0-isolated","app_data_dir":home}}))
+print(json.dumps({"type":"Handshake","request_id":"flow-hs","app_data_dir":home,"payload":{"protocol_version":"route-runtime.v0-isolated","config_format_version":"route-config.v1-usage-spool","package_version":"0.0.0-isolated","app_data_dir":home}}))
 PY
 )")"
 EPOCH="$(printf '%s' "${HS}" | json_get payload.instance_epoch)"

@@ -25,6 +25,7 @@ const (
 
 type PoolMember struct {
 	ID                string
+	TicketID          string
 	SourceKind        string
 	SourceID          string
 	RefreshKind       string
@@ -35,6 +36,7 @@ type PoolMember struct {
 	UpstreamTarget    string
 	CredentialClass   string
 	OfficialAccountID string
+	UpstreamModel     string
 	Priority          int64
 	Position          int64
 	Models            []string
@@ -167,6 +169,7 @@ func NewPoolFromFixture(fixture ProbeFixture) (*Pool, error) {
 		}
 		members = append(members, &PoolMember{
 			ID:                id,
+			TicketID:          strings.TrimSpace(item.TicketID),
 			SourceKind:        strings.TrimSpace(item.SourceKind),
 			SourceID:          strings.TrimSpace(item.SourceID),
 			RefreshKind:       normalizedRefreshKind(item.RefreshKind),
@@ -177,6 +180,7 @@ func NewPoolFromFixture(fixture ProbeFixture) (*Pool, error) {
 			UpstreamTarget:    strings.TrimSpace(item.UpstreamTarget),
 			CredentialClass:   strings.TrimSpace(item.CredentialClass),
 			OfficialAccountID: strings.TrimSpace(item.OfficialAccountID),
+			UpstreamModel:     strings.TrimSpace(item.UpstreamModel),
 			Priority:          item.Priority,
 			Position:          item.Position,
 			Models:            models,

@@ -148,7 +148,7 @@ import sys
 
 fd, token, ingress, edge_id, member_id, source_id, model, forbidden_model, port = sys.argv[1:]
 config = {
-    "version": "route-config.v0-isolated",
+    "version": "route-config.v1-usage-spool",
     "edges": [{
         "id": edge_id,
         "ingress_key": ingress,
@@ -198,7 +198,7 @@ HS="$(post_control "$(python3 - "${HOME_DIR}" <<'PY'
 import json, sys
 home = sys.argv[1]
 print(json.dumps({"type":"Handshake","request_id":"oauth-hs","app_data_dir":home,"payload":{
-    "protocol_version":"route-runtime.v0-isolated","config_format_version":"route-config.v0-isolated",
+    "protocol_version":"route-runtime.v0-isolated","config_format_version":"route-config.v1-usage-spool",
     "package_version":"0.0.0-isolated","app_data_dir":home}}))
 PY
 )")"

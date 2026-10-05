@@ -35,7 +35,7 @@ use agenthub_core::AgentHub;
 const PRODUCT_DEFAULT_PORT: u16 = 43121;
 const OWNER_ID: &str = "agenthub-gui";
 const PROTOCOL_VERSION: &str = "route-runtime.v0-isolated";
-const CONFIG_FORMAT_VERSION: &str = "route-config.v0-isolated";
+const CONFIG_FORMAT_VERSION: &str = "route-config.v1-usage-spool";
 #[cfg(debug_assertions)]
 const ISOLATED_DEV_PACKAGE_VERSION: &str = "0.0.0-isolated";
 const BUNDLED_PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -2717,9 +2717,13 @@ fn build_runtime_plan(hub: &AgentHub, mode: GoRouteRunMode) -> Result<RuntimePla
 
 #[cfg(any(unix, windows))]
 fn prepare_product_runtime(hub: &AgentHub) -> Result<(u16, Vec<u8>), String> {
+    // Product alone receives a durable usage spool. Isolated mode deliberately
+    // continues to omit the child field so ad-hoc probes cannot write outside
+    // their explicit scratch scope.
+    let usage_spool_dir = agenthub_core::utils::paths::usage_gateway_dir_at(hub.data_dir());
     let prepared = hub
         .adapter_bridge()
-        .prepare_go_product_config()
+        .prepare_go_product_config_with_usage_spool(Some(&usage_spool_dir))
         .map_err(|error| error.to_string())?;
     let summary = prepared.summary();
     if !summary.eligible() {
