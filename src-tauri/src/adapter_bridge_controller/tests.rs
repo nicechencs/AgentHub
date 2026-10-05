@@ -122,12 +122,12 @@ fn startup_entry_restore_starts_default_pools_without_legacy_profiles() {
             "regression requires no legacy auto-start profiles"
         );
 
-        let host = Arc::new(BridgeRuntimeHost::new());
+        let runtime = RouteRuntimeManager::new_test(BridgeRuntimeHost::new());
         let status = start_local_gateway_entries(
             hub.clone(),
-            host.clone(),
+            &runtime,
             true,
-            LocalGatewayStartMode::RestoreBestEffort,
+            GatewayStartMode::RestoreBestEffort,
         )
         .await
         .unwrap();
@@ -145,7 +145,7 @@ fn startup_entry_restore_starts_default_pools_without_legacy_profiles() {
             Some(port)
         );
 
-        host.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
     });
 }
 
@@ -218,9 +218,9 @@ fn startup_entry_restore_starts_demoted_manual_dsh_pool() {
         let host = runtime.rust_host_for_bridge_saga();
         let status = start_local_gateway_entries(
             hub.clone(),
-            host.clone(),
+            runtime.as_ref(),
             true,
-            LocalGatewayStartMode::RestoreBestEffort,
+            GatewayStartMode::RestoreBestEffort,
         )
         .await
         .unwrap();
@@ -258,7 +258,8 @@ fn startup_entry_restore_keeps_legacy_edge_and_starts_other_pools() {
             .route_pools()
             .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
             .unwrap();
-        let host = Arc::new(BridgeRuntimeHost::new());
+        let runtime = RouteRuntimeManager::new_test(BridgeRuntimeHost::new());
+        let host = runtime.rust_host_for_bridge_saga();
         let legacy = host.start(start_spec(&legacy_pool.id)).await.unwrap();
         hub.route_pools()
             .enroll_unified_gateway(&legacy_pool.id, legacy.port)
@@ -266,9 +267,9 @@ fn startup_entry_restore_keeps_legacy_edge_and_starts_other_pools() {
 
         let status = start_local_gateway_entries(
             hub.clone(),
-            host.clone(),
+            &runtime,
             true,
-            LocalGatewayStartMode::RestoreBestEffort,
+            GatewayStartMode::RestoreBestEffort,
         )
         .await
         .unwrap();
@@ -277,7 +278,7 @@ fn startup_entry_restore_keeps_legacy_edge_and_starts_other_pools() {
         assert_eq!(status.statuses.len(), 2);
         assert!(host.status(&legacy_pool.id).unwrap().is_some());
         assert!(host.status(&other_pool.id).unwrap().is_some());
-        host.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
     });
 }
 
@@ -300,13 +301,14 @@ fn startup_entry_restore_isolates_one_busy_pool() {
         hub.route_pools()
             .enroll_unified_gateway(&busy_pool.id, busy_port)
             .unwrap();
-        let host = Arc::new(BridgeRuntimeHost::new());
+        let runtime = RouteRuntimeManager::new_test(BridgeRuntimeHost::new());
+        let host = runtime.rust_host_for_bridge_saga();
 
         let status = start_local_gateway_entries(
             hub.clone(),
-            host.clone(),
+            &runtime,
             true,
-            LocalGatewayStartMode::RestoreBestEffort,
+            GatewayStartMode::RestoreBestEffort,
         )
         .await
         .unwrap();
@@ -314,7 +316,7 @@ fn startup_entry_restore_isolates_one_busy_pool() {
         assert!(status.running);
         assert!(host.status(&busy_pool.id).unwrap().is_none());
         assert!(host.status(&healthy_pool.id).unwrap().is_some());
-        host.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
         drop(blocker);
     });
 }
@@ -336,12 +338,13 @@ fn manual_start_keeps_default_when_nondefault_pool_fails() {
             .enroll_unified_gateway(&failed_pool.id, busy_port)
             .unwrap();
 
-        let host = Arc::new(BridgeRuntimeHost::new());
+        let runtime = RouteRuntimeManager::new_test(BridgeRuntimeHost::new());
+        let host = runtime.rust_host_for_bridge_saga();
         let status = start_local_gateway_entries(
             hub,
-            host.clone(),
+            &runtime,
             false,
-            LocalGatewayStartMode::ManualRequiredDefaults,
+            GatewayStartMode::ManualRequiredDefaults,
         )
         .await
         .expect("a healthy default pool keeps manual start usable");
@@ -349,7 +352,7 @@ fn manual_start_keeps_default_when_nondefault_pool_fails() {
         assert!(status.running);
         assert!(host.status(&default_pool.id).unwrap().is_some());
         assert!(host.status(&failed_pool.id).unwrap().is_none());
-        host.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
         drop(blocker);
     });
 }
@@ -370,19 +373,20 @@ fn manual_start_fails_when_default_pool_fails() {
             .enroll_unified_gateway(&failed_pool.id, busy_port)
             .unwrap();
 
-        let host = Arc::new(BridgeRuntimeHost::new());
+        let runtime = RouteRuntimeManager::new_test(BridgeRuntimeHost::new());
+        let host = runtime.rust_host_for_bridge_saga();
         let error = start_local_gateway_entries(
             hub,
-            host.clone(),
+            &runtime,
             false,
-            LocalGatewayStartMode::ManualRequiredDefaults,
+            GatewayStartMode::ManualRequiredDefaults,
         )
         .await
         .expect_err("a failed default pool must fail manual start");
 
         assert!(error.contains("adapter.port_in_use"), "{error}");
         assert!(host.status(&failed_pool.id).unwrap().is_none());
-        host.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
         drop(blocker);
     });
 }
@@ -550,12 +554,13 @@ fn manual_start_fails_when_only_nondefault_pool_fails() {
             .enroll_unified_gateway(&failed_pool.id, busy_port)
             .unwrap();
 
-        let host = Arc::new(BridgeRuntimeHost::new());
+        let runtime = RouteRuntimeManager::new_test(BridgeRuntimeHost::new());
+        let host = runtime.rust_host_for_bridge_saga();
         let error = start_local_gateway_entries(
             hub,
-            host.clone(),
+            &runtime,
             false,
-            LocalGatewayStartMode::ManualRequiredDefaults,
+            GatewayStartMode::ManualRequiredDefaults,
         )
         .await
         .expect_err("a failed non-default pool is still an error when it is the only pool");
@@ -563,7 +568,7 @@ fn manual_start_fails_when_only_nondefault_pool_fails() {
         assert!(error.contains("上游地址不允许使用"), "{error}");
         assert!(error.contains("adapter.bridge_start"), "{error}");
         assert!(host.status(&failed_pool.id).unwrap().is_none());
-        host.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
         drop(blocker);
     });
 }
@@ -589,13 +594,14 @@ fn gateway_enrollment_failure_compensates_new_edge() {
             END;
             "#,
         );
-        let host = Arc::new(BridgeRuntimeHost::new());
+        let runtime = RouteRuntimeManager::new_test(BridgeRuntimeHost::new());
+        let host = runtime.rust_host_for_bridge_saga();
 
         let error = start_local_gateway_entries(
             hub,
-            host.clone(),
+            &runtime,
             false,
-            LocalGatewayStartMode::ManualRequiredDefaults,
+            GatewayStartMode::ManualRequiredDefaults,
         )
         .await
         .unwrap_err();
@@ -605,7 +611,7 @@ fn gateway_enrollment_failure_compensates_new_edge() {
             "{error}"
         );
         assert!(host.status(&pool.id).unwrap().is_none());
-        host.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
     });
 }
 

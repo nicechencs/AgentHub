@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 #[cfg(feature = "route-runtime-product-handoff-probe")]
 use agenthub_core::adapter_control::AdapterSagaCoordinator;
+use agenthub_core::adapter_control::{AdapterBridgeStatus, LocalGatewayStatus};
 use agenthub_core::bridge::host::{
     BridgeGatewayRestoreError, BridgeGatewaySnapshot, BridgeGatewayStopReport, BridgeHostError,
     RouteTraceDeleteResult, RouteTracePage, RouteTraceQuery,
@@ -16,8 +17,9 @@ use agenthub_core::bridge::host::{
 #[cfg(feature = "route-runtime-product-handoff-probe")]
 use agenthub_core::bridge::host::{BridgeGatewaySnapshotState, BridgeGatewayStopState};
 use agenthub_core::bridge::BridgeRuntimeHost;
+use agenthub_core::bridge::{BridgeRuntimeStatus, BridgeStartSpec};
 use agenthub_core::logging::{self, targets};
-use agenthub_core::models::RouteSchedulePolicy;
+use agenthub_core::models::{AgentId, RouteDownstreamSurface, RouteSchedulePolicy};
 use agenthub_core::services::account_quota::MemberQuotaHint;
 use agenthub_core::AgentHub;
 
@@ -103,6 +105,149 @@ pub(crate) struct RuntimeSnapshot {
     pub running: Option<bool>,
     pub active_route_count: Option<usize>,
     pub port: Option<u16>,
+}
+
+/// Complete, process-local desired state for the shared loopback gateway.
+///
+/// This deliberately has no `Debug`, serialization, or DTO implementation:
+/// its entry specs and accepted bearer rows contain login material.  The
+/// controller builds it from the durable store while it holds the lifecycle
+/// and local-gateway saga locks; the runtime manager consumes it without
+/// retaining it after a reconciliation attempt.
+pub(crate) struct GatewayDesiredSnapshot {
+    desired_running: bool,
+    accepted_bearers: Vec<(String, String)>,
+    entries: Vec<GatewayDesiredEntry>,
+}
+
+impl GatewayDesiredSnapshot {
+    pub(crate) fn new(
+        desired_running: bool,
+        accepted_bearers: Vec<(String, String)>,
+        entries: Vec<GatewayDesiredEntry>,
+    ) -> Self {
+        Self {
+            desired_running,
+            accepted_bearers,
+            entries,
+        }
+    }
+
+    pub(crate) fn desired_running(&self) -> bool {
+        self.desired_running
+    }
+
+    fn entry(&self, pool_id: &str) -> Option<&GatewayDesiredEntry> {
+        self.entries.iter().find(|entry| entry.pool_id == pool_id)
+    }
+
+    fn entries(&self) -> &[GatewayDesiredEntry] {
+        &self.entries
+    }
+}
+
+/// One shared-gateway edge inside [`GatewayDesiredSnapshot`].  The explicit
+/// public metadata is safe for a controller to use in stable error logging;
+/// the start spec remains private to this module's reconciliation code.
+pub(crate) struct GatewayDesiredEntry {
+    pool_id: String,
+    target_agent: AgentId,
+    downstream_surface: RouteDownstreamSurface,
+    required_for_manual_start: bool,
+    persists_gateway_port: bool,
+    spec: BridgeStartSpec,
+}
+
+impl GatewayDesiredEntry {
+    pub(crate) fn pool(
+        pool_id: String,
+        target_agent: AgentId,
+        downstream_surface: RouteDownstreamSurface,
+        required_for_manual_start: bool,
+        spec: BridgeStartSpec,
+    ) -> Self {
+        Self {
+            pool_id,
+            target_agent,
+            downstream_surface,
+            required_for_manual_start,
+            persists_gateway_port: true,
+            spec,
+        }
+    }
+
+    pub(crate) fn placeholder(spec: BridgeStartSpec) -> Self {
+        Self {
+            pool_id: "local-gateway".to_owned(),
+            target_agent: AgentId::Codex,
+            downstream_surface: RouteDownstreamSurface::Responses,
+            required_for_manual_start: true,
+            persists_gateway_port: false,
+            spec,
+        }
+    }
+}
+
+/// How a complete desired snapshot should be applied.  This describes only
+/// process-local work; it never selects or persists a Product Go backend.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GatewayStartMode {
+    RestoreBestEffort,
+    ManualRequiredDefaults,
+}
+
+/// The selected post-write action.  The caller always supplies a complete
+/// latest snapshot, even when one pool is the only listener that must move.
+pub(crate) enum GatewaySavedWriteIntent {
+    PublishOnly,
+    StartSelected(Vec<String>),
+    RestartSelected(Vec<String>),
+}
+
+/// Credential-free result needed to persist a first bound gateway port.
+pub(crate) struct GatewayStartedEntry {
+    pub(crate) pool_id: String,
+    pub(crate) port: u16,
+    persists_gateway_port: bool,
+    was_running: bool,
+}
+
+impl GatewayStartedEntry {
+    pub(crate) fn persists_gateway_port(&self) -> bool {
+        self.persists_gateway_port
+    }
+
+    /// Whether this reconciliation created an edge that did not exist before
+    /// its start attempt. Callers use this only to compensate a later durable
+    /// enrollment failure; a reused live edge must not be stopped.
+    pub(crate) fn started_new(&self) -> bool {
+        !self.was_running
+    }
+}
+
+/// Stable per-edge reconciliation failure.  It intentionally owns neither a
+/// snapshot nor a rendered host error, so logs cannot accidentally include a
+/// bearer, upstream address, or request body.
+pub(crate) struct GatewayReconcileFailure {
+    pub(crate) pool_id: String,
+    pub(crate) target_agent: AgentId,
+    pub(crate) downstream_surface: RouteDownstreamSurface,
+    pub(crate) stage: &'static str,
+    cause: BridgeHostError,
+}
+
+impl GatewayReconcileFailure {
+    pub(crate) fn into_cause(self) -> BridgeHostError {
+        self.cause
+    }
+}
+
+/// Results from applying a full desired state.  Errors for optional restore
+/// entries are retained as credential-free metadata; manual required entries
+/// return a [`GatewayReconcileFailure`] immediately.
+pub(crate) struct GatewayReconcileReport {
+    pub(crate) started: Vec<GatewayStartedEntry>,
+    pub(crate) failures: Vec<GatewayReconcileFailure>,
 }
 
 /// Owns every process-local route runtime without selecting a new default.
@@ -626,12 +771,250 @@ impl RouteRuntimeManager {
     /// lock; this method is the only production seam that writes the
     /// process-local accepted-bearer table.  Product Go remains unavailable,
     /// so the active backend is deliberately still the Rust host.
+    #[cfg(test)]
     pub(crate) fn sync_active_gateway_accepted_bearers(
         &self,
         rows: Vec<(String, String)>,
     ) -> Result<(), BridgeHostError> {
         debug_assert_eq!(self.active_backend(), RuntimeBackend::Rust);
         self.rust.set_extra_local_bearers(rows)
+    }
+
+    /// Start the fixed Rust gateway from one complete saved-state snapshot.
+    ///
+    /// `RestoreBestEffort` leaves already-live legacy profile listeners alone
+    /// and records individual failures.  A manual start still fails closed for
+    /// required default entries, preserving the board-switch contract.
+    pub(crate) async fn start_gateway(
+        &self,
+        snapshot: &GatewayDesiredSnapshot,
+        mode: GatewayStartMode,
+    ) -> Result<GatewayReconcileReport, GatewayReconcileFailure> {
+        self.publish_gateway_bearers(snapshot)
+            .map_err(|cause| GatewayReconcileFailure {
+                pool_id: "local-gateway".to_owned(),
+                target_agent: AgentId::Codex,
+                downstream_surface: RouteDownstreamSurface::Responses,
+                stage: "publish_bearers",
+                cause,
+            })?;
+
+        let mut report = GatewayReconcileReport {
+            started: Vec::new(),
+            failures: Vec::new(),
+        };
+        for entry in snapshot.entries() {
+            if mode == GatewayStartMode::RestoreBestEffort
+                && self
+                    .rust
+                    .status(&entry.pool_id)
+                    .map_err(|cause| Self::gateway_failure(entry, "status_existing", cause))?
+                    .is_some()
+            {
+                continue;
+            }
+            match self.start_gateway_entry(entry).await {
+                Ok(started) => report.started.push(started),
+                Err(failure) if mode == GatewayStartMode::RestoreBestEffort => {
+                    report.failures.push(failure);
+                }
+                Err(failure) if entry.required_for_manual_start => return Err(failure),
+                Err(failure) => report.failures.push(failure),
+            }
+        }
+        Ok(report)
+    }
+
+    /// Apply a full snapshot after a durable route/key/model write.  Only the
+    /// selected pool listeners move, but every accepted bearer is republished
+    /// from the just-read durable state before any listener is resumed.
+    pub(crate) async fn reconcile_gateway_after_saved_write(
+        &self,
+        snapshot: &GatewayDesiredSnapshot,
+        intent: GatewaySavedWriteIntent,
+    ) -> Result<GatewayReconcileReport, GatewayReconcileFailure> {
+        self.publish_gateway_bearers(snapshot)
+            .map_err(|cause| GatewayReconcileFailure {
+                pool_id: "local-gateway".to_owned(),
+                target_agent: AgentId::Codex,
+                downstream_surface: RouteDownstreamSurface::Responses,
+                stage: "publish_bearers",
+                cause,
+            })?;
+
+        let (pool_ids, restart) = match intent {
+            GatewaySavedWriteIntent::PublishOnly => {
+                return Ok(GatewayReconcileReport {
+                    started: Vec::new(),
+                    failures: Vec::new(),
+                });
+            }
+            GatewaySavedWriteIntent::StartSelected(pool_ids) => (pool_ids, false),
+            GatewaySavedWriteIntent::RestartSelected(pool_ids) => (pool_ids, true),
+        };
+        let mut report = GatewayReconcileReport {
+            started: Vec::new(),
+            failures: Vec::new(),
+        };
+        for pool_id in pool_ids {
+            let Some(entry) = snapshot.entry(&pool_id) else {
+                // A delete can remove the last visible entry.  Never leave
+                // its old listener accepting a now-removed bearer.
+                self.stop_gateway_entry(&pool_id).await.map_err(|cause| {
+                    GatewayReconcileFailure {
+                        pool_id,
+                        target_agent: AgentId::Codex,
+                        downstream_surface: RouteDownstreamSurface::Responses,
+                        stage: "stop_removed",
+                        cause,
+                    }
+                })?;
+                continue;
+            };
+            if restart {
+                self.stop_gateway_entry(&entry.pool_id)
+                    .await
+                    .map_err(|cause| Self::gateway_failure(entry, "stop_before_restart", cause))?;
+            }
+            report.started.push(self.start_gateway_entry(entry).await?);
+        }
+        Ok(report)
+    }
+
+    /// Recover selected listeners from a newly built durable snapshot.  This
+    /// is intentionally an alias with a separate name: callers must not reuse
+    /// an in-memory spec from the failed write that created the pending work.
+    pub(crate) async fn recover_gateway_after_saved_write(
+        &self,
+        snapshot: &GatewayDesiredSnapshot,
+        pool_ids: Vec<String>,
+    ) -> Result<GatewayReconcileReport, GatewayReconcileFailure> {
+        self.reconcile_gateway_after_saved_write(
+            snapshot,
+            GatewaySavedWriteIntent::StartSelected(pool_ids),
+        )
+        .await
+    }
+
+    /// Stop all shared-gateway listeners and wait until the loopback port is
+    /// actually unbound.  The controller persists desired=false only after
+    /// this returns successfully.
+    pub(crate) async fn stop_gateway(&self) -> Result<(), BridgeHostError> {
+        for pool_id in self.rust.running_ids()? {
+            self.stop_gateway_entry(&pool_id).await?;
+        }
+        if self.rust.gateway_port()?.is_some() || !self.rust.running_ids()?.is_empty() {
+            return Err(BridgeHostError::Stopping);
+        }
+        Ok(())
+    }
+
+    /// Stop selected shared-gateway edges before a durable write replaces
+    /// their listener material.  `stop` waits for listener cleanup, so a
+    /// caller cannot persist a replacement then accidentally leave the old
+    /// edge accepting its stale configuration.
+    pub(crate) async fn stop_gateway_pools(
+        &self,
+        pool_ids: &[String],
+    ) -> Result<(), BridgeHostError> {
+        for pool_id in pool_ids {
+            self.stop_gateway_entry(pool_id).await?;
+        }
+        Ok(())
+    }
+
+    /// Read whether one shared-gateway edge is currently live.  This is an
+    /// observation only; callers use it to preserve the existing rule that a
+    /// model refresh never starts a listener the user has kept stopped.
+    pub(crate) fn gateway_pool_is_running(&self, pool_id: &str) -> Result<bool, BridgeHostError> {
+        Ok(self.rust.status(pool_id)?.is_some())
+    }
+
+    /// Credential-free board status for the fixed active gateway.
+    pub(crate) fn gateway_status(
+        &self,
+        restarting: bool,
+    ) -> Result<LocalGatewayStatus, BridgeHostError> {
+        let ids = self.rust.running_ids()?;
+        let port = self.rust.gateway_port()?;
+        let mut statuses = Vec::new();
+        for id in ids {
+            if let Some(runtime) = self.rust.status(&id)? {
+                statuses.push(Self::gateway_status_dto(&self.rust, &id, runtime));
+            }
+        }
+        Ok(LocalGatewayStatus {
+            running: port.is_some() && !statuses.is_empty(),
+            port,
+            statuses,
+            recent_unauthenticated_traces: self.rust.recent_unauthenticated_route_traces(),
+            restarting,
+        })
+    }
+
+    fn publish_gateway_bearers(
+        &self,
+        snapshot: &GatewayDesiredSnapshot,
+    ) -> Result<(), BridgeHostError> {
+        debug_assert_eq!(self.active_backend(), RuntimeBackend::Rust);
+        self.rust
+            .set_extra_local_bearers(snapshot.accepted_bearers.clone())
+    }
+
+    async fn start_gateway_entry(
+        &self,
+        entry: &GatewayDesiredEntry,
+    ) -> Result<GatewayStartedEntry, GatewayReconcileFailure> {
+        let was_running = self
+            .rust
+            .status(&entry.pool_id)
+            .map_err(|cause| Self::gateway_failure(entry, "status_before_start", cause))?
+            .is_some();
+        let status = self
+            .rust
+            .start(entry.spec.clone())
+            .await
+            .map_err(|cause| Self::gateway_failure(entry, "host_start", cause))?;
+        Ok(GatewayStartedEntry {
+            pool_id: entry.pool_id.clone(),
+            port: status.port,
+            persists_gateway_port: entry.persists_gateway_port,
+            was_running,
+        })
+    }
+
+    async fn stop_gateway_entry(&self, pool_id: &str) -> Result<(), BridgeHostError> {
+        match self.rust.stop(pool_id).await {
+            Ok(_) | Err(BridgeHostError::NotRunning) => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn gateway_failure(
+        entry: &GatewayDesiredEntry,
+        stage: &'static str,
+        cause: BridgeHostError,
+    ) -> GatewayReconcileFailure {
+        GatewayReconcileFailure {
+            pool_id: entry.pool_id.clone(),
+            target_agent: entry.target_agent,
+            downstream_surface: entry.downstream_surface,
+            stage,
+            cause,
+        }
+    }
+
+    fn gateway_status_dto(
+        host: &BridgeRuntimeHost,
+        pool_id: &str,
+        runtime: BridgeRuntimeStatus,
+    ) -> AdapterBridgeStatus {
+        let token = host.local_token(pool_id).ok().flatten();
+        AdapterBridgeStatus::from_runtime(runtime)
+            .with_recent_inbound(host.recent_inbound(pool_id))
+            .with_recent_route_traces(host.recent_route_traces(pool_id))
+            .with_inbound_stats(host.inbound_stats(pool_id))
+            .with_local_token(token)
     }
 
     pub(crate) fn query_route_traces(&self, query: RouteTraceQuery) -> RouteTracePage {

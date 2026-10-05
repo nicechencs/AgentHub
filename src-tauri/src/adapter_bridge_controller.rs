@@ -47,7 +47,10 @@ use tauri::{AppHandle, Emitter};
 use crate::commands::{map_err_string, with_hub_blocking};
 use crate::exit_coordinator::LifecycleShutdownBarrier;
 use crate::go_route_isolated::GoRouteIsolatedHost;
-use crate::route_runtime::RouteRuntimeManager;
+use crate::route_runtime::{
+    GatewayDesiredEntry, GatewayDesiredSnapshot, GatewayReconcileFailure, GatewaySavedWriteIntent,
+    GatewayStartMode, RouteRuntimeManager,
+};
 
 const CODE_BRIDGE_START: &str = "adapter.bridge_start";
 const CODE_BRIDGE_PROJECTION: &str = "adapter.bridge_projection";
@@ -56,12 +59,6 @@ const CODE_BRIDGE_RESTORE_SOURCE: &str = "adapter.bridge_restore_source";
 const CODE_BRIDGE_RESTORE_START: &str = "adapter.bridge_restore_start";
 const CODE_BRIDGE_PORT_IN_USE: &str = "adapter.port_in_use";
 const LOCAL_FORWARD_LIFECYCLE_EVENT: &str = "local-forward-lifecycle";
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum LocalGatewayStartMode {
-    RestoreBestEffort,
-    ManualRequiredDefaults,
-}
 
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -588,13 +585,10 @@ pub(crate) fn restore_adapter_bridges(
 ) {
     let host = runtime.rust_host_for_bridge_saga();
     tauri::async_runtime::spawn(async move {
-        let desired_running = match with_hub_blocking(hub.clone(), |hub| {
-            hub.route_pools()
-                .local_gateway_desired_running()
-                .map_err(|error| map_err_string("local_gateway_desired_running", error))
-        })
-        .await
-        {
+        // This first read only avoids restore work after a clean prior Stop.
+        // Each actual listener start repeats the read while holding lifecycle
+        // and local-gateway locks, so this cannot authorize a stale restart.
+        let desired_running = match local_gateway_desired_running(hub.clone()).await {
             Ok(desired_running) => desired_running,
             Err(_) => {
                 tracing::warn!(target: "gui", op = "adapter_bridge_restore", code = "adapter.bridge_restore_desired", "adapter bridge restore could not read the local gateway switch");
@@ -602,7 +596,7 @@ pub(crate) fn restore_adapter_bridges(
             }
         };
         if !desired_running {
-            observe_local_gateway_lifecycle(hub.clone(), host.as_ref(), false, &Ok(())).await;
+            observe_local_gateway_lifecycle(hub.clone(), runtime.as_ref(), false, &Ok(())).await;
             tracing::info!(target: "gui", op = "adapter_bridge_restore", desired_running = false, "local gateway left off; skip restore");
             return;
         }
@@ -685,6 +679,23 @@ pub(crate) fn restore_adapter_bridges(
                 reload.clone(),
             );
             let multi_account = local_bridge_multi_account(&material.profile().rule_id);
+            // Stop takes these same two locks and persists false only after
+            // every shared listener has released its port. Re-read immediately
+            // before this start so a completed Stop cannot be raced by startup
+            // restore's earlier best-effort read.
+            match local_gateway_desired_running(hub.clone()).await {
+                Ok(true) => {}
+                Ok(false) => {
+                    observe_local_gateway_lifecycle(hub.clone(), runtime.as_ref(), false, &Ok(()))
+                        .await;
+                    tracing::info!(target: "gui", op = "adapter_bridge_restore", desired_running = false, "local gateway stopped during restore; skip listener start");
+                    return;
+                }
+                Err(error) => {
+                    tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, code = "adapter.bridge_restore_desired", error = %error, "adapter bridge restore could not re-read the local gateway switch");
+                    return;
+                }
+            }
             let runtime = match ensure_bridge_listener(
                 host.as_ref(),
                 &runtime_material,
@@ -784,37 +795,50 @@ pub(crate) fn restore_adapter_bridges(
         let shared_restore = async {
             let _lifecycle_permit = lifecycle_barrier.enter().await?;
             let _gate = coordinator.lock_local_gateway().await;
+            let desired_running = local_gateway_desired_running(hub.clone()).await?;
+            if !desired_running {
+                let status = runtime
+                    .gateway_status(restarting.load(Ordering::SeqCst))
+                    .map_err(map_bridge_host_error);
+                return Ok::<_, String>((status, false));
+            }
             let status = start_local_gateway_entries(
                 hub.clone(),
-                host.clone(),
+                runtime.as_ref(),
                 restarting.load(Ordering::SeqCst),
-                LocalGatewayStartMode::RestoreBestEffort,
+                GatewayStartMode::RestoreBestEffort,
             )
             .await;
-            let bearer_sync =
-                sync_active_gateway_accepted_bearers(hub.clone(), runtime.as_ref()).await;
-            Ok::<_, String>((status, bearer_sync))
+            Ok::<_, String>((status, true))
         }
         .await;
         match shared_restore {
-            Ok((status, bearer_sync)) => {
-                observe_local_gateway_lifecycle(hub.clone(), host.as_ref(), true, &bearer_sync)
-                    .await;
-                if let Err(error) = status.and(bearer_sync) {
-                    tracing::warn!(
-                        target: "gui",
-                        op = "adapter_bridge_restore",
-                        error = %error,
-                        "shared local gateway could not be restored"
-                    );
-                    surface_shared_restore_failure(hub.clone(), &error).await;
+            Ok((status, desired_running)) => {
+                let bearer_sync = Ok(());
+                observe_local_gateway_lifecycle(
+                    hub.clone(),
+                    runtime.as_ref(),
+                    desired_running,
+                    &bearer_sync,
+                )
+                .await;
+                if desired_running {
+                    if let Err(error) = status {
+                        tracing::warn!(
+                            target: "gui",
+                            op = "adapter_bridge_restore",
+                            error = %error,
+                            "shared local gateway could not be restored"
+                        );
+                        surface_shared_restore_failure(hub.clone(), &error).await;
+                    }
                 }
             }
             Err(error) => {
                 observe_local_gateway_lifecycle(
                     hub.clone(),
-                    host.as_ref(),
-                    true,
+                    runtime.as_ref(),
+                    false,
                     &Err(error.clone()),
                 )
                 .await;
@@ -1646,6 +1670,90 @@ async fn bridge_profile_id_for_request(
     .await
 }
 
+/// Read only the durable on/off switch. Restore calls this while it already
+/// holds lifecycle plus local-gateway locks immediately before a start; do not
+/// replace that locked check with an earlier desired snapshot.
+async fn local_gateway_desired_running(hub: Arc<AgentHub>) -> Result<bool, String> {
+    with_hub_blocking(hub, move |hub| {
+        hub.route_pools()
+            .local_gateway_desired_running()
+            .map_err(|error| map_err_string("local_gateway_desired_running", error))
+    })
+    .await
+}
+
+/// Read every durable input for the shared gateway under the caller's saga
+/// locks, then construct one ephemeral desired snapshot.  The snapshot is
+/// intentionally not logged, serialized, or stored on the runtime manager:
+/// it contains listener specs and accepted entry keys.
+async fn gateway_desired_snapshot(
+    hub: Arc<AgentHub>,
+    runtime: &RouteRuntimeManager,
+) -> Result<GatewayDesiredSnapshot, String> {
+    let host = runtime.rust_host_for_bridge_saga();
+    with_hub_blocking(hub, move |hub| {
+        let desired_running = hub
+            .route_pools()
+            .local_gateway_desired_running()
+            .map_err(|error| map_err_string("local_gateway_desired_running", error))?;
+        let accepted_bearers = hub
+            .route_pools()
+            .list_accepted_local_bearers()
+            .map_err(|error| map_err_string("list_accepted_local_bearers", error))?;
+        let flags = hub.route_pools().pair_adapter_flags();
+        let pools = hub
+            .route_pools()
+            .list_gateway_listener_pools()
+            .map_err(|error| map_err_string("list_gateway_listener_pools", error))?;
+        let entries = if pools.is_empty() {
+            vec![GatewayDesiredEntry::placeholder(placeholder_entry_spec(
+                "local-gateway",
+                None,
+                "ahb_local_gateway",
+                AgentId::Codex,
+                flags,
+            ))]
+        } else {
+            pools
+                .into_iter()
+                .map(|pool| {
+                    let prior = host
+                        .live_route_index(&pool.id)
+                        .map_err(map_bridge_host_error)?;
+                    let spec = hub.adapter_bridge().pool_listener_spec_with_prior(
+                        &pool,
+                        flags,
+                        prior.as_ref(),
+                    );
+                    Ok(GatewayDesiredEntry::pool(
+                        pool.id,
+                        pool.target_agent_id,
+                        pool.downstream_surface,
+                        pool.is_default,
+                        spec,
+                    ))
+                })
+                .collect::<Result<Vec<_>, String>>()?
+        };
+        Ok(GatewayDesiredSnapshot::new(
+            desired_running,
+            accepted_bearers,
+            entries,
+        ))
+    })
+    .await
+}
+
+fn map_gateway_reconcile_failure(failure: GatewayReconcileFailure) -> String {
+    let pool_id = failure.pool_id.clone();
+    let target_agent = failure.target_agent;
+    let downstream_surface = failure.downstream_surface;
+    let stage = failure.stage;
+    let message = map_bridge_host_error(failure.into_cause());
+    log_local_gateway_pool_error(&pool_id, target_agent, downstream_surface, stage, &message);
+    message
+}
+
 /// Start the shared local relay. Pool logins are not planned or bound here;
 /// unusable accounts/keys surface later on requests.
 /// `remember` writes the board switch for the next process start.
@@ -1658,23 +1766,23 @@ pub(crate) async fn start_local_gateway(
     app: AppHandle,
     remember: bool,
 ) -> Result<LocalGatewayStatus, String> {
-    let host = runtime.rust_host_for_bridge_saga();
     let _restarting_guard = LocalGatewayRestartingGuard::begin(restarting.clone(), Some(app));
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_local_gateway().await;
+    // Persist the switch before constructing the snapshot.  A failed start
+    // then remains a durable desired state and recovery always rebuilds from
+    // the saved rows instead of reviving this operation's old in-memory spec.
+    if remember {
+        write_local_gateway_desired_running(hub.clone(), true).await?;
+    }
     let mut status = start_local_gateway_entries(
         hub.clone(),
-        host.clone(),
+        runtime.as_ref(),
         restarting.load(Ordering::SeqCst),
-        LocalGatewayStartMode::ManualRequiredDefaults,
+        GatewayStartMode::ManualRequiredDefaults,
     )
     .await?;
-    if remember {
-        write_local_gateway_desired_running(hub.clone(), true).await;
-    }
-    let bearer_sync = sync_active_gateway_accepted_bearers(hub.clone(), runtime.as_ref()).await;
-    observe_local_gateway_lifecycle(hub, host.as_ref(), true, &bearer_sync).await;
-    bearer_sync?;
+    observe_local_gateway_lifecycle(hub, runtime.as_ref(), true, &Ok(())).await;
     drop(_restarting_guard);
     status.restarting = restarting.load(Ordering::SeqCst);
     Ok(status)
@@ -1682,272 +1790,84 @@ pub(crate) async fn start_local_gateway(
 
 async fn start_local_gateway_entries(
     hub: Arc<AgentHub>,
-    host: Arc<BridgeRuntimeHost>,
+    runtime: &RouteRuntimeManager,
     restarting: bool,
-    mode: LocalGatewayStartMode,
+    mode: GatewayStartMode,
 ) -> Result<LocalGatewayStatus, String> {
-    let pools = with_hub_blocking(hub.clone(), move |hub| {
-        hub.route_pools()
-            .list_gateway_listener_pools()
-            .map_err(|error| map_err_string("list_gateway_listener_pools", error))
-    })
-    .await?;
-    let flags = with_hub_blocking(hub.clone(), move |hub| {
-        Ok(hub.route_pools().pair_adapter_flags())
-    })
-    .await?;
-    if pools.is_empty() {
-        let started = host
-            .start(placeholder_entry_spec(
-                "local-gateway",
-                None,
-                "ahb_local_gateway",
-                AgentId::Codex,
-                flags,
-            ))
-            .await
-            .map_err(map_bridge_host_error)?;
-        return local_gateway_status_from_host(&host, vec![started.profile_id], restarting);
-    }
-
-    let mut started = Vec::new();
+    let snapshot = gateway_desired_snapshot(hub.clone(), runtime).await?;
+    let report = runtime
+        .start_gateway(&snapshot, mode)
+        .await
+        .map_err(map_gateway_reconcile_failure)?;
     let mut first_error = None;
-    let mut failed_nondefault_count = 0usize;
-    for pool in pools {
-        let pool_id = pool.id.clone();
-        let result = async {
-            // Legacy restoration may already have rebuilt and indexed this
-            // same pool. Its live spec is authoritative for this process.
-            if matches!(mode, LocalGatewayStartMode::RestoreBestEffort) {
-                if host
-                    .status(&pool_id)
-                    .map_err(|error| {
-                        map_local_gateway_pool_host_error(
-                            &pool_id,
-                            pool.target_agent_id,
-                            pool.downstream_surface,
-                            "status_existing",
-                            error,
-                        )
-                    })?
-                    .is_some()
-                {
-                    return Ok(pool_id.clone());
-                }
-            }
-
-            let pool_for_spec = pool.clone();
-            let spec = with_hub_blocking(hub.clone(), move |hub| {
-                Ok(hub
-                    .adapter_bridge()
-                    .pool_listener_spec(&pool_for_spec, flags))
-            })
-            .await
-            .map_err(|error| {
-                log_local_gateway_pool_error(
-                    &pool_id,
-                    pool.target_agent_id,
-                    pool.downstream_surface,
-                    "build_spec",
-                    &error,
-                );
-                error
-            })?;
-            let was_running = host
-                .status(&pool_id)
-                .map_err(|error| {
-                    map_local_gateway_pool_host_error(
-                        &pool_id,
-                        pool.target_agent_id,
-                        pool.downstream_surface,
-                        "status_before_start",
-                        error,
-                    )
-                })?
-                .is_some();
-            let runtime = host.start(spec).await.map_err(|error| {
-                map_local_gateway_pool_host_error(
-                    &pool_id,
-                    pool.target_agent_id,
-                    pool.downstream_surface,
-                    "host_start",
-                    error,
-                )
-            })?;
-            let port = runtime.port;
-            let enrolled_pool = match with_hub_blocking(hub.clone(), {
-                let pool_id = pool_id.clone();
-                move |hub| {
-                    hub.route_pools()
-                        .enroll_unified_gateway(&pool_id, port)
-                        .map_err(|error| map_err_string("enroll_local_gateway", error))
-                }
-            })
-            .await
-            {
-                Ok(pool) => pool,
-                Err(error) => {
-                    log_local_gateway_pool_error(
-                        &pool_id,
-                        pool.target_agent_id,
-                        pool.downstream_surface,
-                        "enroll",
-                        &error,
-                    );
-                    if !was_running {
-                        if let Err(stop_error) = host.stop(&pool_id).await {
-                            let _ = map_local_gateway_pool_host_error(
-                                &pool_id,
-                                pool.target_agent_id,
-                                pool.downstream_surface,
-                                "enroll_compensation_stop",
-                                stop_error,
-                            );
-                        }
-                    }
-                    return Err(error);
-                }
-            };
-            // First successful enroll: replace the legacy non-indexed listener
-            // with an indexed spec so create-time schedulePolicy is live. Seed
-            // any prior live index. Later policy edits use hot-apply, not rebuild.
-            let prior = host.live_route_index(&pool_id).map_err(|error| {
-                map_local_gateway_pool_host_error(
-                    &pool_id,
-                    pool.target_agent_id,
-                    pool.downstream_surface,
-                    "live_route_index",
-                    error,
-                )
-            })?;
-            let indexed = with_hub_blocking(hub.clone(), {
-                let enrolled_pool = enrolled_pool.clone();
-                let prior = prior.clone();
-                move |hub| {
-                    Ok(hub.adapter_bridge().pool_listener_spec_with_prior(
-                        &enrolled_pool,
-                        flags,
-                        prior.as_ref(),
-                    ))
-                }
-            })
-            .await
-            .map_err(|error| {
-                log_local_gateway_pool_error(
-                    &pool_id,
-                    pool.target_agent_id,
-                    pool.downstream_surface,
-                    "build_indexed_spec",
-                    &error,
-                );
-                error
-            })?;
-            match host.start(indexed.clone()).await {
-                Ok(_) => {}
-                Err(BridgeHostError::ConflictingStart) => {
-                    match host.stop(&pool_id).await {
-                        Ok(_) | Err(BridgeHostError::NotRunning) => {}
-                        Err(error) => {
-                            let message = map_local_gateway_pool_host_error(
-                                &pool_id,
-                                pool.target_agent_id,
-                                pool.downstream_surface,
-                                "indexed_compensation_stop",
-                                error,
-                            );
-                            return Err(message);
-                        }
-                    }
-                    host.start(indexed).await.map_err(|error| {
-                        map_local_gateway_pool_host_error(
-                            &pool_id,
-                            pool.target_agent_id,
-                            pool.downstream_surface,
-                            "indexed_start_retry",
-                            error,
-                        )
-                    })?;
-                }
-                Err(error) => {
-                    let message = map_local_gateway_pool_host_error(
-                        &pool_id,
-                        pool.target_agent_id,
-                        pool.downstream_surface,
-                        "indexed_start",
-                        error,
-                    );
-                    return Err(message);
-                }
-            }
-            Ok(runtime.profile_id)
-        }
-        .await;
-
-        match result {
-            Ok(profile_id) => started.push(profile_id),
-            Err(error) => match mode {
-                LocalGatewayStartMode::RestoreBestEffort => {
-                    tracing::warn!(
-                        target: "gui",
-                        op = "adapter_bridge_restore",
-                        pool_id = %pool.id,
-                        target_agent = pool.target_agent_id.as_str(),
-                        surface = pool.downstream_surface.as_str(),
-                        stage = "pool_entry",
-                        error = %error,
-                        "local gateway pool could not be restored"
-                    );
-                    first_error.get_or_insert(error);
-                }
-                LocalGatewayStartMode::ManualRequiredDefaults if pool.is_default => {
-                    tracing::error!(
-                        target: targets::GUI,
-                        op = "start_local_gateway_entries",
-                        pool_id = %pool.id,
-                        target_agent = pool.target_agent_id.as_str(),
-                        surface = pool.downstream_surface.as_str(),
-                        stage = "required_default",
-                        code = CODE_BRIDGE_START,
-                        error = %error,
-                        "本机转发默认池启动失败"
-                    );
-                    return Err(error);
-                }
-                LocalGatewayStartMode::ManualRequiredDefaults => {
-                    failed_nondefault_count += 1;
-                    tracing::warn!(
-                        target: targets::GUI,
-                        op = "start_local_gateway_entries",
-                        pool_id = %pool.id,
-                        target_agent = pool.target_agent_id.as_str(),
-                        surface = pool.downstream_surface.as_str(),
-                        stage = "optional_nondefault",
-                        code = CODE_BRIDGE_START,
-                        error = %error,
-                        "本机转发非默认池启动失败，继续启动其他池"
-                    );
-                    first_error.get_or_insert(error);
-                }
-            },
-        }
+    for failure in report.failures {
+        let error = map_gateway_reconcile_failure(failure);
+        first_error.get_or_insert(error);
     }
-    if failed_nondefault_count > 0 {
-        tracing::warn!(
-            target: targets::GUI,
-            op = "start_local_gateway_entries",
-            stage = "partial_summary",
-            code = CODE_BRIDGE_START,
-            started_count = started.len(),
-            failed_nondefault_count,
-            "本机转发部分池启动失败"
-        );
-    }
-    if started.is_empty() {
+    if report.started.is_empty() {
         if let Some(error) = first_error {
             return Err(error);
         }
     }
-    local_gateway_status_from_host(&host, started, restarting)
+
+    // Bind first, then persist any newly observed shared port.  Immediately
+    // rebuild the entire snapshot from durable rows and replace only those
+    // entries, so the indexed listener can never retain a pre-write spec.
+    let started_pool_ids: Vec<String> = report
+        .started
+        .iter()
+        .filter(|entry| entry.persists_gateway_port())
+        .map(|entry| entry.pool_id.clone())
+        .collect();
+    let newly_started_pool_ids: Vec<String> = report
+        .started
+        .iter()
+        .filter(|entry| entry.persists_gateway_port() && entry.started_new())
+        .map(|entry| entry.pool_id.clone())
+        .collect();
+    if !started_pool_ids.is_empty() {
+        let enrollment_rows = report
+            .started
+            .iter()
+            .filter(|entry| entry.persists_gateway_port())
+            .map(|entry| (entry.pool_id.clone(), entry.port))
+            .collect::<Vec<_>>();
+        let enrollment = with_hub_blocking(hub.clone(), move |hub| {
+            for (pool_id, port) in enrollment_rows {
+                hub.route_pools()
+                    .enroll_unified_gateway(&pool_id, port)
+                    .map_err(|error| map_err_string("enroll_local_gateway", error))?;
+            }
+            Ok(())
+        })
+        .await;
+        if let Err(error) = enrollment {
+            // A first listener is not authoritative until its port enrollment
+            // commits. Do not leave it serving a spec that durable state does
+            // not describe. Reused live entries remain untouched.
+            if let Err(stop_error) = runtime.stop_gateway_pools(&newly_started_pool_ids).await {
+                tracing::warn!(
+                    target: targets::GUI,
+                    op = "enroll_local_gateway",
+                    pool_ids = ?newly_started_pool_ids,
+                    error = %map_bridge_host_error(stop_error),
+                    "shared listener enrollment failed and compensation stop also failed"
+                );
+            }
+            return Err(error);
+        }
+        let saved_snapshot = gateway_desired_snapshot(hub, runtime).await?;
+        runtime
+            .reconcile_gateway_after_saved_write(
+                &saved_snapshot,
+                GatewaySavedWriteIntent::RestartSelected(started_pool_ids),
+            )
+            .await
+            .map_err(map_gateway_reconcile_failure)?;
+    }
+    runtime
+        .gateway_status(restarting)
+        .map_err(map_bridge_host_error)
 }
 
 /// Create an extra entry key and publish the updated accepted-bearer table.
@@ -1959,11 +1879,9 @@ pub(crate) async fn create_local_gateway_token(
     pool_id: String,
     name: String,
 ) -> Result<LocalTokenRecord, String> {
-    let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_local_gateway().await;
-    recover_pending_local_gateway_restarts(hub.clone(), runtime.as_ref(), &host, &coordinator)
-        .await?;
+    recover_pending_local_gateway_restarts(hub.clone(), runtime.as_ref(), &coordinator).await?;
     // Read restart intent before the create transaction. After persistence,
     // every fallible step is handled as publish/recovery so retry cannot create
     // a second Key for an operation that already committed.
@@ -1975,17 +1893,38 @@ pub(crate) async fn create_local_gateway_token(
     })
     .await?;
     let publish = async {
-        sync_active_gateway_accepted_bearers(hub.clone(), runtime.as_ref()).await?;
-        if should_start {
-            start_pool_listener_if_listed(hub.clone(), &host, record.pool_id.clone()).await?;
-        }
+        let snapshot = gateway_desired_snapshot(hub.clone(), runtime.as_ref()).await?;
+        let intent = if should_start {
+            GatewaySavedWriteIntent::StartSelected(vec![record.pool_id.clone()])
+        } else {
+            GatewaySavedWriteIntent::PublishOnly
+        };
+        runtime
+            .reconcile_gateway_after_saved_write(&snapshot, intent)
+            .await
+            .map_err(map_gateway_reconcile_failure)?;
         Ok::<(), String>(())
     }
     .await;
     if let Err(error) = publish {
-        let stopped_was_running = match stop_pool_listener_if_running(&host, &record.pool_id).await
+        let stopped_was_running = match runtime
+            .gateway_pool_is_running(&record.pool_id)
+            .map_err(map_bridge_host_error)
         {
-            Ok(was_running) => was_running,
+            Ok(was_running) => match runtime.stop_gateway_pools(&[record.pool_id.clone()]).await {
+                Ok(()) => was_running,
+                Err(stop_error) => {
+                    let stop_error = map_bridge_host_error(stop_error);
+                    tracing::warn!(
+                        target: targets::GUI,
+                        op = "create_local_gateway_token",
+                        pool_id = %record.pool_id,
+                        error = %stop_error,
+                        "入口 Key 发布失败后停止本机路由也失败"
+                    );
+                    true
+                }
+            },
             Err(stop_error) => {
                 tracing::warn!(
                     target: targets::GUI,
@@ -2049,33 +1988,45 @@ async fn local_gateway_pool_should_run(
 
 /// Finish a prior Key operation before accepting another one. The database is
 /// already authoritative at this point; republish accepted Keys, then start
-/// each stopped pool from that current state.
+/// each stopped pool only when the latest saved gateway switch remains on.
 async fn recover_pending_local_gateway_restarts(
     hub: Arc<AgentHub>,
     runtime: &RouteRuntimeManager,
-    host: &BridgeRuntimeHost,
     coordinator: &AdapterSagaCoordinator,
 ) -> Result<HashSet<String>, String> {
     let pending = coordinator.local_gateway_restart_pending();
     if pending.is_empty() {
         return Ok(HashSet::new());
     }
-    sync_active_gateway_accepted_bearers(hub.clone(), runtime).await?;
+    let snapshot = gateway_desired_snapshot(hub, runtime).await?;
     let mut recovered_operations = HashSet::new();
     let mut recovered_pools = HashSet::new();
     for (_, pool_id, _, _, restart_required) in &pending {
-        if recovered_pools.insert(pool_id.clone()) {
-            if *restart_required
-                || pending
-                    .iter()
-                    .any(|(_, candidate_pool_id, _, _, candidate_restart)| {
-                        candidate_pool_id == pool_id && *candidate_restart
-                    })
-            {
-                start_pool_listener_if_listed(hub.clone(), host, pool_id.clone()).await?;
-            }
-            coordinator.clear_local_gateway_restart_pending_for_pool(pool_id);
+        if *restart_required {
+            recovered_pools.insert(pool_id.clone());
         }
+    }
+    if snapshot.desired_running() {
+        runtime
+            .recover_gateway_after_saved_write(&snapshot, recovered_pools.iter().cloned().collect())
+            .await
+            .map_err(map_gateway_reconcile_failure)?;
+    } else {
+        // Stop persisted false after every listener released its port.  A
+        // failed operation may still have an older restart intent in memory,
+        // but it must not override that newer durable choice.  Publish the
+        // latest accepted Keys only; no listener is allowed to restart here.
+        runtime
+            .reconcile_gateway_after_saved_write(&snapshot, GatewaySavedWriteIntent::PublishOnly)
+            .await
+            .map_err(map_gateway_reconcile_failure)?;
+    }
+    let all_pending_pools: HashSet<String> = pending
+        .iter()
+        .map(|(_, pool_id, _, _, _)| pool_id.clone())
+        .collect();
+    for pool_id in all_pending_pools {
+        coordinator.clear_local_gateway_restart_pending_for_pool(&pool_id);
     }
     for (operation_id, _, mutation_kind, mutation_committed, _) in pending {
         if mutation_committed && mutation_kind == LocalGatewayMutationKind::Delete {
@@ -2170,11 +2121,9 @@ pub(crate) async fn set_local_gateway_token(
     pool_id: String,
     token: String,
 ) -> Result<LocalTokenRecord, String> {
-    let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_local_gateway().await;
-    recover_pending_local_gateway_restarts(hub.clone(), runtime.as_ref(), &host, &coordinator)
-        .await?;
+    recover_pending_local_gateway_restarts(hub.clone(), runtime.as_ref(), &coordinator).await?;
     if token.trim().is_empty() {
         return Err("入口 Key 不能为空。".to_owned());
     }
@@ -2186,7 +2135,13 @@ pub(crate) async fn set_local_gateway_token(
     // Retire the old accepted Key before persistence. Once persistence starts,
     // failures only move forward: the listener stays stopped until a retry can
     // publish the stored Key and (for a current generated Provider) live config.
-    let was_running = stop_pool_listener_if_running(&host, &context.pool_id).await?;
+    let was_running = runtime
+        .gateway_pool_is_running(&context.pool_id)
+        .map_err(map_bridge_host_error)?;
+    runtime
+        .stop_gateway_pools(&[context.pool_id.clone()])
+        .await
+        .map_err(map_bridge_host_error)?;
     let restart_required = was_running || context.should_run;
     coordinator.mark_local_gateway_restart_pending(
         &pool_id,
@@ -2226,10 +2181,16 @@ pub(crate) async fn set_local_gateway_token(
         })
         .await?
     };
-    sync_active_gateway_accepted_bearers(hub.clone(), runtime.as_ref()).await?;
-    if restart_required {
-        start_pool_listener_if_listed(hub, &host, record.pool_id.clone()).await?;
-    }
+    let snapshot = gateway_desired_snapshot(hub, runtime.as_ref()).await?;
+    let intent = if restart_required {
+        GatewaySavedWriteIntent::StartSelected(vec![record.pool_id.clone()])
+    } else {
+        GatewaySavedWriteIntent::PublishOnly
+    };
+    runtime
+        .reconcile_gateway_after_saved_write(&snapshot, intent)
+        .await
+        .map_err(map_gateway_reconcile_failure)?;
     coordinator.clear_local_gateway_restart_pending_for_pool(&record.pool_id);
     Ok(record)
 }
@@ -2242,12 +2203,10 @@ pub(crate) async fn delete_local_gateway_token(
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     id: String,
 ) -> Result<(), String> {
-    let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_local_gateway().await;
     let recovered =
-        recover_pending_local_gateway_restarts(hub.clone(), runtime.as_ref(), &host, &coordinator)
-            .await?;
+        recover_pending_local_gateway_restarts(hub.clone(), runtime.as_ref(), &coordinator).await?;
     if recovered.contains(&id) {
         return Ok(());
     }
@@ -2262,7 +2221,13 @@ pub(crate) async fn delete_local_gateway_token(
     // Close the old auth edge before touching persistence. If the delete or a
     // later refresh fails, the old Key stays unusable and retry resumes from
     // the newly persisted state instead of reviving a stale listener spec.
-    let was_running = stop_pool_listener_if_running(&host, &context.pool_id).await?;
+    let was_running = runtime
+        .gateway_pool_is_running(&context.pool_id)
+        .map_err(map_bridge_host_error)?;
+    runtime
+        .stop_gateway_pools(&[context.pool_id.clone()])
+        .await
+        .map_err(map_bridge_host_error)?;
     let restart_required = was_running || context.should_run;
     coordinator.mark_local_gateway_restart_pending(
         &id,
@@ -2305,10 +2270,16 @@ pub(crate) async fn delete_local_gateway_token(
     // Keep the affected pool stopped while rebuilding the accepted-bearer
     // table. If this read or the subsequent start fails, no old key can be
     // accepted by a still-running edge.
-    sync_active_gateway_accepted_bearers(hub.clone(), runtime.as_ref()).await?;
-    if restart_required {
-        start_pool_listener_if_listed(hub, &host, context.pool_id).await?;
-    }
+    let snapshot = gateway_desired_snapshot(hub, runtime.as_ref()).await?;
+    let intent = if restart_required {
+        GatewaySavedWriteIntent::StartSelected(vec![context.pool_id.clone()])
+    } else {
+        GatewaySavedWriteIntent::PublishOnly
+    };
+    runtime
+        .reconcile_gateway_after_saved_write(&snapshot, intent)
+        .await
+        .map_err(map_gateway_reconcile_failure)?;
     coordinator.clear_local_gateway_restart_pending_for_pool(&pool_id);
     Ok(())
 }
@@ -2321,9 +2292,9 @@ pub(crate) async fn refresh_local_gateway_models(
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     token: String,
 ) -> Result<Vec<String>, String> {
-    let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_local_gateway().await;
+    recover_pending_local_gateway_restarts(hub.clone(), runtime.as_ref(), &coordinator).await?;
     let listed = {
         let token = token.clone();
         with_hub_blocking(hub.clone(), move |hub| {
@@ -2333,7 +2304,7 @@ pub(crate) async fn refresh_local_gateway_models(
         })
         .await?
     };
-    restart_pool_listener_for_token(hub, &host, &token).await?;
+    restart_pool_listener_for_token(hub, runtime.as_ref(), &coordinator, &token).await?;
     Ok(listed)
 }
 
@@ -2346,9 +2317,9 @@ pub(crate) async fn set_local_gateway_custom_models(
     token: String,
     models: Vec<String>,
 ) -> Result<Vec<String>, String> {
-    let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_local_gateway().await;
+    recover_pending_local_gateway_restarts(hub.clone(), runtime.as_ref(), &coordinator).await?;
     let listed = {
         let token = token.clone();
         with_hub_blocking(hub.clone(), move |hub| {
@@ -2358,13 +2329,14 @@ pub(crate) async fn set_local_gateway_custom_models(
         })
         .await?
     };
-    restart_pool_listener_for_token(hub, &host, &token).await?;
+    restart_pool_listener_for_token(hub, runtime.as_ref(), &coordinator, &token).await?;
     Ok(listed)
 }
 
 async fn restart_pool_listener_for_token(
     hub: Arc<AgentHub>,
-    host: &BridgeRuntimeHost,
+    runtime: &RouteRuntimeManager,
+    coordinator: &AdapterSagaCoordinator,
     token: &str,
 ) -> Result<(), String> {
     let token = token.to_owned();
@@ -2377,7 +2349,48 @@ async fn restart_pool_listener_for_token(
     let Some(pool_id) = pool_id else {
         return Ok(());
     };
-    restart_pool_listener_if_running(hub, host, pool_id).await
+    if !runtime
+        .gateway_pool_is_running(&pool_id)
+        .map_err(map_bridge_host_error)?
+    {
+        return Ok(());
+    }
+    // The database write has already succeeded.  Stop before rebuilding the
+    // complete snapshot so a failed catalog/spec read cannot leave a listener
+    // with a stale `/models` index running.
+    runtime
+        .stop_gateway_pools(&[pool_id.clone()])
+        .await
+        .map_err(map_bridge_host_error)?;
+    // Catalog writes are durable. Once the old listener is down, record the
+    // same process-local recovery intent used by entry-Key writes so a failed
+    // snapshot/restart is retried from fresh saved state under the next shared
+    // gateway lock. `Set` is the existing generic saved-value-changed kind;
+    // only Delete has special caller-result recovery semantics.
+    let operation_id = format!("gateway-catalog-reconcile:{pool_id}");
+    coordinator.mark_local_gateway_restart_pending(
+        &operation_id,
+        &pool_id,
+        LocalGatewayMutationKind::Set,
+        true,
+        true,
+    );
+    let result = async {
+        let snapshot = gateway_desired_snapshot(hub, runtime).await?;
+        runtime
+            .reconcile_gateway_after_saved_write(
+                &snapshot,
+                GatewaySavedWriteIntent::StartSelected(vec![pool_id.clone()]),
+            )
+            .await
+            .map(|_| ())
+            .map_err(map_gateway_reconcile_failure)
+    }
+    .await;
+    if result.is_ok() {
+        coordinator.clear_local_gateway_restart_pending_for_pool(&pool_id);
+    }
+    result
 }
 
 /// Quota refresh hot-applies via [`BridgeRuntimeHost::apply_account_quota`].
@@ -2409,87 +2422,6 @@ pub(crate) async fn restart_pools_for_account_if_running(
     Ok(())
 }
 
-pub(crate) async fn restart_pool_listener_if_running(
-    hub: Arc<AgentHub>,
-    host: &BridgeRuntimeHost,
-    pool_id: String,
-) -> Result<(), String> {
-    let pools = with_hub_blocking(hub.clone(), move |hub| {
-        hub.route_pools()
-            .list_gateway_listener_pools()
-            .map_err(|error| map_err_string("list_gateway_listener_pools", error))
-    })
-    .await?;
-    let Some(pool) = pools.into_iter().find(|pool| pool.id == pool_id) else {
-        // A pool whose final visible entry was deleted may no longer be in the
-        // listener set. It can still have a live runtime, so stop that runtime
-        // instead of treating the missing pool as a no-op.
-        stop_pool_listener_if_running(host, &pool_id).await?;
-        return Ok(());
-    };
-    let running = stop_pool_listener_if_running(host, &pool.id).await?;
-    if !running {
-        return Ok(());
-    }
-    let spec = with_hub_blocking(hub, move |hub| {
-        Ok(hub
-            .adapter_bridge()
-            .pool_listener_spec(&pool, hub.route_pools().pair_adapter_flags()))
-    })
-    .await?;
-    host.start(spec).await.map_err(map_bridge_host_error)?;
-    Ok(())
-}
-
-async fn stop_pool_listener_if_running(
-    host: &BridgeRuntimeHost,
-    pool_id: &str,
-) -> Result<bool, String> {
-    let running = host
-        .status(pool_id)
-        .map_err(map_bridge_host_error)?
-        .is_some();
-    if !running {
-        return Ok(false);
-    }
-    match host.stop(pool_id).await {
-        Ok(_) | Err(BridgeHostError::NotRunning) => Ok(true),
-        Err(error) => Err(map_bridge_host_error(error)),
-    }
-}
-
-async fn start_pool_listener_if_listed(
-    hub: Arc<AgentHub>,
-    host: &BridgeRuntimeHost,
-    pool_id: String,
-) -> Result<(), String> {
-    let pools = with_hub_blocking(hub.clone(), move |hub| {
-        hub.route_pools()
-            .list_gateway_listener_pools()
-            .map_err(|error| map_err_string("list_gateway_listener_pools", error))
-    })
-    .await?;
-    let Some(pool) = pools.into_iter().find(|pool| pool.id == pool_id) else {
-        return Ok(());
-    };
-    start_pool_listener_from_pool(hub, host, pool).await
-}
-
-async fn start_pool_listener_from_pool(
-    hub: Arc<AgentHub>,
-    host: &BridgeRuntimeHost,
-    pool: agenthub_core::models::RoutePool,
-) -> Result<(), String> {
-    let spec = with_hub_blocking(hub, move |hub| {
-        Ok(hub
-            .adapter_bridge()
-            .pool_listener_spec(&pool, hub.route_pools().pair_adapter_flags()))
-    })
-    .await?;
-    host.start(spec).await.map_err(map_bridge_host_error)?;
-    Ok(())
-}
-
 /// Stop every live relay edge. Does not use host shutdown (that blocks restart).
 pub(crate) async fn stop_local_gateway(
     hub: Arc<AgentHub>,
@@ -2498,27 +2430,26 @@ pub(crate) async fn stop_local_gateway(
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     restarting: Arc<AtomicBool>,
 ) -> Result<LocalGatewayStatus, String> {
-    let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_local_gateway().await;
-    let ids = host.running_ids().map_err(map_bridge_host_error)?;
-    for id in ids {
-        match host.stop(&id).await {
-            Ok(_) => {}
-            Err(BridgeHostError::NotRunning) => {}
-            Err(error) => return Err(map_bridge_host_error(error)),
-        }
-    }
-    let status =
-        local_gateway_status_from_host(&host, Vec::new(), restarting.load(Ordering::SeqCst))?;
-    write_local_gateway_desired_running(hub.clone(), false).await;
-    observe_local_gateway_lifecycle(hub, host.as_ref(), false, &Ok(())).await;
+    // Manager waits until the unified loopback socket is gone.  Only then may
+    // saved desired-running become false; otherwise a restart could revive a
+    // listener whose stop never completed.
+    runtime
+        .stop_gateway()
+        .await
+        .map_err(map_bridge_host_error)?;
+    write_local_gateway_desired_running(hub.clone(), false).await?;
+    let status = runtime
+        .gateway_status(restarting.load(Ordering::SeqCst))
+        .map_err(map_bridge_host_error)?;
+    observe_local_gateway_lifecycle(hub, runtime.as_ref(), false, &Ok(())).await;
     Ok(status)
 }
 
 async fn observe_local_gateway_lifecycle(
     hub: Arc<AgentHub>,
-    host: &BridgeRuntimeHost,
+    runtime: &RouteRuntimeManager,
     desired_running: bool,
     bearer_sync: &Result<(), String>,
 ) {
@@ -2530,7 +2461,16 @@ async fn observe_local_gateway_lifecycle(
     })
     .await
     .unwrap_or(0);
-    let runtime_up = host.running_ids().unwrap_or_default();
+    let runtime_up = runtime
+        .gateway_status(false)
+        .map(|status| {
+            status
+                .statuses
+                .into_iter()
+                .map(|entry| entry.profile_id)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     tracing::info!(
         target: "gui",
         op = "local_gateway_lifecycle",
@@ -2573,6 +2513,21 @@ async fn surface_shared_restore_failure(hub: Arc<AgentHub>, error: &str) {
     );
 }
 
+async fn write_local_gateway_desired_running(
+    hub: Arc<AgentHub>,
+    running: bool,
+) -> Result<(), String> {
+    with_hub_blocking(hub, move |hub| {
+        hub.route_pools()
+            .set_local_gateway_desired_running(running)
+            .map_err(|error| map_err_string("set_local_gateway_desired_running", error))
+    })
+    .await
+}
+
+/// Retained for existing isolated Rust fixtures.  Production writes publish a
+/// full [`GatewayDesiredSnapshot`] through `RouteRuntimeManager` instead.
+#[cfg(test)]
 async fn sync_active_gateway_accepted_bearers(
     hub: Arc<AgentHub>,
     runtime: &RouteRuntimeManager,
@@ -2588,56 +2543,13 @@ async fn sync_active_gateway_accepted_bearers(
         .map_err(map_bridge_host_error)
 }
 
-async fn write_local_gateway_desired_running(hub: Arc<AgentHub>, running: bool) {
-    if let Err(error) = with_hub_blocking(hub, move |hub| {
-        hub.route_pools()
-            .set_local_gateway_desired_running(running)
-            .map_err(|error| map_err_string("set_local_gateway_desired_running", error))
-    })
-    .await
-    {
-        tracing::warn!(
-            target: "gui",
-            op = "local_gateway_desired_running",
-            running,
-            error = %error,
-            "could not persist local gateway switch"
-        );
-    }
-}
-
 pub(crate) fn local_gateway_status(
     runtime: &RouteRuntimeManager,
     restarting: &AtomicBool,
 ) -> Result<LocalGatewayStatus, String> {
-    let host = runtime.rust_host_for_bridge_saga();
-    let ids = host.running_ids().map_err(map_bridge_host_error)?;
-    local_gateway_status_from_host(&host, ids, restarting.load(Ordering::SeqCst))
-}
-
-fn local_gateway_status_from_host(
-    host: &BridgeRuntimeHost,
-    ids: Vec<String>,
-    restarting: bool,
-) -> Result<LocalGatewayStatus, String> {
-    let port = host.gateway_port().map_err(map_bridge_host_error)?;
-    let mut statuses = Vec::new();
-    for id in ids {
-        if let Some(runtime) = host.status(&id).map_err(map_bridge_host_error)? {
-            statuses.push(status_dto(
-                host,
-                &id,
-                AdapterBridgeStatusDto::from_runtime(runtime),
-            ));
-        }
-    }
-    Ok(LocalGatewayStatus {
-        running: port.is_some() && !statuses.is_empty(),
-        port,
-        statuses,
-        recent_unauthenticated_traces: host.recent_unauthenticated_route_traces(),
-        restarting,
-    })
+    runtime
+        .gateway_status(restarting.load(Ordering::SeqCst))
+        .map_err(map_bridge_host_error)
 }
 
 fn placeholder_entry_spec(
@@ -2700,18 +2612,6 @@ fn log_local_gateway_pool_error(
         error = %error,
         "本机转发池启动失败"
     );
-}
-
-fn map_local_gateway_pool_host_error(
-    pool_id: &str,
-    target_agent: AgentId,
-    surface: RouteDownstreamSurface,
-    stage: &'static str,
-    error: BridgeHostError,
-) -> String {
-    let message = map_bridge_host_error(error);
-    log_local_gateway_pool_error(pool_id, target_agent, surface, stage, &message);
-    message
 }
 
 fn map_bridge_host_error(error: BridgeHostError) -> String {
