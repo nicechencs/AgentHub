@@ -4,7 +4,10 @@ use std::fs;
 use std::io::Read;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 
 use agenthub_core::adapter_control::AdapterSagaCoordinator;
@@ -25,6 +28,7 @@ const RESPONSES_SOURCE_KEY: &str = "sk-product-handoff-responses-do-not-use-0000
 const MESSAGES_SOURCE_KEY: &str = "sk-product-handoff-messages-do-not-use-000000";
 const WRONG_BEARER: &str = "ahb-product-handoff-wrong-bearer";
 const RESPONSES_REQUEST_MARKER: &str = "handoff-responses-request";
+const RESPONSES_FAILURE_REQUEST_MARKER: &str = "handoff-responses-upstream-failure";
 const MESSAGES_REQUEST_MARKER: &str = "handoff-messages-request";
 const RESPONSES_RESPONSE_MARKER: &str = "handoff-responses-ok";
 const MESSAGES_RESPONSE_MARKER: &str = "handoff-messages-ok";
@@ -124,6 +128,7 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
         responses_pool.hub_token.clone(),
         messages_pool.hub_token.clone(),
         RESPONSES_REQUEST_MARKER.to_owned(),
+        RESPONSES_FAILURE_REQUEST_MARKER.to_owned(),
         MESSAGES_REQUEST_MARKER.to_owned(),
         RESPONSES_RESPONSE_MARKER.to_owned(),
         MESSAGES_RESPONSE_MARKER.to_owned(),
@@ -189,8 +194,8 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
                 secret_values.clone(),
                 responses_pool.hub_token.clone(),
                 messages_pool.hub_token.clone(),
-                responses_model,
-                messages_model,
+                responses_model.clone(),
+                messages_model.clone(),
             )),
         )
         .await
@@ -208,6 +213,40 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
         "successful Product handoff trial omitted required evidence",
     )?;
     ensure_rust_restored(&runtime, 2)?;
+
+    let product_request_failure_observed = Arc::new(AtomicBool::new(false));
+    let product_request_failure = runtime
+        .spawn_product_handoff_trial(
+            Arc::clone(&lifecycle),
+            Arc::clone(&coordinator),
+            vec![
+                responses_pool.hub_token.clone(),
+                messages_pool.hub_token.clone(),
+            ],
+            Some(product_runtime_expected_request_failure_probe(
+                secret_values.clone(),
+                responses_pool.hub_token.clone(),
+                responses_model.clone(),
+                Arc::clone(&product_request_failure_observed),
+            )),
+        )
+        .await
+        .map_err(|_| "failed-product-request trial task panicked".to_string())?
+        .expect_err("controlled upstream failure must fail the Product runtime probe");
+    let product_request_failure_compensated = product_request_failure_observed
+        .load(Ordering::SeqCst)
+        && product_request_failure.stage == "product_request"
+        && product_request_failure.go_stopped
+        && product_request_failure.rust_restored;
+    ensure(
+        product_request_failure_compensated,
+        "failed Product request did not compensate in the safe order",
+    )?;
+    ensure_rust_restored(&runtime, 2)?;
+    ensure(
+        critical_db_hash(&data_dir)? == db_before,
+        "failed Product request changed the database or selection state",
+    )?;
 
     let failed = runtime
         .spawn_product_handoff_trial(
@@ -283,6 +322,7 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
         "rust_entry_count": report.rust_entry_count,
         "detached_caller_drop_compensated": true,
         "health_failure_compensated": true,
+        "product_request_failure_compensated": product_request_failure_compensated,
         "prepared_hash_matched": report.prepared_hash_matched,
         "rust_stopped_before_go": report.rust_stopped_before_go,
         "rust_mutator_blocked": report.rust_mutator_blocked,
@@ -381,6 +421,26 @@ fn product_runtime_protocol_and_secret_probe(
     })
 }
 
+fn product_runtime_expected_request_failure_probe(
+    secret_values: Vec<String>,
+    responses_bearer: String,
+    responses_model: String,
+    observed: Arc<AtomicBool>,
+) -> ProductHandoffTrialRuntimeProbe {
+    Box::new(move |host| {
+        let request_failed =
+            product_data_plane_failure_is_observed(&responses_bearer, &responses_model);
+        if !runtime_secrets_are_absent(host, &secret_values) {
+            return Err(ProductHandoffTrialProbeFailure::RuntimeSecretScan);
+        }
+        if !request_failed {
+            return Err(ProductHandoffTrialProbeFailure::ProductRequest);
+        }
+        observed.store(true, Ordering::SeqCst);
+        Err(ProductHandoffTrialProbeFailure::ProductRequest)
+    })
+}
+
 fn runtime_secrets_are_absent(
     host: &crate::go_route_isolated::GoRouteIsolatedHost,
     secret_values: &[String],
@@ -458,7 +518,31 @@ fn product_data_plane_is_ready(
     })
 }
 
+fn product_data_plane_failure_is_observed(responses_bearer: &str, responses_model: &str) -> bool {
+    matches!(
+        post_product_status(
+            "/v1/responses",
+            responses_bearer,
+            json!({
+                "model": responses_model,
+                "input": RESPONSES_FAILURE_REQUEST_MARKER,
+                "stream": false,
+            }),
+        ),
+        Some(status) if (500..600).contains(&status)
+    )
+}
+
 fn post_product_json(path: &str, bearer: &str, body: Value) -> Option<Value> {
+    let (status, bytes) = post_product_bytes(path, bearer, body)?;
+    (status == 200).then(|| serde_json::from_slice(&bytes).ok())?
+}
+
+fn post_product_status(path: &str, bearer: &str, body: Value) -> Option<u16> {
+    post_product_bytes(path, bearer, body).map(|(status, _)| status)
+}
+
+fn post_product_bytes(path: &str, bearer: &str, body: Value) -> Option<(u16, Vec<u8>)> {
     const MAX_BODY_BYTES: u64 = 32 * 1024;
     let request_body = serde_json::to_string(&body).ok()?;
     let agent = ureq::AgentBuilder::new()
@@ -476,9 +560,7 @@ fn post_product_json(path: &str, bearer: &str, body: Value) -> Option<Value> {
         Err(ureq::Error::Status(_, response)) => response,
         Err(ureq::Error::Transport(_)) => return None,
     };
-    if response.status() != 200 {
-        return None;
-    }
+    let status = response.status();
     let mut bytes = Vec::new();
     response
         .into_reader()
@@ -488,7 +570,7 @@ fn post_product_json(path: &str, bearer: &str, body: Value) -> Option<Value> {
     if bytes.len() as u64 > MAX_BODY_BYTES {
         return None;
     }
-    serde_json::from_slice(&bytes).ok()
+    Some((status, bytes))
 }
 
 fn response_output_has_text(response: &Value, expected: &str) -> bool {

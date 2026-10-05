@@ -25,6 +25,8 @@ MOCK_PID=""
 PROBE_PID=""
 RESPONSES_SOURCE_KEY="sk-product-handoff-responses-do-not-use-000000"
 MESSAGES_SOURCE_KEY="sk-product-handoff-messages-do-not-use-000000"
+RESPONSES_FAILURE_REQUEST="handoff-responses-upstream-failure"
+RESPONSES_FAILURE_RESPONSE="synthetic_upstream_failure"
 
 cleanup() {
   local status=$?
@@ -73,6 +75,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 RESPONSES_SOURCE_KEY = "sk-product-handoff-responses-do-not-use-000000"
 MESSAGES_SOURCE_KEY = "sk-product-handoff-messages-do-not-use-000000"
 RESPONSES_REQUEST = "handoff-responses-request"
+RESPONSES_FAILURE_REQUEST = "handoff-responses-upstream-failure"
 MESSAGES_REQUEST = "handoff-messages-request"
 
 class Handler(BaseHTTPRequestHandler):
@@ -133,6 +136,22 @@ class Handler(BaseHTTPRequestHandler):
                     "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
                 })
                 print(json.dumps({"event":"responses"}), flush=True)
+                return
+
+            failure_valid = (
+                self.headers.get("Authorization") == "Bearer " + RESPONSES_SOURCE_KEY
+                and not self.headers.get("X-API-Key")
+                and not self.headers.get("Anthropic-Version")
+                and isinstance(model, str) and bool(model)
+                and payload == {
+                    "model": model,
+                    "messages": [{"role": "user", "content": RESPONSES_FAILURE_REQUEST}],
+                    "stream": False,
+                }
+            )
+            if failure_valid:
+                self.send_json(502, {"error":{"code":"synthetic_upstream_failure"}})
+                print(json.dumps({"event":"responses_failure"}), flush=True)
                 return
 
         if self.path == "/v1/messages":
@@ -221,6 +240,7 @@ assert evidence["port"] == 43121, evidence
 assert evidence["rust_entry_count"] == 2, evidence
 for key in (
     "detached_caller_drop_compensated", "health_failure_compensated",
+    "product_request_failure_compensated",
     "prepared_hash_matched", "rust_stopped_before_go", "rust_mutator_blocked",
     "product_health_ready", "synthetic_protocol_requests_succeeded",
     "go_stopped_before_restore", "rust_exact_restored",
@@ -241,6 +261,7 @@ with open(sys.argv[1], encoding="utf-8") as handle:
         if line.startswith("{"):
             events.append(json.loads(line).get("event"))
 assert events.count("responses") == 1, events
+assert events.count("responses_failure") == 1, events
 assert events.count("messages") == 1, events
 assert "rejected" not in events, events
 PY
@@ -250,6 +271,8 @@ if grep -F -q \
   -e "${MESSAGES_SOURCE_KEY}" \
   -e "ahb-product-handoff-wrong-bearer" \
   -e "handoff-responses-request" \
+  -e "${RESPONSES_FAILURE_REQUEST}" \
+  -e "${RESPONSES_FAILURE_RESPONSE}" \
   -e "handoff-messages-request" \
   -e "handoff-responses-ok" \
   -e "handoff-messages-ok" \
