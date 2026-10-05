@@ -1,4 +1,5 @@
 import type {
+  GoRouteEdgeStatus,
   GoRouteIsolatedPort,
   GoRouteIsolatedStatus,
 } from '@/lib/backend/contracts/go-route-isolated';
@@ -18,13 +19,17 @@ function stopped(): GoRouteIsolatedStatus {
     inFlightCount: 0,
     memberCount: 0,
     healthyMemberCount: 0,
+    edgeStatuses: [],
     recovering: false,
     restartCount: 0,
   };
 }
 
 function snapshot(status: GoRouteIsolatedStatus): GoRouteIsolatedStatus {
-  return { ...status };
+  return {
+    ...status,
+    edgeStatuses: status.edgeStatuses.map((edge: GoRouteEdgeStatus) => ({ ...edge })),
+  };
 }
 
 /** Per-backend in-memory status. Each createBackend() gets a fresh port. */
@@ -46,6 +51,7 @@ export function createMockGoRouteIsolatedPort(): GoRouteIsolatedPort {
         inFlightCount: 0,
         memberCount: 0,
         healthyMemberCount: 0,
+        edgeStatuses: [],
         recovering: false,
         restartCount: status.restartCount,
       };
@@ -61,6 +67,7 @@ export function createMockGoRouteIsolatedPort(): GoRouteIsolatedPort {
         inFlightCount: 0,
         memberCount: 1,
         healthyMemberCount: 1,
+        edgeStatuses: [],
         recovering: false,
         restartCount: status.restartCount,
       };

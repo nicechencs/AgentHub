@@ -2,6 +2,9 @@ import { getBackend } from '@/app/runtime';
 import type { GoRouteIsolatedStatus } from '@/lib/backend/contracts/go-route-isolated';
 
 export type {
+  GoRouteEdgeErrorCode,
+  GoRouteEdgeStatus,
+  GoRouteEdgeSurface,
   GoRouteIsolatedPort,
   GoRouteIsolatedState,
   GoRouteIsolatedStatus,

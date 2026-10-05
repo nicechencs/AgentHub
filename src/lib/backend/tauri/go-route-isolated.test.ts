@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { shouldApplyGoRouteResult } from '../contracts/go-route-isolated';
+import {
+  type GoRouteIsolatedStatus,
+  shouldApplyGoRouteResult,
+} from '../contracts/go-route-isolated';
 import { createTauriGoRouteIsolatedPort } from './go-route-isolated';
 
 const invokeMock = vi.fn();
@@ -15,7 +18,7 @@ describe('Tauri isolated Go route port', () => {
   });
 
   it('uses the dedicated lifecycle commands without arguments', async () => {
-    const stopped = {
+    const stopped: GoRouteIsolatedStatus = {
       state: 'stopped' as const,
       listenReady: false,
       port: null,
@@ -25,10 +28,11 @@ describe('Tauri isolated Go route port', () => {
       inFlightCount: 0,
       memberCount: 0,
       healthyMemberCount: 0,
+      edgeStatuses: [],
       recovering: false,
       restartCount: 0,
     };
-    const ready = {
+    const ready: GoRouteIsolatedStatus = {
       state: 'ready' as const,
       listenReady: true,
       port: 18765,
@@ -38,6 +42,16 @@ describe('Tauri isolated Go route port', () => {
       inFlightCount: 2,
       memberCount: 3,
       healthyMemberCount: 2,
+      edgeStatuses: [{
+        poolId: 'pool-codex',
+        surface: 'responses',
+        memberCount: 3,
+        healthyMemberCount: 2,
+        inFlightCount: 2,
+        requestSuccessCount: 8,
+        requestFailureCount: 1,
+        lastErrorCode: 'upstream_unavailable',
+      }],
       recovering: false,
       restartCount: 1,
     };
@@ -56,5 +70,27 @@ describe('Tauri isolated Go route port', () => {
       ['stop_go_route_isolated'],
       ['get_go_route_isolated_status'],
     ]);
+  });
+
+  it('normalizes a pre-edge-status supervisor response to an empty list', async () => {
+    const legacy = {
+      state: 'ready' as const,
+      listenReady: true,
+      port: 18765,
+      lastError: null,
+      home: '/tmp/agenthub-go-route-isolated/test',
+      lifecycle: 'serving',
+      inFlightCount: 0,
+      memberCount: 1,
+      healthyMemberCount: 1,
+      recovering: false,
+      restartCount: 0,
+    };
+    invokeMock.mockResolvedValueOnce(legacy);
+
+    await expect(createTauriGoRouteIsolatedPort().status()).resolves.toEqual({
+      ...legacy,
+      edgeStatuses: [],
+    });
   });
 });

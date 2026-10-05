@@ -98,6 +98,7 @@ const GO_ISOLATED_STOPPED: GoRouteIsolatedStatus = {
   inFlightCount: 0,
   memberCount: 0,
   healthyMemberCount: 0,
+  edgeStatuses: [],
   recovering: false,
   restartCount: 0,
 };
