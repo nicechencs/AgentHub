@@ -215,6 +215,22 @@ pub(crate) struct PreparedProductPlan {
     reservation_active: bool,
 }
 
+/// Non-secret expectations exposed only to real-process runtime probes.
+#[cfg(feature = "go-route-product-probe")]
+pub(crate) struct PreparedProductProbeSummary {
+    pub expected_port: u16,
+    pub expected_config_hash: String,
+}
+
+/// Sanitized `/health` observation. It never retains or returns the bearer.
+#[cfg(feature = "go-route-product-probe")]
+pub(crate) struct GoRouteHealthProbe {
+    pub http_status: u16,
+    pub listen_ready: Option<bool>,
+    pub member_count: Option<u64>,
+    pub healthy_member_count: Option<u64>,
+}
+
 #[cfg(any(unix, windows))]
 impl Drop for PreparedProductPlan {
     fn drop(&mut self) {
@@ -584,17 +600,74 @@ impl GoRouteIsolatedHost {
     #[cfg(feature = "go-route-product-probe")]
     pub(crate) fn probe_prepared_product_summary(
         prepared: &PreparedProductPlan,
-    ) -> Result<(u16, PathBuf, usize, String), String> {
+    ) -> Result<PreparedProductProbeSummary, String> {
         let plan = prepared
             .plan
             .as_ref()
             .ok_or_else(|| "Prepared Product plan was already consumed".to_string())?;
-        let home = plan
-            .product_home
-            .as_ref()
-            .map(|location| location.home.clone())
-            .ok_or_else(|| "Product home is unavailable".to_string())?;
-        Ok((plan.port, home, plan.config.len(), plan.config_hash.clone()))
+        Ok(PreparedProductProbeSummary {
+            expected_port: plan.port,
+            expected_config_hash: plan.config_hash.clone(),
+        })
+    }
+
+    /// Probe one Product data-plane health endpoint without using environment
+    /// proxies, redirects, external hosts, or an unbounded response body.
+    #[cfg(feature = "go-route-product-probe")]
+    pub(crate) fn probe_data_plane_health(
+        port: u16,
+        bearer: &str,
+    ) -> Result<GoRouteHealthProbe, String> {
+        const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
+        const MAX_HEALTH_BODY_BYTES: u64 = 32 * 1024;
+        if port == 0
+            || bearer.trim().is_empty()
+            || bearer.bytes().any(|byte| byte <= b' ' || byte == 0x7f)
+        {
+            return Err("Product health probe input is invalid".into());
+        }
+        let agent = ureq::AgentBuilder::new()
+            .timeout(HEALTH_TIMEOUT)
+            .redirects(0)
+            .try_proxy_from_env(false)
+            .build();
+        let response = match agent
+            .get(&format!("http://127.0.0.1:{port}/health"))
+            .set("Authorization", &format!("Bearer {bearer}"))
+            .call()
+        {
+            Ok(response) => response,
+            Err(ureq::Error::Status(_, response)) => response,
+            Err(ureq::Error::Transport(_)) => {
+                return Err("Product health probe transport failed".into())
+            }
+        };
+        let http_status = response.status();
+        if http_status != 200 {
+            return Ok(GoRouteHealthProbe {
+                http_status,
+                listen_ready: None,
+                member_count: None,
+                healthy_member_count: None,
+            });
+        }
+        let mut body = Vec::new();
+        response
+            .into_reader()
+            .take(MAX_HEALTH_BODY_BYTES.saturating_add(1))
+            .read_to_end(&mut body)
+            .map_err(|_| "Product health probe body read failed".to_string())?;
+        if body.len() as u64 > MAX_HEALTH_BODY_BYTES {
+            return Err("Product health probe body exceeded its limit".into());
+        }
+        let body: Value = serde_json::from_slice(&body)
+            .map_err(|_| "Product health probe returned invalid JSON".to_string())?;
+        Ok(GoRouteHealthProbe {
+            http_status,
+            listen_ready: body.get("listen_ready").and_then(Value::as_bool),
+            member_count: body.get("member_count").and_then(Value::as_u64),
+            healthy_member_count: body.get("healthy_member_count").and_then(Value::as_u64),
+        })
     }
 
     #[cfg(feature = "go-route-product-probe")]

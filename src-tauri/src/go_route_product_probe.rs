@@ -20,6 +20,7 @@ use crate::go_route_isolated::{GoRouteIsolatedHost, GoRouteRequiredReloadResult,
 const PRODUCT_PORT: u16 = 43121;
 const SOURCE_ID: &str = "product-go-route-probe-source";
 const SOURCE_KEY: &str = "sk-product-go-route-probe-do-not-use-000000";
+const WRONG_BEARER: &str = "ahb-product-probe-wrong-bearer";
 
 type ProbeResult<T> = Result<T, String>;
 
@@ -136,11 +137,11 @@ fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
         "invalidated Product reservation remained startable",
     )?;
     let prepared = host.prepare_product_plan()?;
-    let (preflight_port, preflight_home, config_bytes, prepared_hash) =
-        GoRouteIsolatedHost::probe_prepared_product_summary(&prepared)?;
+    let prepared_summary = GoRouteIsolatedHost::probe_prepared_product_summary(&prepared)?;
     ensure(
-        preflight_port == PRODUCT_PORT && config_bytes > 0,
-        "Product preflight did not retain the saved port and configuration",
+        prepared_summary.expected_port == PRODUCT_PORT
+            && prepared_summary.expected_config_hash.len() == 64,
+        "Product preflight did not retain safe startup expectations",
     )?;
     hub.route_pools()
         .create_local_token(&pool.id, "Product probe additional key")
@@ -156,14 +157,26 @@ fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
         product_home == expected_home,
         "Product home was not canonical",
     )?;
-    ensure(
-        preflight_home == product_home,
-        "Product preflight home drifted",
-    )?;
     verify_product_tree(&data_dir, &product_home, data_mode_before)?;
 
     let initial_status = host.status();
     ensure_ready(&initial_status, PRODUCT_PORT, "initial status")?;
+    let health = GoRouteIsolatedHost::probe_data_plane_health(PRODUCT_PORT, &pool.hub_token)?;
+    ensure(
+        health.http_status == 200
+            && health.listen_ready == Some(true)
+            && health.member_count == Some(1)
+            && health.healthy_member_count == Some(1),
+        "authenticated Product data-plane health was not ready",
+    )?;
+    let wrong_health = GoRouteIsolatedHost::probe_data_plane_health(PRODUCT_PORT, WRONG_BEARER)?;
+    ensure(
+        wrong_health.http_status == 401
+            && wrong_health.listen_ready.is_none()
+            && wrong_health.member_count.is_none()
+            && wrong_health.healthy_member_count.is_none(),
+        "wrong Product bearer did not receive a sanitized 401",
+    )?;
     let mode_conflict = host.start();
     ensure(
         mode_conflict.state == "failed"
@@ -175,7 +188,7 @@ fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
         .probe_config_hash()
         .ok_or_else(|| "initial committed config hash is missing".to_string())?;
     ensure(
-        hash_before == prepared_hash,
+        hash_before == prepared_summary.expected_config_hash,
         "prepared Product start rebuilt configuration from saved state",
     )?;
     let reloaded = host.reload();
@@ -310,6 +323,8 @@ fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
         "prepared_write_invalidated": true,
         "prepared_reservation_exclusive": true,
         "prepared_plan_preserved": true,
+        "health_ready": true,
+        "wrong_bearer_rejected": true,
         "active_mode_change_rejected": true,
         "recovery_mode_change_rejected": true,
         "concurrent_stop_converged": true,
