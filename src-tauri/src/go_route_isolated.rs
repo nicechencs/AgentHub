@@ -13,6 +13,8 @@ use std::fs::{self, OpenOptions};
 #[cfg(any(unix, windows))]
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream};
+#[cfg(unix)]
+use std::os::fd::{AsRawFd, FromRawFd};
 #[cfg(windows)]
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
@@ -134,8 +136,24 @@ pub enum GoRouteRequiredReloadSkipReason {
     Unchanged,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GoRouteRunMode {
+    Isolated,
+    Product,
+}
+
+impl GoRouteRunMode {
+    fn as_arg(self) -> &'static str {
+        match self {
+            Self::Isolated => "isolated",
+            Self::Product => "product",
+        }
+    }
+}
+
 pub struct GoRouteIsolatedHost {
     hub: Option<Arc<AgentHub>>,
+    mode: GoRouteRunMode,
     inner: Mutex<Inner>,
     update_gate: Mutex<()>,
     #[cfg(feature = "go-route-bind-probe")]
@@ -173,18 +191,47 @@ struct RuntimePlan {
     config: Vec<u8>,
     config_hash: String,
     port: u16,
+    product_home: Option<ProductHomeLocation>,
+    mode: GoRouteRunMode,
+}
+
+#[cfg(any(unix, windows))]
+#[derive(Clone, PartialEq, Eq)]
+struct ProductHomeLocation {
+    data_dir: PathBuf,
+    home: PathBuf,
+    identity: ProductDataDirIdentity,
+}
+
+#[cfg(unix)]
+#[derive(Clone, PartialEq, Eq)]
+struct ProductDataDirIdentity {
+    device: u64,
+    inode: u64,
+}
+
+#[cfg(windows)]
+#[derive(Clone, PartialEq, Eq)]
+struct ProductDataDirIdentity {
+    volume_serial: u32,
+    file_index: u64,
 }
 
 struct Session {
     home: PathBuf,
+    staging_home: PathBuf,
     endpoint: ControlEndpoint,
     owner_term: i64,
     instance_epoch: String,
+    mode: GoRouteRunMode,
     port: u16,
+    product_home: Option<ProductHomeLocation>,
     next_owner_renewal: Instant,
     oauth_refresh_supported: bool,
     config_stdin: Arc<Mutex<ChildStdin>>,
     adapterd: AdapterdProcess,
+    #[cfg(any(unix, windows))]
+    _product_home_handles: Vec<fs::File>,
     #[cfg(windows)]
     scratch_handles: Vec<OwnedHandle>,
 }
@@ -241,6 +288,11 @@ struct CreatedScratchHome {
     home: PathBuf,
     #[cfg(windows)]
     handles: Vec<OwnedHandle>,
+}
+
+#[cfg(any(unix, windows))]
+struct PreparedProductHome {
+    handles: Vec<fs::File>,
 }
 
 #[cfg(any(unix, windows))]
@@ -309,6 +361,9 @@ struct ControlSession {
     endpoint: ControlEndpoint,
     owner_term: i64,
     instance_epoch: String,
+    mode: GoRouteRunMode,
+    expected_port: u16,
+    product_home: Option<ProductHomeLocation>,
 }
 
 fn stopped_status() -> GoRouteIsolatedStatus {
@@ -345,10 +400,18 @@ fn unavailable_status() -> GoRouteIsolatedStatus {
 
 impl GoRouteIsolatedHost {
     pub fn new(hub: Option<Arc<AgentHub>>) -> Arc<Self> {
+        Self::new_with_mode(hub, GoRouteRunMode::Isolated)
+    }
+
+    /// Dormant construction seam for dedicated runtime probes. Product mode
+    /// is intentionally not selected by AppState or any command/UI path.
+    #[allow(dead_code)]
+    pub(crate) fn new_with_mode(hub: Option<Arc<AgentHub>>, mode: GoRouteRunMode) -> Arc<Self> {
         #[cfg(any(unix, windows))]
         cleanup_stale_scratch_roots();
         let host = Arc::new(Self {
             hub,
+            mode,
             inner: Mutex::new(Inner {
                 status: stopped_status(),
                 session: None,
@@ -430,12 +493,54 @@ impl GoRouteIsolatedHost {
         }
     }
 
-    #[cfg(feature = "go-route-bind-probe")]
+    #[cfg(any(feature = "go-route-bind-probe", feature = "go-route-product-probe"))]
     pub(crate) fn probe_config_hash(&self) -> Option<String> {
         self.lock()
             .committed_plan
             .as_ref()
             .map(|plan| plan.config_hash.clone())
+    }
+
+    #[cfg(feature = "go-route-product-probe")]
+    pub(crate) fn probe_session_process(&self) -> Result<(u32, PathBuf, PathBuf), String> {
+        let inner = self.lock();
+        let session = inner
+            .session
+            .as_ref()
+            .ok_or_else(|| "Go route session is not running".to_string())?;
+        Ok((
+            session.adapterd.id(),
+            session.home.clone(),
+            session.staging_home.clone(),
+        ))
+    }
+
+    #[cfg(feature = "go-route-product-probe")]
+    pub(crate) fn probe_product_preflight(&self) -> Result<(u16, PathBuf, usize), String> {
+        let hub = self
+            .hub
+            .as_ref()
+            .ok_or_else(|| "Go route hub is unavailable".to_string())?;
+        let plan = build_runtime_plan(hub, GoRouteRunMode::Product)?;
+        let home = plan
+            .product_home
+            .as_ref()
+            .map(|location| location.home.clone())
+            .ok_or_else(|| "Product home is unavailable".to_string())?;
+        Ok((plan.port, home, plan.config.len()))
+    }
+
+    #[cfg(feature = "go-route-product-probe")]
+    pub(crate) fn probe_kill_process(&self) -> Result<(), String> {
+        let mut inner = self.lock();
+        let session = inner
+            .session
+            .as_mut()
+            .ok_or_else(|| "Go route session is not running".to_string())?;
+        session
+            .adapterd
+            .kill()
+            .map_err(|error| format!("kill Go route process: {error}"))
     }
 
     #[cfg(feature = "go-route-bind-probe")]
@@ -471,7 +576,11 @@ impl GoRouteIsolatedHost {
         }
     }
 
-    #[cfg(all(unix, feature = "go-route-tcp-control-probe"))]
+    #[cfg(all(
+        unix,
+        feature = "go-route-bind-probe",
+        feature = "go-route-tcp-control-probe"
+    ))]
     pub(crate) fn probe_tcp_control_semantic_rejection(&self) -> Result<u16, String> {
         let (control, active_hash, control_port) = {
             let inner = self.lock();
@@ -571,12 +680,6 @@ impl GoRouteIsolatedHost {
             let Some(hub) = self.hub.as_ref() else {
                 return unavailable_status();
             };
-            let config = match build_runtime_config(hub) {
-                Ok(config) => config,
-                Err(_) => return self.status_with_reload_error(),
-            };
-            let config_hash = sha256_hex(&config);
-
             let (config_stdin, control, port) = {
                 let mut inner = self.lock();
                 refresh_locked(&mut inner);
@@ -589,6 +692,21 @@ impl GoRouteIsolatedHost {
                     session.port,
                 )
             };
+            let runtime_config = match build_runtime_config(hub, self.mode, port) {
+                Ok(config) => config,
+                Err(_) if self.mode == GoRouteRunMode::Product => {
+                    let _ = self.fail_required_reload();
+                    return self.lock().status.clone();
+                }
+                Err(_) => return self.status_with_reload_error(),
+            };
+            if runtime_config.product_home != control.product_home {
+                let _ = self.fail_required_reload();
+                return self.lock().status.clone();
+            }
+            let product_home = runtime_config.product_home;
+            let config = runtime_config.config;
+            let config_hash = sha256_hex(&config);
             let config =
                 match write_runtime_config_with_timeout(config_stdin, config, CONFIG_WRITE_WAIT) {
                     Ok(config) => config,
@@ -632,6 +750,8 @@ impl GoRouteIsolatedHost {
                 config,
                 config_hash,
                 port,
+                product_home,
+                mode: self.mode,
             });
             inner.status.clone()
         }
@@ -683,10 +803,15 @@ impl GoRouteIsolatedHost {
             let Some(hub) = self.hub.as_ref() else {
                 return self.fail_required_reload();
             };
-            let config = match build_runtime_config(hub) {
+            let runtime_config = match build_runtime_config(hub, self.mode, port) {
                 Ok(config) => config,
                 Err(_) => return self.fail_required_reload(),
             };
+            if runtime_config.product_home != control.product_home {
+                return self.fail_required_reload();
+            }
+            let product_home = runtime_config.product_home;
+            let config = runtime_config.config;
             let config_hash = sha256_hex(&config);
 
             let (same_session, unchanged) = {
@@ -768,6 +893,8 @@ impl GoRouteIsolatedHost {
                         config,
                         config_hash: config_hash.clone(),
                         port,
+                        product_home,
+                        mode: self.mode,
                     });
                     true
                 } else {
@@ -868,7 +995,7 @@ impl GoRouteIsolatedHost {
             self.hub
                 .as_ref()
                 .ok_or_else(|| ERROR_ISOLATED_UNAVAILABLE.to_string())
-                .and_then(|hub| build_runtime_plan(hub))
+                .and_then(|hub| build_runtime_plan(hub, self.mode))
         });
         let result = plan.and_then(|plan| start_session(&plan).map(|session| (session, plan)));
         match result {
@@ -2024,7 +2151,7 @@ fn stop_session(session: &mut Session) {
                 session.adapterd.join_stdout_reader();
                 #[cfg(windows)]
                 session.scratch_handles.clear();
-                cleanup_scratch_home(&session.home);
+                cleanup_scratch_home(&session.staging_home);
                 return;
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(50)),
@@ -2043,59 +2170,126 @@ fn terminate_session(session: &mut Session) {
     session.adapterd.join_stdout_reader();
     #[cfg(windows)]
     session.scratch_handles.clear();
-    cleanup_scratch_home(&session.home);
+    cleanup_scratch_home(&session.staging_home);
 }
 
 #[cfg(any(unix, windows))]
-fn build_runtime_config(hub: &AgentHub) -> Result<Vec<u8>, String> {
+struct RuntimeConfigSnapshot {
+    config: Vec<u8>,
+    product_home: Option<ProductHomeLocation>,
+}
+
+#[cfg(any(unix, windows))]
+fn build_runtime_config(
+    hub: &AgentHub,
+    mode: GoRouteRunMode,
+    expected_port: u16,
+) -> Result<RuntimeConfigSnapshot, String> {
     let pools = hub
         .route_pools()
         .list_gateway_listener_pools()
         .map_err(|error| error.to_string())?;
-    hub.adapter_bridge()
+    if mode == GoRouteRunMode::Product && product_gateway_port(&pools)? != expected_port {
+        return Err("saved Go route port changed while the runtime was active".into());
+    }
+    let config = hub
+        .adapter_bridge()
         .build_go_route_isolated_config(&pools)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    let product_home = match mode {
+        GoRouteRunMode::Isolated => None,
+        GoRouteRunMode::Product => Some(resolve_product_home(hub)?),
+    };
+    Ok(RuntimeConfigSnapshot {
+        config,
+        product_home,
+    })
 }
 
 #[cfg(any(unix, windows))]
-fn build_runtime_plan(hub: &AgentHub) -> Result<RuntimePlan, String> {
-    let config = build_runtime_config(hub)?;
+fn build_runtime_plan(hub: &AgentHub, mode: GoRouteRunMode) -> Result<RuntimePlan, String> {
+    let pools = hub
+        .route_pools()
+        .list_gateway_listener_pools()
+        .map_err(|error| error.to_string())?;
+    let port = match mode {
+        GoRouteRunMode::Isolated => pick_loopback_port()?,
+        GoRouteRunMode::Product => product_gateway_port(&pools)?,
+    };
+    let config = hub
+        .adapter_bridge()
+        .build_go_route_isolated_config(&pools)
+        .map_err(|error| error.to_string())?;
     Ok(RuntimePlan {
         config_hash: sha256_hex(&config),
         config,
-        port: pick_loopback_port()?,
+        port,
+        product_home: match mode {
+            GoRouteRunMode::Isolated => None,
+            GoRouteRunMode::Product => Some(resolve_product_home(hub)?),
+        },
+        mode,
     })
+}
+
+#[cfg(any(unix, windows))]
+fn product_gateway_port(pools: &[agenthub_core::models::RoutePool]) -> Result<u16, String> {
+    if pools.is_empty() || pools.iter().any(|pool| pool.gateway_port.is_none()) {
+        return Err("product Go route requires one saved gateway port".into());
+    }
+    let ports: HashSet<u16> = pools.iter().filter_map(|pool| pool.gateway_port).collect();
+    if ports.len() != 1 {
+        return Err("product Go route requires one saved gateway port".into());
+    }
+    let port = *ports
+        .iter()
+        .next()
+        .ok_or_else(|| "product Go route requires one saved gateway port".to_string())?;
+    if port == 0 {
+        return Err("product Go route requires a non-zero saved gateway port".into());
+    }
+    Ok(port)
 }
 
 #[cfg(any(unix, windows))]
 fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
     let scratch = create_scratch_home()?;
-    let home = scratch.home;
+    let staging_home = scratch.home;
     let mut scratch_guard = ScratchHomeGuard {
-        home: home.clone(),
+        home: staging_home.clone(),
         armed: true,
         #[cfg(windows)]
         handles: scratch.handles,
     };
-    if is_forbidden_user_home(&home) {
-        return Err("refusing real user AGENTHUB_HOME".into());
-    }
-    if !is_scratch_home(&home) {
-        return Err(
-            "AGENTHUB_HOME must be an absolute scratch directory under the operating-system temp directory"
-                .into(),
-        );
-    }
+    let mut product_home_handles = Vec::new();
+    let home = match plan.mode {
+        GoRouteRunMode::Isolated => {
+            if plan.product_home.is_some()
+                || is_forbidden_user_home(&staging_home)
+                || !is_scratch_home(&staging_home)
+                || plan.port == PRODUCT_DEFAULT_PORT
+            {
+                return Err("isolated Go route plan is invalid".into());
+            }
+            staging_home.clone()
+        }
+        GoRouteRunMode::Product => {
+            let location = plan
+                .product_home
+                .as_ref()
+                .ok_or_else(|| "product Go route home is unavailable".to_string())?;
+            let home = &location.home;
+            if !home.is_absolute() || plan.port == 0 {
+                return Err("product Go route plan is invalid".into());
+            }
+            product_home_handles = prepare_product_home(location)?.handles;
+            home.clone()
+        }
+    };
 
-    if plan.port == PRODUCT_DEFAULT_PORT {
-        return Err(format!(
-            "refusing product default listen port {PRODUCT_DEFAULT_PORT}"
-        ));
-    }
-
-    let scratch_root = home.parent().unwrap_or(home.as_path());
+    let scratch_root = staging_home.parent().unwrap_or(staging_home.as_path());
     let bin = resolve_adapterd_bin(scratch_root)?;
-    let adapterd_log = home.join("logs/adapterd.stdout.log");
+    let adapterd_log = staging_home.join("logs/adapterd.stdout.log");
     let tcp_control = tcp_control_requested()?;
     let bearer = tcp_control.then(generate_control_bearer).transpose()?;
     let mut command = Command::new(&bin.path);
@@ -2105,6 +2299,8 @@ fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
         .arg(&home)
         .arg("--listen-port")
         .arg(plan.port.to_string())
+        .arg("--runtime-scope")
+        .arg(plan.mode.as_arg())
         .arg("--runtime-config-stdin-stream")
         .stdin(Stdio::piped())
         .env("AGENTHUB_HOME", &home)
@@ -2182,6 +2378,7 @@ fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
     let started = match handshake_start(
         &home,
         &endpoint,
+        plan.mode,
         plan.port,
         &plan.config_hash,
         bin.package_version,
@@ -2190,14 +2387,18 @@ fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
             scratch_guard.disarm();
             Session {
                 home: session.home,
+                staging_home,
                 endpoint: session.endpoint,
                 owner_term: session.owner_term,
                 instance_epoch: session.instance_epoch,
+                mode: plan.mode,
                 port: session.port,
+                product_home: plan.product_home.clone(),
                 next_owner_renewal: Instant::now() + OWNER_RENEW_INTERVAL,
                 oauth_refresh_supported: session.oauth_refresh_supported,
                 config_stdin,
                 adapterd,
+                _product_home_handles: product_home_handles,
                 #[cfg(windows)]
                 scratch_handles: scratch_guard.take_handles(),
             }
@@ -2344,6 +2545,7 @@ struct HandshakeMeta {
 fn handshake_start(
     home: &Path,
     endpoint: &ControlEndpoint,
+    mode: GoRouteRunMode,
     fallback_port: u16,
     expected_config_hash: &str,
     expected_package_version: &str,
@@ -2442,13 +2644,15 @@ fn handshake_start(
     let raw_port = status_payload
         .get("port")
         .and_then(Value::as_u64)
-        .or_else(|| start_payload.get("port").and_then(Value::as_u64))
-        .unwrap_or(u64::from(fallback_port));
-    let port = u16::try_from(raw_port).map_err(|_| ERROR_START_FAILED.to_string())?;
-    if port == 0 || port == PRODUCT_DEFAULT_PORT {
-        return Err(format!(
-            "refusing invalid or product default listen port {port}"
-        ));
+        .ok_or_else(|| ERROR_START_FAILED.to_string())?;
+    let port = validate_reported_port(mode, fallback_port, raw_port)?;
+    if let Some(start_port) = start_payload.get("port") {
+        let start_port = start_port
+            .as_u64()
+            .ok_or_else(|| ERROR_START_FAILED.to_string())?;
+        if validate_reported_port(mode, fallback_port, start_port)? != port {
+            return Err(ERROR_START_FAILED.into());
+        }
     }
     Ok(HandshakeMeta {
         home: home.to_path_buf(),
@@ -2471,6 +2675,210 @@ fn pick_loopback_port() -> Result<u16, String> {
         ));
     }
     Ok(port)
+}
+
+#[cfg(unix)]
+fn resolve_product_home(hub: &AgentHub) -> Result<ProductHomeLocation, String> {
+    let data_dir = hub.data_dir();
+    let handle = open_unix_product_anchor(data_dir)?;
+    let canonical = fs::canonicalize(data_dir).map_err(|error| error.to_string())?;
+    let canonical_handle = open_unix_product_anchor(&canonical)?;
+    let identity = unix_product_data_dir_identity(&handle)?;
+    if unix_product_data_dir_identity(&canonical_handle)? != identity {
+        return Err("product Go route data directory changed during resolution".into());
+    }
+    Ok(ProductHomeLocation {
+        home: canonical.join("runtime").join("adapterd"),
+        data_dir: canonical,
+        identity,
+    })
+}
+
+#[cfg(unix)]
+fn unix_product_data_dir_identity(handle: &fs::File) -> Result<ProductDataDirIdentity, String> {
+    let metadata = handle.metadata().map_err(|error| error.to_string())?;
+    Ok(ProductDataDirIdentity {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+    })
+}
+
+#[cfg(unix)]
+fn prepare_product_home(location: &ProductHomeLocation) -> Result<PreparedProductHome, String> {
+    use std::ffi::CString;
+
+    let home = &location.home;
+    if home.file_name().and_then(|name| name.to_str()) != Some("adapterd") {
+        return Err("product Go route home is invalid".into());
+    }
+    let runtime = home
+        .parent()
+        .filter(|path| path.file_name().and_then(|name| name.to_str()) == Some("runtime"))
+        .ok_or_else(|| "product Go route home is invalid".to_string())?;
+    let data_dir = runtime
+        .parent()
+        .ok_or_else(|| "product Go route data directory is invalid".to_string())?;
+    if data_dir != location.data_dir {
+        return Err("product Go route data directory drifted".into());
+    }
+
+    let data_handle = open_unix_product_anchor(data_dir)?;
+    if unix_product_data_dir_identity(&data_handle)? != location.identity {
+        return Err("product Go route data directory drifted".into());
+    }
+    let runtime_handle = open_or_create_unix_product_directory(
+        &data_handle,
+        &CString::new("runtime").expect("static component"),
+    )?;
+    let home_handle = open_or_create_unix_product_directory(
+        &runtime_handle,
+        &CString::new("adapterd").expect("static component"),
+    )?;
+    let mut child_handles = Vec::new();
+    for component in ["run", "config", "logs"] {
+        child_handles.push(open_or_create_unix_product_directory(
+            &home_handle,
+            &CString::new(component).expect("static component"),
+        )?);
+    }
+    let mut handles = vec![data_handle, runtime_handle, home_handle];
+    handles.extend(child_handles);
+    Ok(PreparedProductHome { handles })
+}
+
+#[cfg(unix)]
+fn open_unix_product_anchor(path: &Path) -> Result<fs::File, String> {
+    let before = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+    if !before.file_type().is_dir() || before.uid() != current_euid() || before.mode() & 0o022 != 0
+    {
+        return Err("product Go route data directory is not private".into());
+    }
+    let handle = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(path)
+        .map_err(|error| error.to_string())?;
+    let after = handle.metadata().map_err(|error| error.to_string())?;
+    if !after.file_type().is_dir()
+        || after.uid() != current_euid()
+        || after.mode() & 0o022 != 0
+        || before.dev() != after.dev()
+        || before.ino() != after.ino()
+    {
+        return Err("product Go route data directory changed during validation".into());
+    }
+    Ok(handle)
+}
+
+#[cfg(unix)]
+fn open_or_create_unix_product_directory(
+    parent: &fs::File,
+    component: &std::ffi::CStr,
+) -> Result<fs::File, String> {
+    let created = match unsafe { libc::mkdirat(parent.as_raw_fd(), component.as_ptr(), 0o700) } {
+        0 => true,
+        _ if std::io::Error::last_os_error().kind() == std::io::ErrorKind::AlreadyExists => false,
+        _ => return Err(std::io::Error::last_os_error().to_string()),
+    };
+    let fd = unsafe {
+        libc::openat(
+            parent.as_raw_fd(),
+            component.as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    // SAFETY: openat returned a new owned descriptor on success.
+    let handle = unsafe { fs::File::from_raw_fd(fd) };
+    if created && unsafe { libc::fchmod(handle.as_raw_fd(), 0o700) } != 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    let metadata = handle.metadata().map_err(|error| error.to_string())?;
+    if !metadata.file_type().is_dir()
+        || metadata.uid() != current_euid()
+        || metadata.mode() & 0o777 != 0o700
+    {
+        return Err("product Go route directory is not private".into());
+    }
+    Ok(handle)
+}
+
+#[cfg(windows)]
+fn resolve_product_home(hub: &AgentHub) -> Result<ProductHomeLocation, String> {
+    let data_dir = hub.data_dir();
+    let handle = open_windows_path_no_reparse(data_dir, true)?;
+    let canonical = fs::canonicalize(data_dir).map_err(|error| error.to_string())?;
+    let canonical_handle = open_windows_path_no_reparse(&canonical, true)?;
+    let identity = windows_product_data_dir_identity(&handle)?;
+    if windows_product_data_dir_identity(&canonical_handle)? != identity {
+        return Err("product Go route data directory changed during resolution".into());
+    }
+    Ok(ProductHomeLocation {
+        home: canonical.join("runtime").join("adapterd"),
+        data_dir: canonical,
+        identity,
+    })
+}
+
+#[cfg(windows)]
+fn windows_product_data_dir_identity(
+    handle: &impl AsRawHandle,
+) -> Result<ProductDataDirIdentity, String> {
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    };
+
+    let mut info = BY_HANDLE_FILE_INFORMATION::default();
+    if unsafe { GetFileInformationByHandle(handle.as_raw_handle() as _, &mut info) } == 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    Ok(ProductDataDirIdentity {
+        volume_serial: info.dwVolumeSerialNumber,
+        file_index: (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
+    })
+}
+
+#[cfg(windows)]
+fn prepare_product_home(location: &ProductHomeLocation) -> Result<PreparedProductHome, String> {
+    let home = &location.home;
+    if home.file_name().and_then(|name| name.to_str()) != Some("adapterd") {
+        return Err("product Go route home is invalid".into());
+    }
+    let runtime = home
+        .parent()
+        .filter(|path| path.file_name().and_then(|name| name.to_str()) == Some("runtime"))
+        .ok_or_else(|| "product Go route home is invalid".to_string())?;
+    let data_dir = runtime
+        .parent()
+        .ok_or_else(|| "product Go route data directory is invalid".to_string())?;
+    if data_dir != location.data_dir {
+        return Err("product Go route data directory drifted".into());
+    }
+
+    let data_handle = open_windows_path_no_reparse(data_dir, true)?;
+    if windows_product_data_dir_identity(&data_handle)? != location.identity {
+        return Err("product Go route data directory drifted".into());
+    }
+    let mut handles = vec![data_handle];
+    for directory in [
+        runtime.to_path_buf(),
+        home.to_path_buf(),
+        home.join("run"),
+        home.join("config"),
+        home.join("logs"),
+    ] {
+        match create_private_windows_directory(&directory) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error.to_string()),
+        }
+        let handle = open_windows_path_no_reparse(&directory, true)?;
+        verify_windows_protected_dacl(&handle)?;
+        handles.push(handle);
+    }
+    Ok(PreparedProductHome { handles })
 }
 
 #[cfg(unix)]
@@ -3971,7 +4379,31 @@ fn session_status(session: &ControlSession) -> Result<Value, String> {
             "payload": {},
         }),
     )?;
-    Ok(require_ok(&reply)?.clone())
+    let payload = require_ok(&reply)?.clone();
+    let raw_port = payload
+        .get("port")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| ERROR_CONTROL_UNAVAILABLE.to_string())?;
+    validate_reported_port(session.mode, session.expected_port, raw_port)
+        .map_err(|_| ERROR_CONTROL_UNAVAILABLE.to_string())?;
+    Ok(payload)
+}
+
+fn validate_reported_port(
+    mode: GoRouteRunMode,
+    expected_port: u16,
+    raw_port: u64,
+) -> Result<u16, String> {
+    let port = u16::try_from(raw_port).map_err(|_| ERROR_CONTROL_UNAVAILABLE.to_string())?;
+    match mode {
+        GoRouteRunMode::Isolated if port == 0 || port == PRODUCT_DEFAULT_PORT => {
+            Err(ERROR_CONTROL_UNAVAILABLE.into())
+        }
+        GoRouteRunMode::Product if port == 0 || port != expected_port => {
+            Err(ERROR_CONTROL_UNAVAILABLE.into())
+        }
+        _ => Ok(port),
+    }
 }
 
 #[cfg(any(unix, windows))]
@@ -4023,6 +4455,9 @@ impl From<&Session> for ControlSession {
             endpoint: session.endpoint.clone(),
             owner_term: session.owner_term,
             instance_epoch: session.instance_epoch.clone(),
+            mode: session.mode,
+            expected_port: session.port,
+            product_home: session.product_home.clone(),
         }
     }
 }
@@ -4039,7 +4474,7 @@ fn status_with_supervisor(
         .get("port")
         .and_then(Value::as_u64)
         .and_then(|value| u16::try_from(value).ok())
-        .filter(|port| *port != 0 && *port != PRODUCT_DEFAULT_PORT);
+        .filter(|port| *port != 0);
     let listen_ready = reported_ready && port.is_some();
     GoRouteIsolatedStatus {
         state: if listen_ready { "ready" } else { "failed" }.into(),

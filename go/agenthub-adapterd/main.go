@@ -40,8 +40,9 @@ func main() {
 		args = args[1:]
 	}
 	fs := flag.NewFlagSet("agenthub-adapterd", flag.ExitOnError)
-	home := fs.String("home", os.Getenv("AGENTHUB_HOME"), "absolute scratch AGENTHUB_HOME")
-	listenPort := fs.Int("listen-port", envInt("AGENTHUB_ADAPTERD_LISTEN_PORT", 0), "loopback Messages port (0 = ephemeral; not the product default)")
+	home := fs.String("home", os.Getenv("AGENTHUB_HOME"), "absolute runtime home")
+	listenPort := fs.Int("listen-port", envInt("AGENTHUB_ADAPTERD_LISTEN_PORT", 0), "loopback route port (product requires a saved non-zero port)")
+	runtimeScope := fs.String("runtime-scope", runtimeScopeIsolated, "runtime scope: isolated or product")
 	controlSocket := fs.String("control-socket", os.Getenv("AGENTHUB_ADAPTERD_CONTROL_SOCKET"), "absolute unix control socket (default $AGENTHUB_HOME/run/adapterd.sock)")
 	controlListen := fs.String("control-listen", os.Getenv("AGENTHUB_ADAPTERD_CONTROL_LISTEN"), "authenticated TCP control address (production requires 127.0.0.1:0)")
 	controlTokenStdin := fs.Bool("control-token-stdin", false, "read a framed control authentication token from stdin")
@@ -57,6 +58,10 @@ func main() {
 	}
 	if *home == "" {
 		fs.Usage()
+		os.Exit(2)
+	}
+	if *runtimeScope != runtimeScopeIsolated && *runtimeScope != runtimeScopeProduct {
+		fmt.Fprintln(os.Stderr, "agenthub-adapterd: invalid runtime scope")
 		os.Exit(2)
 	}
 	if *runtimeConfigStdin && *runtimeConfigStdinStream {
@@ -102,9 +107,9 @@ func main() {
 	var rt *Runtime
 	var err error
 	if tcpControl {
-		rt, err = NewTCPRuntime(*home, *listenPort, *controlListen, controlToken, cancel)
+		rt, err = NewTCPRuntimeWithScope(*home, *listenPort, *controlListen, controlToken, *runtimeScope, cancel)
 	} else {
-		rt, err = NewRuntime(*home, *listenPort, *controlSocket, cancel)
+		rt, err = NewRuntimeWithScope(*home, *listenPort, *controlSocket, *runtimeScope, cancel)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "agenthub-adapterd: %v\n", err)

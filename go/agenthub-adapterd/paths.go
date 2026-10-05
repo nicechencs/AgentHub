@@ -79,6 +79,14 @@ func isScratchHome(path string) bool {
 	return isRepoProbeScratch(resolved)
 }
 
+func isProductRuntimeHome(path string) bool {
+	resolved, err := resolveAbsolute(path)
+	if err != nil || filepath.Base(resolved) != "adapterd" {
+		return false
+	}
+	return filepath.Base(filepath.Dir(resolved)) == "runtime"
+}
+
 func scratchRoots() []string {
 	roots := []string{"/tmp", "/var/tmp"}
 	if tmp := os.TempDir(); tmp != "" {

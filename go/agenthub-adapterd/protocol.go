@@ -48,6 +48,9 @@ const (
 
 	productDefaultPort = 43121
 	maxUnixSocketBytes = 100
+
+	runtimeScopeIsolated = "isolated"
+	runtimeScopeProduct  = "product"
 )
 
 // packageVersion is replaced by the desktop sidecar build with

@@ -229,3 +229,62 @@ func TestNewRuntimeRejectsRealHomeAndDefaultPort(t *testing.T) {
 		t.Fatal("expected refuse product default port")
 	}
 }
+
+func TestProductRuntimeRequiresPersistentShapeAndSavedPort(t *testing.T) {
+	root := t.TempDir()
+	productHome := filepath.Join(root, "runtime", "adapterd")
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	rt, err := NewTCPRuntimeWithScope(productHome, productDefaultPort, "127.0.0.1:0", testControlToken(), runtimeScopeProduct, cancel)
+	if err != nil {
+		t.Fatalf("product runtime rejected saved default port: %v", err)
+	}
+	t.Cleanup(func() { _ = rt.Shutdown(ctx) })
+	if rt.runtimeScope != runtimeScopeProduct {
+		t.Fatalf("runtime scope = %q", rt.runtimeScope)
+	}
+	samePort := productDefaultPort
+	samePortPayload, _ := json.Marshal(StartPayload{ListenPort: &samePort})
+	if err := rt.applyOptionalStartPort(samePortPayload); err != nil {
+		t.Fatalf("product runtime rejected its saved port: %v", err)
+	}
+	differentPort := 43122
+	differentPortPayload, _ := json.Marshal(StartPayload{ListenPort: &differentPort})
+	if err := rt.applyOptionalStartPort(differentPortPayload); err == nil {
+		t.Fatal("product runtime accepted a different Start port")
+	}
+	rt.mu.Lock()
+	rt.listenReady = true
+	rt.mu.Unlock()
+	if err := rt.applyOptionalStartPort(differentPortPayload); err == nil {
+		t.Fatal("running product runtime accepted a different Start port")
+	}
+
+	if _, err := NewTCPRuntimeWithScope(productHome, 0, "127.0.0.1:0", testControlToken(), runtimeScopeProduct, nil); err == nil {
+		t.Fatal("product runtime accepted an ephemeral port")
+	}
+	if _, err := NewTCPRuntimeWithScope(filepath.Join(root, "other"), 43122, "127.0.0.1:0", testControlToken(), runtimeScopeProduct, nil); err == nil {
+		t.Fatal("product runtime accepted a non-runtime home")
+	}
+	if _, err := NewTCPRuntimeWithScope(productHome, 43122, "127.0.0.1:0", testControlToken(), "unknown", nil); err == nil {
+		t.Fatal("runtime accepted an unknown scope")
+	}
+}
+
+func TestProductRuntimeRejectsProbeActivation(t *testing.T) {
+	root := t.TempDir()
+	rt, err := NewTCPRuntimeWithScope(filepath.Join(root, "runtime", "adapterd"), 43122, "127.0.0.1:0", testControlToken(), runtimeScopeProduct, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = rt.Shutdown(context.Background()) })
+
+	reply := controlJSON(t, rt, map[string]any{
+		"type":       typeActivateProbeListen,
+		"request_id": "product-probe-rejected",
+		"payload":    map[string]any{},
+	})
+	if reply.OK || reply.Error == nil || reply.Error.Code != errProbeOnlyRejected {
+		t.Fatalf("product probe activation was not rejected: %+v", reply)
+	}
+}

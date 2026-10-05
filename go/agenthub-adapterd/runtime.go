@@ -21,6 +21,7 @@ type Runtime struct {
 	lifecycleMu sync.Mutex
 
 	home           string
+	runtimeScope   string
 	listenHost     string
 	listenPort     int
 	actualPort     int
@@ -77,16 +78,40 @@ type idempotentEntry struct {
 
 const maxControlIdempotencyEntries = 4096
 
+func validateRuntimeListenPort(runtimeScope string, listenPort int) error {
+	if listenPort < 0 || listenPort > 65535 {
+		return fmt.Errorf("invalid listen port %d", listenPort)
+	}
+	if runtimeScope == runtimeScopeProduct {
+		if listenPort == 0 {
+			return fmt.Errorf("product runtime requires a saved non-zero listen port")
+		}
+		return nil
+	}
+	if listenPort == productDefaultPort {
+		return fmt.Errorf("refusing product default listen port %d", productDefaultPort)
+	}
+	return nil
+}
+
 func NewRuntime(home string, listenPort int, controlSocket string, cancel context.CancelFunc) (*Runtime, error) {
-	return newRuntime(home, listenPort, controlSocket, true, cancel)
+	return NewRuntimeWithScope(home, listenPort, controlSocket, runtimeScopeIsolated, cancel)
 }
 
 func NewTCPRuntime(home string, listenPort int, controlAddress, controlToken string, cancel context.CancelFunc) (*Runtime, error) {
+	return NewTCPRuntimeWithScope(home, listenPort, controlAddress, controlToken, runtimeScopeIsolated, cancel)
+}
+
+func NewRuntimeWithScope(home string, listenPort int, controlSocket, runtimeScope string, cancel context.CancelFunc) (*Runtime, error) {
+	return newRuntime(home, listenPort, controlSocket, true, runtimeScope, cancel)
+}
+
+func NewTCPRuntimeWithScope(home string, listenPort int, controlAddress, controlToken, runtimeScope string, cancel context.CancelFunc) (*Runtime, error) {
 	normalizedAddress, err := validateTCPControl(controlAddress, controlToken)
 	if err != nil {
 		return nil, err
 	}
-	rt, err := newRuntime(home, listenPort, "", false, cancel)
+	rt, err := newRuntime(home, listenPort, "", false, runtimeScope, cancel)
 	if err != nil {
 		return nil, err
 	}
@@ -96,22 +121,26 @@ func NewTCPRuntime(home string, listenPort int, controlAddress, controlToken str
 	return rt, nil
 }
 
-func newRuntime(home string, listenPort int, controlSocket string, validateUnixControl bool, cancel context.CancelFunc) (*Runtime, error) {
+func newRuntime(home string, listenPort int, controlSocket string, validateUnixControl bool, runtimeScope string, cancel context.CancelFunc) (*Runtime, error) {
+	if runtimeScope != runtimeScopeIsolated && runtimeScope != runtimeScopeProduct {
+		return nil, fmt.Errorf("invalid runtime scope")
+	}
 	abs, err := resolveAbsolute(home)
 	if err != nil {
 		return nil, err
 	}
-	if isForbiddenUserHome(abs) {
-		return nil, fmt.Errorf("refusing real user AGENTHUB_HOME")
+	if runtimeScope == runtimeScopeIsolated {
+		if isForbiddenUserHome(abs) {
+			return nil, fmt.Errorf("refusing real user AGENTHUB_HOME")
+		}
+		if !isScratchHome(abs) {
+			return nil, fmt.Errorf("AGENTHUB_HOME must be an absolute scratch directory under /tmp, /var/tmp, or .tmp/route-runtime-probe")
+		}
+	} else if !isProductRuntimeHome(abs) {
+		return nil, fmt.Errorf("product AGENTHUB_HOME must end in runtime/adapterd")
 	}
-	if !isScratchHome(abs) {
-		return nil, fmt.Errorf("AGENTHUB_HOME must be an absolute scratch directory under /tmp, /var/tmp, or .tmp/route-runtime-probe")
-	}
-	if listenPort == productDefaultPort {
-		return nil, fmt.Errorf("refusing product default listen port %d", productDefaultPort)
-	}
-	if listenPort < 0 || listenPort > 65535 {
-		return nil, fmt.Errorf("invalid listen port %d", listenPort)
+	if err := validateRuntimeListenPort(runtimeScope, listenPort); err != nil {
+		return nil, err
 	}
 	if err := os.MkdirAll(filepath.Join(abs, "run"), 0o700); err != nil {
 		return nil, err
@@ -150,6 +179,7 @@ func newRuntime(home string, listenPort int, controlSocket string, validateUnixC
 
 	rt := &Runtime{
 		home:              abs,
+		runtimeScope:      runtimeScope,
 		listenHost:        "127.0.0.1",
 		listenPort:        listenPort,
 		controlSocket:     controlSocket,
@@ -690,6 +720,12 @@ func (rt *Runtime) handleStart(env Envelope) Reply {
 	if hasRuntimeConfig {
 		return rt.startFromRuntimeConfig(env)
 	}
+	if rt.runtimeScope == runtimeScopeProduct {
+		if fail := rt.requireOwner(env); fail != nil {
+			return *fail
+		}
+		return rt.fail(env.Type, env.RequestID, errConfigMismatch, "runtime config is missing", false)
+	}
 	return rt.startFromProbeFixture(env, "isolated Start; not default gateway")
 }
 
@@ -697,6 +733,9 @@ func (rt *Runtime) handleActivateProbe(env Envelope) Reply {
 	rt.lifecycleMu.Lock()
 	defer rt.lifecycleMu.Unlock()
 
+	if rt.runtimeScope != runtimeScopeIsolated {
+		return rt.fail(env.Type, env.RequestID, errProbeOnlyRejected, "ActivateProbeListen is isolated-only", false)
+	}
 	return rt.startFromProbeFixture(env, "probe-only activate; not product Start")
 }
 
@@ -757,14 +796,14 @@ func (rt *Runtime) applyOptionalStartPort(raw json.RawMessage) error {
 		return nil
 	}
 	port := *payload.ListenPort
-	if port == productDefaultPort {
-		return fmt.Errorf("refusing product default listen port %d", productDefaultPort)
-	}
-	if port < 0 || port > 65535 {
-		return fmt.Errorf("invalid listen port %d", port)
+	if err := validateRuntimeListenPort(rt.runtimeScope, port); err != nil {
+		return err
 	}
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
+	if rt.runtimeScope == runtimeScopeProduct && port != rt.listenPort {
+		return fmt.Errorf("product runtime listen port cannot change")
+	}
 	if rt.listenReady {
 		return nil
 	}
@@ -773,6 +812,9 @@ func (rt *Runtime) applyOptionalStartPort(raw json.RawMessage) error {
 }
 
 func (rt *Runtime) startFromProbeFixture(env Envelope, note string) Reply {
+	if rt.runtimeScope != runtimeScopeIsolated {
+		return rt.fail(env.Type, env.RequestID, errProbeOnlyRejected, env.Type+" is isolated-only", false)
+	}
 	if fail := rt.requireOwner(env); fail != nil {
 		return *fail
 	}

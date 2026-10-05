@@ -10,6 +10,8 @@ mod file_manager;
 #[cfg(feature = "go-route-bind-probe")]
 pub mod go_route_bind_probe;
 mod go_route_isolated;
+#[cfg(feature = "go-route-product-probe")]
+pub mod go_route_product_probe;
 #[cfg(feature = "plugin-write-probe")]
 pub mod plugin_write_probe;
 mod shell_open_chat;

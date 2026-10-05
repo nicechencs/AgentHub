@@ -13,6 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [features]
 default = []
 go-route-bind-probe = []
+go-route-product-probe = []
 go-route-tcp-control-probe = []
 plugin-write-probe = []
 
@@ -24,6 +25,11 @@ path = "src/main.rs"
 name = "go_route_bind_e2e_probe"
 path = "examples/go_route_bind_e2e_probe.rs"
 required-features = ["go-route-bind-probe"]
+
+[[example]]
+name = "go_route_product_e2e_probe"
+path = "examples/go_route_product_e2e_probe.rs"
+required-features = ["go-route-product-probe"]
 
 [[example]]
 name = "plugin_write_e2e_probe"
