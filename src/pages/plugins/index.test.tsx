@@ -1,7 +1,12 @@
 import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PluginEntry, PluginInventory } from '@/lib/backend/contracts/plugin-types';
+import type {
+  PluginEntry,
+  PluginInventory,
+  PluginMutationAction,
+  PluginMutationOutcome,
+} from '@/lib/backend/contracts/plugin-types';
 
 const testState = vi.hoisted(() => ({
   stateSlots: [] as unknown[],
@@ -149,6 +154,19 @@ const CLAUDE_PLUGIN: PluginEntry = {
   components: [],
 };
 
+const GROK_PLUGIN: PluginEntry = {
+  id: 'grok:reviewer#~/.grok/plugins/reviewer',
+  agent: 'grok',
+  name: 'reviewer',
+  marketplace: 'xAI Official',
+  installSource: '~/src/reviewer',
+  version: '1.0.0',
+  scope: 'user',
+  enabled: true,
+  source: 'cli',
+  components: [],
+};
+
 const PI_PLUGIN: PluginEntry = {
   id: 'pi:npm:@agenthub/pi-pack',
   agent: 'pi',
@@ -166,6 +184,20 @@ const INVENTORY: PluginInventory = {
   })),
   plugins: [CLAUDE_PLUGIN, PI_PLUGIN],
 };
+
+function mutationOutcome(
+  action: PluginMutationAction,
+  agent: PluginMutationOutcome['agent'] = 'claude',
+  inventory: PluginInventory = INVENTORY,
+): PluginMutationOutcome {
+  return {
+    status: 'confirmed',
+    action,
+    agent,
+    inventory,
+    reinventory: { scope: 'target', scannedPluginIds: [] },
+  };
+}
 
 function renderPage(): void {
   testState.stateIndex = 0;
@@ -222,7 +254,14 @@ describe('PluginsPage mutation wiring', () => {
       testState.refreshMarketplace,
       testState.update,
       testState.updatePi,
-    ]) mock.mockReset().mockResolvedValue(undefined);
+    ]) mock.mockReset();
+    testState.install.mockResolvedValue(mutationOutcome('install', 'grok'));
+    testState.uninstall.mockResolvedValue(mutationOutcome('uninstall'));
+    testState.enable.mockResolvedValue(mutationOutcome('enable'));
+    testState.disable.mockResolvedValue(mutationOutcome('disable'));
+    testState.refreshMarketplace.mockResolvedValue(mutationOutcome('marketplaceRefresh', 'codex'));
+    testState.update.mockResolvedValue(mutationOutcome('update'));
+    testState.updatePi.mockResolvedValue(mutationOutcome('piUpdate', 'pi'));
     testState.toast.mockReset();
   });
 
@@ -231,8 +270,8 @@ describe('PluginsPage mutation wiring', () => {
     (actionButton('plugins.install.button').onClick as () => void)();
     renderPage();
     expect(testState.installProps?.open).toBe(true);
-    let resolveInstall!: () => void;
-    const pending = new Promise<void>((resolve) => { resolveInstall = resolve; });
+    let resolveInstall!: (outcome: PluginMutationOutcome) => void;
+    const pending = new Promise<PluginMutationOutcome>((resolve) => { resolveInstall = resolve; });
     testState.install.mockReturnValueOnce(pending);
     const install = testState.installProps?.onInstall as (
       agent: 'grok', source: string, confirmed: boolean,
@@ -247,10 +286,10 @@ describe('PluginsPage mutation wiring', () => {
     expect(testState.installProps?.busy).toBe(true);
     expect(testState.refreshProps?.disabled).toBe(true);
 
-    resolveInstall();
+    resolveInstall(mutationOutcome('install', 'grok'));
     await Promise.all([first, duplicate]);
     renderPage();
-    expect(testState.listInventory).toHaveBeenCalledTimes(2);
+    expect(testState.listInventory).toHaveBeenCalledTimes(1);
     expect(testState.installProps?.open).toBe(false);
     expect(testState.toast).toHaveBeenCalledWith({ title: 'plugins.install.ok', variant: 'success' });
   });
@@ -268,6 +307,65 @@ describe('PluginsPage mutation wiring', () => {
     expect(testState.listInventory).toHaveBeenCalledTimes(1);
     expect(testState.installProps?.open).toBe(true);
     expect(testState.installProps?.error).toEqual(new Error('fixture install failed'));
+  });
+
+  it('keeps the install dialog open and never toasts success for an unconfirmed identity', async () => {
+    await loadInventory();
+    (actionButton('plugins.install.button').onClick as () => void)();
+    renderPage();
+    testState.install.mockResolvedValueOnce({
+      ...mutationOutcome('install', 'grok'),
+      status: 'unconfirmed',
+      reason: 'ambiguousTarget',
+    });
+
+    await (testState.installProps?.onInstall as (
+      agent: 'grok', source: string, confirmed: boolean,
+    ) => Promise<void>)('grok', 'reviewer@official', true);
+    renderPage();
+
+    expect(testState.installProps?.open).toBe(true);
+    expect(testState.installProps?.error).toBe('plugins.outcome.unconfirmed');
+    expect(testState.toast).not.toHaveBeenCalledWith({ title: 'plugins.install.ok', variant: 'success' });
+    expect(testState.listInventory).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not toast toggle success when Grok has same-name local candidates', async () => {
+    const duplicate: PluginEntry = {
+      ...GROK_PLUGIN,
+      id: 'grok:reviewer#~/.grok/plugins/reviewer-local',
+      installSource: '~/src/reviewer-local',
+    };
+    const ambiguousInventory: PluginInventory = {
+      ...INVENTORY,
+      plugins: [GROK_PLUGIN, duplicate],
+    };
+    await loadInventory();
+    testState.inspect.target = GROK_PLUGIN;
+    testState.disable.mockResolvedValueOnce({
+      ...mutationOutcome('disable', 'grok', ambiguousInventory),
+      status: 'unconfirmed',
+      reason: 'ambiguousTarget',
+      reinventory: {
+        scope: 'target',
+        scannedPluginIds: [GROK_PLUGIN.id, duplicate.id],
+      },
+    });
+    renderPage();
+
+    await (testState.detailProps?.onToggle as (
+      plugin: PluginEntry, enabled: boolean,
+    ) => Promise<void>)(GROK_PLUGIN, false);
+
+    expect(testState.disable).toHaveBeenCalledWith('grok', 'reviewer', 'xAI Official');
+    expect(testState.toast).toHaveBeenCalledWith({
+      title: 'plugins.outcome.unconfirmed',
+      variant: 'danger',
+    });
+    expect(testState.toast).not.toHaveBeenCalledWith({
+      title: 'plugins.actions.disabled',
+      variant: 'success',
+    });
   });
 
   it('routes toggle, update, and uninstall with the complete plugin identity', async () => {
@@ -307,7 +405,7 @@ describe('PluginsPage mutation wiring', () => {
       'claude', 'reviewer', 'official', undefined, { keepData: false },
     );
     expect(testState.inspect.close).toHaveBeenCalled();
-    expect(testState.listInventory).toHaveBeenCalledTimes(5);
+    expect(testState.listInventory).toHaveBeenCalledTimes(1);
   });
 
   it('refreshes a selected marketplace and runs the Pi all-extension update', async () => {
@@ -326,6 +424,6 @@ describe('PluginsPage mutation wiring', () => {
       testState.updateProps?.target,
     );
     expect(testState.updatePi).toHaveBeenCalledWith({ confirmed: true });
-    expect(testState.listInventory).toHaveBeenCalledTimes(3);
+    expect(testState.listInventory).toHaveBeenCalledTimes(1);
   });
 });

@@ -3780,6 +3780,9 @@ export const en = {
       ok: 'Marketplace refreshed',
       failed: "Couldn't refresh marketplace",
     },
+    outcome: {
+      unconfirmed: 'Could not confirm the plugin result from local configuration',
+    },
     update: {
       button: 'Update',
       piButton: 'Update installed plugins',

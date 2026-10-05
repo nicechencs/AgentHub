@@ -28,7 +28,11 @@ import {
   updatePlugin,
 } from '@/lib/api/plugins';
 import { openPathInFileManager } from '@/lib/api/skill';
-import type { PluginEntry, PluginInventory } from '@/lib/backend/contracts/plugin-types';
+import type {
+  PluginEntry,
+  PluginInventory,
+  PluginMutationOutcome,
+} from '@/lib/backend/contracts/plugin-types';
 import type { AgentKey } from '@/lib/types';
 import { canInstallListedPlugin } from './can-install';
 import { canRefreshPluginMarketplace, canUpdateAllPlugins } from './can-update';
@@ -94,6 +98,16 @@ export default function PluginsPage() {
       if (loadGate.current.isCurrent(generation)) setLoading(false);
     }
   }, []);
+
+  function applyMutationOutcome(outcome: PluginMutationOutcome): boolean {
+    // The desktop command produced this scan while still holding its write
+    // lock. Do not replace it with a later unlocked scan before deciding
+    // whether the mutation is safe to present as successful.
+    setData(outcome.inventory);
+    setError(null);
+    setLoading(false);
+    return outcome.status === 'confirmed';
+  }
 
   useEffect(() => {
     void load();
@@ -182,8 +196,11 @@ export default function PluginsPage() {
     if (!beginMutation('install')) return;
     setInstallError(null);
     try {
-      await installPlugin(agent, source, { confirmed });
-      await load();
+      const outcome = await installPlugin(agent, source, { confirmed });
+      if (!applyMutationOutcome(outcome)) {
+        setInstallError(t('plugins.outcome.unconfirmed'));
+        return;
+      }
       setInstallOpen(false);
       toast({ title: t('plugins.install.ok'), variant: 'success' });
     } catch (e) {
@@ -197,16 +214,19 @@ export default function PluginsPage() {
     if (!beginMutation('uninstall')) return;
     setUninstallError(null);
     try {
-      await uninstallPlugin(
+      const outcome = await uninstallPlugin(
         plugin.agent,
         plugin.name,
         plugin.marketplace,
         plugin.installSource,
         { keepData },
       );
+      if (!applyMutationOutcome(outcome)) {
+        setUninstallError(t('plugins.outcome.unconfirmed'));
+        return;
+      }
       inspect.close();
       setUninstallTarget(null);
-      await load();
       toast({ title: t('plugins.uninstall.ok'), variant: 'success' });
     } catch (e) {
       setUninstallError(e instanceof Error ? e : String(e));
@@ -218,14 +238,19 @@ export default function PluginsPage() {
   async function togglePlugin(plugin: PluginEntry, enabled: boolean) {
     if (!beginMutation('toggle')) return;
     try {
-      if (enabled) {
-        await enablePlugin(plugin.agent, plugin.name, plugin.marketplace);
-      } else {
-        await disablePlugin(plugin.agent, plugin.name, plugin.marketplace);
-      }
-      const inv = await load();
-      const next = inv?.plugins.find((row) => row.id === plugin.id);
+      const outcome = enabled
+        ? await enablePlugin(plugin.agent, plugin.name, plugin.marketplace)
+        : await disablePlugin(plugin.agent, plugin.name, plugin.marketplace);
+      const confirmed = applyMutationOutcome(outcome);
+      const next = outcome.inventory.plugins.find((row) => row.id === plugin.id);
       if (next) inspect.open(next);
+      if (!confirmed) {
+        toast({
+          title: t('plugins.outcome.unconfirmed'),
+          variant: 'danger',
+        });
+        return;
+      }
       toast({
         title: enabled ? t('plugins.actions.enabled') : t('plugins.actions.disabled'),
         variant: 'success',
@@ -245,8 +270,11 @@ export default function PluginsPage() {
     if (filterAgent === 'all' || !canRefreshPluginMarketplace(filterAgent)) return;
     if (!beginMutation('marketplace')) return;
     try {
-      await refreshPluginMarketplace(filterAgent);
-      await load();
+      const outcome = await refreshPluginMarketplace(filterAgent);
+      if (!applyMutationOutcome(outcome)) {
+        toast({ title: t('plugins.outcome.unconfirmed'), variant: 'danger' });
+        return;
+      }
       toast({ title: t('plugins.marketplace.ok'), variant: 'success' });
     } catch (e) {
       toast({
@@ -263,21 +291,23 @@ export default function PluginsPage() {
     if (!beginMutation('update')) return;
     setUpdateError(null);
     try {
-      if (target.kind === 'pi-all') {
-        await updatePiPlugins({ confirmed: true });
-      } else {
-        await updatePlugin(
-          target.plugin.agent,
-          target.plugin.name,
-          target.plugin.marketplace,
-          target.plugin.scope,
-          { confirmed: true },
-        );
-      }
+      const outcome = target.kind === 'pi-all'
+        ? await updatePiPlugins({ confirmed: true })
+        : await updatePlugin(
+            target.plugin.agent,
+            target.plugin.name,
+            target.plugin.marketplace,
+            target.plugin.scope,
+            { confirmed: true },
+          );
+      const confirmed = applyMutationOutcome(outcome);
       const inspectedId = inspect.target?.id ?? null;
-      const inv = await load();
-      const next = inv?.plugins.find((row) => row.id === inspectedId);
+      const next = outcome.inventory.plugins.find((row) => row.id === inspectedId);
       if (next) inspect.open(next);
+      if (!confirmed) {
+        setUpdateError(t('plugins.outcome.unconfirmed'));
+        return;
+      }
       setUpdateTarget(null);
       toast({ title: t('plugins.update.ok'), variant: 'success' });
     } catch (e) {

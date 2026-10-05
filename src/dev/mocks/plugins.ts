@@ -1,5 +1,11 @@
 import type { PluginPort } from '@/lib/backend/contracts';
-import type { PluginEntry, PluginInventory } from '@/lib/backend/contracts/plugin-types';
+import type {
+  PluginEntry,
+  PluginInventory,
+  PluginMutationAction,
+  PluginMutationOutcome,
+  PluginMutationTarget,
+} from '@/lib/backend/contracts/plugin-types';
 import type { AgentKey } from '@/lib/types';
 import { delay } from '@/dev/mocks/delay';
 
@@ -274,6 +280,13 @@ export function resetMockPlugins(): void {
   available = structuredClone(AVAILABLE);
 }
 
+/** Adds an installed row for offline mutation-outcome fixtures only. */
+export function addMockPluginFixtureForTests(entry: PluginEntry): void {
+  inventory.plugins.push(structuredClone(entry));
+  const status = inventory.agents.find((row) => row.agent === entry.agent);
+  if (status) status.pluginCount = inventory.plugins.filter((row) => row.agent === entry.agent).length;
+}
+
 function assertListedAgent(agent: AgentKey): void {
   if (agent !== 'claude' && agent !== 'codex' && agent !== 'grok') {
     throw new Error(
@@ -354,6 +367,62 @@ function setEnabled(agent: AgentKey, name: string, marketplace: string | null | 
     throw new Error(`plugin not listed: ${name}`);
   }
   row.enabled = enabled;
+  return row;
+}
+
+function mutationTarget(row: PluginEntry): PluginMutationTarget {
+  return {
+    agent: row.agent,
+    name: row.name,
+    marketplace: row.marketplace,
+    installSource: row.installSource,
+  };
+}
+
+function mutationOutcome(
+  action: PluginMutationAction,
+  agent: AgentKey,
+  target: PluginMutationTarget | null,
+  scope: 'target' | 'marketplace' | 'agent',
+  scannedPluginIds: string[],
+  status: 'confirmed' | 'unconfirmed' = 'confirmed',
+  reason?: Extract<PluginMutationOutcome, { status: 'unconfirmed' }>['reason'],
+  marketplaceEntries?: PluginEntry[],
+): PluginMutationOutcome {
+  const common = {
+    action,
+    agent,
+    ...(target ? { target } : {}),
+    inventory: structuredClone(inventory),
+    reinventory: {
+      scope,
+      scannedPluginIds,
+      ...(marketplaceEntries ? { marketplaceEntries: structuredClone(marketplaceEntries) } : {}),
+    },
+  } as const;
+  if (status === 'confirmed') return { status, ...common };
+  if (!reason) throw new Error('unconfirmed fixture outcome requires a reason');
+  return { status, reason, ...common };
+}
+
+function ambiguousGrokMutationOutcome(
+  action: Extract<PluginMutationAction, 'uninstall' | 'enable' | 'disable' | 'update'>,
+  name: string,
+  marketplace: string | null | undefined,
+): PluginMutationOutcome | null {
+  const candidates = inventory.plugins.filter(
+    (row) => row.agent === 'grok' && row.name === name,
+  );
+  if (candidates.length <= 1) return null;
+  return mutationOutcome(
+    action,
+    'grok',
+    { agent: 'grok', name, marketplace },
+    'target',
+    candidates.map((row) => row.id),
+    'unconfirmed',
+    'ambiguousTarget',
+  );
 }
 
 export function createMockPluginPort(): PluginPort {
@@ -405,7 +474,7 @@ export function createMockPluginPort(): PluginPort {
       if (inventory.plugins.some((p) => p.agent === agent && p.name === preview.name)) {
         throw new Error(`plugin already listed: ${preview.name}`);
       }
-      inventory.plugins.push({
+      const installed: PluginEntry = {
         ...preview,
         id: `${agent}:${preview.name}${preview.marketplace ? `@${preview.marketplace}` : ''}`,
         enabled: true,
@@ -420,15 +489,27 @@ export function createMockPluginPort(): PluginPort {
                 : `~/.claude/plugins/cache/${preview.name}/1.0.0`,
         version: preview.version ?? '1.0.0',
         scope: 'user',
-      });
+      };
+      inventory.plugins.push(installed);
       const status = inventory.agents.find((row) => row.agent === agent);
       if (status) status.pluginCount = inventory.plugins.filter((p) => p.agent === agent).length;
+      return mutationOutcome(
+        'install',
+        agent,
+        mutationTarget(installed),
+        'target',
+        [installed.id],
+      );
     },
     async uninstall(agent, name, marketplace, installSource, _options) {
       await delay(40);
       assertInstallAgent(agent);
       if (agent === 'pi' && !installSource) {
         throw new Error('Pi uninstall requires the exact install source');
+      }
+      if (agent === 'grok') {
+        const ambiguous = ambiguousGrokMutationOutcome('uninstall', name, marketplace);
+        if (ambiguous) return ambiguous;
       }
       const index = inventory.plugins.findIndex(
         (p) =>
@@ -440,21 +521,50 @@ export function createMockPluginPort(): PluginPort {
       if (index < 0) {
         throw new Error(`plugin not listed: ${name}`);
       }
-      inventory.plugins.splice(index, 1);
+      const removed = inventory.plugins.splice(index, 1)[0];
+      if (!removed) throw new Error(`plugin not listed: ${name}`);
       const status = inventory.agents.find((row) => row.agent === agent);
       if (status) status.pluginCount = inventory.plugins.filter((p) => p.agent === agent).length;
+      return mutationOutcome(
+        'uninstall',
+        agent,
+        mutationTarget(removed),
+        'target',
+        [],
+      );
     },
     async enable(agent, name, marketplace) {
       await delay(40);
-      setEnabled(agent, name, marketplace, true);
+      if (agent === 'grok') {
+        const ambiguous = ambiguousGrokMutationOutcome('enable', name, marketplace);
+        if (ambiguous) return ambiguous;
+      }
+      const row = setEnabled(agent, name, marketplace, true);
+      return mutationOutcome('enable', agent, mutationTarget(row), 'target', [row.id]);
     },
     async disable(agent, name, marketplace) {
       await delay(40);
-      setEnabled(agent, name, marketplace, false);
+      if (agent === 'grok') {
+        const ambiguous = ambiguousGrokMutationOutcome('disable', name, marketplace);
+        if (ambiguous) return ambiguous;
+      }
+      const row = setEnabled(agent, name, marketplace, false);
+      return mutationOutcome('disable', agent, mutationTarget(row), 'target', [row.id]);
     },
     async refreshMarketplace(agent) {
       await delay(40);
       assertMarketplaceAgent(agent);
+      const catalog = available.filter((row) => row.agent === agent);
+      return mutationOutcome(
+        'marketplaceRefresh',
+        agent,
+        null,
+        'marketplace',
+        catalog.map((row) => row.id),
+        'unconfirmed',
+        'marketplaceEntriesUnchanged',
+        catalog,
+      );
     },
     async update(agent, name, marketplace, scope, options) {
       await delay(40);
@@ -462,6 +572,10 @@ export function createMockPluginPort(): PluginPort {
       if (!options.confirmed) throw new Error('update needs confirmation');
       if (scope !== 'user') throw new Error('only user-scope plugin packs can be updated here');
       if (!isSafePluginIdentifier(name)) throw new Error('invalid plugin name');
+      if (agent === 'grok') {
+        const ambiguous = ambiguousGrokMutationOutcome('update', name, marketplace);
+        if (ambiguous) return ambiguous;
+      }
       const row = inventory.plugins.find(
         (plugin) =>
           plugin.agent === agent &&
@@ -470,6 +584,7 @@ export function createMockPluginPort(): PluginPort {
       );
       if (!row) throw new Error('plugin not listed');
       row.version = row.version ? `${row.version}-updated` : 'updated';
+      return mutationOutcome('update', agent, mutationTarget(row), 'target', [row.id]);
     },
     async updatePi(options) {
       await delay(40);
@@ -483,6 +598,13 @@ export function createMockPluginPort(): PluginPort {
         }
         row.version = row.version ? `${row.version}-updated` : 'updated';
       }
+      return mutationOutcome(
+        'piUpdate',
+        'pi',
+        null,
+        'agent',
+        inventory.plugins.filter((row) => row.agent === 'pi').map((row) => row.id),
+      );
     },
   };
 }

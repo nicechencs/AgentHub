@@ -3,6 +3,7 @@ import type {
   PluginEntry,
   PluginInstallOptions,
   PluginInventory,
+  PluginMutationOutcome,
   PluginUninstallOptions,
   PluginUpdateOptions,
 } from '@/lib/backend/contracts/plugin-types';
@@ -28,7 +29,7 @@ export async function installPlugin(
   agent: AgentKey,
   source: string,
   options: PluginInstallOptions,
-): Promise<void> {
+): Promise<PluginMutationOutcome> {
   return getBackend().plugins.install(agent, source, options);
 }
 
@@ -39,7 +40,7 @@ export async function uninstallPlugin(
   marketplace: string | null | undefined,
   installSource: string | null | undefined,
   options: PluginUninstallOptions,
-): Promise<void> {
+): Promise<PluginMutationOutcome> {
   return getBackend().plugins.uninstall(agent, name, marketplace, installSource, options);
 }
 
@@ -48,7 +49,7 @@ export async function enablePlugin(
   agent: AgentKey,
   name: string,
   marketplace?: string | null,
-): Promise<void> {
+): Promise<PluginMutationOutcome> {
   return getBackend().plugins.enable(agent, name, marketplace);
 }
 
@@ -57,12 +58,12 @@ export async function disablePlugin(
   agent: AgentKey,
   name: string,
   marketplace?: string | null,
-): Promise<void> {
+): Promise<PluginMutationOutcome> {
   return getBackend().plugins.disable(agent, name, marketplace);
 }
 
 /** Refresh Claude, Codex, or Grok marketplace catalogs. This does not update installed packs. */
-export async function refreshPluginMarketplace(agent: AgentKey): Promise<void> {
+export async function refreshPluginMarketplace(agent: AgentKey): Promise<PluginMutationOutcome> {
   return getBackend().plugins.refreshMarketplace(agent);
 }
 
@@ -73,11 +74,11 @@ export async function updatePlugin(
   marketplace: string | null | undefined,
   scope: string | null | undefined,
   options: PluginUpdateOptions,
-): Promise<void> {
+): Promise<PluginMutationOutcome> {
   return getBackend().plugins.update(agent, name, marketplace, scope, options);
 }
 
 /** Update eligible Pi extensions after confirmation. */
-export async function updatePiPlugins(options: PluginUpdateOptions): Promise<void> {
+export async function updatePiPlugins(options: PluginUpdateOptions): Promise<PluginMutationOutcome> {
   return getBackend().plugins.updatePi(options);
 }

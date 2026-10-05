@@ -79,11 +79,16 @@ pub use plugin_apply::{
     disable_plugin, disable_plugin_with, disable_plugin_with_v2, enable_plugin, enable_plugin_with,
     enable_plugin_with_v2, install_plugin, install_plugin_with, install_plugin_with_v2,
     list_available_plugins, list_available_plugins_with, list_available_plugins_with_v2,
+    plugin_inventory_agent_ids, plugin_inventory_agent_verified, plugin_inventory_target,
+    plugin_inventory_target_candidates, plugin_inventory_target_is_ambiguous,
+    plugin_inventory_target_matches, plugin_inventory_versions_or_entries_changed,
     preview_plugin_install, preview_plugin_install_with, preview_plugin_install_with_v2,
     refresh_plugin_marketplace, refresh_plugin_marketplace_with,
     refresh_plugin_marketplace_with_v2, uninstall_plugin, uninstall_plugin_with,
     uninstall_plugin_with_v2, update_pi_plugins, update_plugin, update_plugin_with,
     update_plugin_with_v2, PluginApplyContext, PluginApplyContextV2, PluginInstallOptions,
+    PluginMutationAction, PluginMutationOutcome, PluginMutationReinventory,
+    PluginMutationReinventoryScope, PluginMutationTarget, PluginMutationUnconfirmedReason,
     PluginUninstallOptions, PluginUpdateOptions,
 };
 pub use plugin_inventory::{

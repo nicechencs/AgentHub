@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
+use serde::Serialize;
 use serde_json::Value as JsonValue;
 use toml_edit::{value, DocumentMut};
 
@@ -19,7 +20,7 @@ use crate::models::AgentId;
 use crate::models::{RunSpec, RunStatus};
 use crate::services::plugin_inventory::{
     parse_cli_available_plugin_list, preview_local_plugin, CliRun, PluginCliRunner, PluginEntry,
-    SystemPluginCliRunner,
+    PluginInventory, SystemPluginCliRunner,
 };
 use crate::utils::atomic::atomic_write;
 use crate::utils::paths::{agent_config_dir, agent_home, home_dir};
@@ -71,6 +72,287 @@ pub struct PluginUninstallOptions {
 #[derive(Debug, Clone, Copy)]
 pub struct PluginUpdateOptions {
     pub confirmed: bool,
+}
+
+/// The fixed vendor operation whose result was re-inventoried while the
+/// desktop live-write lock was still held. This is deliberately not an
+/// extension SDK or a dynamic plugin operation vocabulary.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PluginMutationAction {
+    Install,
+    Uninstall,
+    Enable,
+    Disable,
+    MarketplaceRefresh,
+    Update,
+    PiUpdate,
+}
+
+/// The smallest stable identity AgentHub can prove from a post-command scan.
+/// Grok has no marketplace selector in its official operation, while Codex
+/// and Pi require their exact install source.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginMutationTarget {
+    pub agent: AgentId,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub marketplace: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_source: Option<String>,
+}
+
+impl PluginMutationTarget {
+    pub fn new(
+        agent: AgentId,
+        name: impl Into<String>,
+        marketplace: Option<&str>,
+        install_source: Option<&str>,
+    ) -> Self {
+        let name = name.into();
+        Self {
+            agent,
+            install_source: install_source.map(str::to_string).or_else(|| {
+                if agent != AgentId::Codex {
+                    return None;
+                }
+                if name.contains('@') {
+                    Some(name.clone())
+                } else {
+                    marketplace.map(|market| format!("{name}@{market}"))
+                }
+            }),
+            name,
+            marketplace: marketplace.map(str::to_string),
+        }
+    }
+
+    pub fn from_entry(entry: &PluginEntry) -> Self {
+        Self {
+            agent: entry.agent,
+            name: entry.name.clone(),
+            marketplace: entry.marketplace.clone(),
+            install_source: entry.install_source.clone(),
+        }
+    }
+}
+
+/// The portion of the post-command scan that the outcome actually checked.
+/// Pi updates are intentionally reported as an Agent-wide scan, never as a
+/// pretend confirmation of one package.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginMutationReinventory {
+    pub scope: PluginMutationReinventoryScope,
+    pub scanned_plugin_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub marketplace_entries: Option<Vec<PluginEntry>>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PluginMutationReinventoryScope {
+    Target,
+    Marketplace,
+    Agent,
+}
+
+/// Why a successful official command was not shown as a confirmed product
+/// result. Command failures remain `Err`; this enum only covers successful
+/// commands whose required re-inventory evidence was absent or inconclusive.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PluginMutationUnconfirmedReason {
+    InventoryUnavailable,
+    /// Grok accepts only the package name. More than one installed row with
+    /// that name leaves no stable identity to confirm after the command.
+    AmbiguousTarget,
+    TargetNotListed,
+    TargetStillListed,
+    EnabledStateMismatch,
+    VersionUnchangedOrUnknown,
+    MarketplaceSnapshotUnavailable,
+    MarketplaceEntriesUnchanged,
+    PiScopeUnchanged,
+}
+
+/// A tagged, non-ambiguous desktop mutation result. A successful process exit
+/// is insufficient: callers only receive `Confirmed` when the immediate scan
+/// proves the requested fixed-vendor state transition.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum PluginMutationOutcome {
+    Confirmed {
+        action: PluginMutationAction,
+        agent: AgentId,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        target: Option<PluginMutationTarget>,
+        inventory: PluginInventory,
+        reinventory: PluginMutationReinventory,
+    },
+    Unconfirmed {
+        action: PluginMutationAction,
+        agent: AgentId,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        target: Option<PluginMutationTarget>,
+        reason: PluginMutationUnconfirmedReason,
+        inventory: PluginInventory,
+        reinventory: PluginMutationReinventory,
+    },
+}
+
+impl PluginMutationOutcome {
+    pub fn confirmed(
+        action: PluginMutationAction,
+        agent: AgentId,
+        target: Option<PluginMutationTarget>,
+        inventory: PluginInventory,
+        reinventory: PluginMutationReinventory,
+    ) -> Self {
+        Self::Confirmed {
+            action,
+            agent,
+            target,
+            inventory,
+            reinventory,
+        }
+    }
+
+    pub fn unconfirmed(
+        action: PluginMutationAction,
+        agent: AgentId,
+        target: Option<PluginMutationTarget>,
+        reason: PluginMutationUnconfirmedReason,
+        inventory: PluginInventory,
+        reinventory: PluginMutationReinventory,
+    ) -> Self {
+        Self::Unconfirmed {
+            action,
+            agent,
+            target,
+            reason,
+            inventory,
+            reinventory,
+        }
+    }
+
+    pub fn inventory(&self) -> &PluginInventory {
+        match self {
+            Self::Confirmed { inventory, .. } | Self::Unconfirmed { inventory, .. } => inventory,
+        }
+    }
+
+    pub fn is_confirmed(&self) -> bool {
+        matches!(self, Self::Confirmed { .. })
+    }
+}
+
+/// A scan is usable as mutation evidence only when that Agent's own list
+/// completed. An empty row set from a failed list must never prove removal.
+pub fn plugin_inventory_agent_verified(inventory: &PluginInventory, agent: AgentId) -> bool {
+    inventory.agents.iter().any(|status| {
+        status.agent == agent && status.support == "listed" && status.error_code.is_none()
+    })
+}
+
+/// Match the vendor identity that its fixed command actually accepts. This is
+/// intentionally not a cross-vendor plugin identity abstraction.
+pub fn plugin_inventory_target_matches(row: &PluginEntry, target: &PluginMutationTarget) -> bool {
+    if row.agent != target.agent {
+        return false;
+    }
+    // Pi's command accepts a source while its re-inventory names the package
+    // from its manifest. The normalized source is therefore the only exact
+    // stable identity shared by both sides of that operation.
+    if target.agent != AgentId::Pi && row.name != target.name {
+        return false;
+    }
+    match target.agent {
+        AgentId::Codex | AgentId::Pi => {
+            target.install_source.is_some() && row.install_source == target.install_source
+        }
+        AgentId::Claude => {
+            row.marketplace == target.marketplace
+                && target
+                    .install_source
+                    .as_ref()
+                    .is_none_or(|source| row.install_source.as_ref() == Some(source))
+        }
+        // Grok's official operation accepts its name. Its listing may omit a
+        // marketplace and may represent git/local source differently, so
+        // this deliberately identifies its name candidates. Callers must
+        // require exactly one candidate before presenting a confirmed result.
+        AgentId::Grok => true,
+        _ => false,
+    }
+}
+
+pub fn plugin_inventory_target<'a>(
+    inventory: &'a PluginInventory,
+    target: &PluginMutationTarget,
+) -> Option<&'a PluginEntry> {
+    plugin_inventory_target_candidates(inventory, target)
+        .into_iter()
+        .next()
+}
+
+/// All inventory rows the fixed vendor operation could mean. In particular,
+/// Grok accepts only a name, so callers must not treat the first same-name row
+/// as proof when more than one row is present.
+pub fn plugin_inventory_target_candidates<'a>(
+    inventory: &'a PluginInventory,
+    target: &PluginMutationTarget,
+) -> Vec<&'a PluginEntry> {
+    inventory
+        .plugins
+        .iter()
+        .filter(|row| plugin_inventory_target_matches(row, target))
+        .collect()
+}
+
+pub fn plugin_inventory_target_is_ambiguous(
+    inventory: &PluginInventory,
+    target: &PluginMutationTarget,
+) -> bool {
+    target.agent == AgentId::Grok && plugin_inventory_target_candidates(inventory, target).len() > 1
+}
+
+pub fn plugin_inventory_agent_ids(inventory: &PluginInventory, agent: AgentId) -> Vec<String> {
+    inventory
+        .plugins
+        .iter()
+        .filter(|row| row.agent == agent)
+        .map(|row| row.id.clone())
+        .collect()
+}
+
+/// Reports only observable entry or version changes. It deliberately does not
+/// infer that an unchanged Pi package was updated by a successful bulk CLI.
+pub fn plugin_inventory_versions_or_entries_changed(
+    before: &PluginInventory,
+    after: &PluginInventory,
+    agent: AgentId,
+) -> bool {
+    let signatures = |inventory: &PluginInventory| {
+        let mut rows = inventory
+            .plugins
+            .iter()
+            .filter(|row| row.agent == agent)
+            .map(|row| {
+                (
+                    row.id.clone(),
+                    row.name.clone(),
+                    row.marketplace.clone(),
+                    row.install_source.clone(),
+                    row.version.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        rows.sort_unstable();
+        rows
+    };
+    signatures(before) != signatures(after)
 }
 
 impl Default for PluginUninstallOptions {

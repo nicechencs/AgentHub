@@ -9,7 +9,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use agenthub_core::models::AgentId;
-use agenthub_core::services::{PluginEntry, PluginInventory};
+use agenthub_core::services::{
+    PluginEntry, PluginInventory, PluginMutationAction, PluginMutationOutcome,
+    PluginMutationReinventoryScope, PluginMutationUnconfirmedReason,
+};
 use serde_json::{json, Value};
 
 use crate::commands::plugins::{
@@ -22,6 +25,7 @@ use crate::state::AppState;
 type ProbeResult<T> = Result<T, String>;
 
 const FAILURE_ENV: &str = "AGENTHUB_PLUGIN_FIXTURE_FAIL_ONCE";
+const GROK_AMBIGUOUS_ENV: &str = "AGENTHUB_PLUGIN_FIXTURE_GROK_AMBIGUOUS";
 
 pub fn main_entry() -> ProbeResult<()> {
     let mut args = std::env::args_os().skip(1);
@@ -99,10 +103,22 @@ async fn run(root: &Path) -> ProbeResult<Value> {
         rejected_install(&state, AgentId::Pi, pi_source.clone()).await?,
     ];
 
-    install_plugin_inner(&state, "claude".into(), entry_source(&claude)?, true).await?;
-    install_plugin_inner(&state, "grok".into(), entry_source(&grok)?, true).await?;
-    install_plugin_inner(&state, "codex".into(), entry_source(&codex)?, true).await?;
-    install_plugin_inner(&state, "pi".into(), pi_source.clone(), true).await?;
+    ensure_confirmed(
+        install_plugin_inner(&state, "claude".into(), entry_source(&claude)?, true).await?,
+        "Claude install",
+    )?;
+    ensure_confirmed(
+        install_plugin_inner(&state, "grok".into(), entry_source(&grok)?, true).await?,
+        "Grok install",
+    )?;
+    ensure_confirmed(
+        install_plugin_inner(&state, "codex".into(), entry_source(&codex)?, true).await?,
+        "Codex install",
+    )?;
+    ensure_confirmed(
+        install_plugin_inner(&state, "pi".into(), pi_source.clone(), true).await?,
+        "Pi install",
+    )?;
 
     let installed = list_plugin_inventory_inner(&state).await?;
     ensure_installed(&installed, &[&claude, &grok, &codex, &pi])?;
@@ -110,6 +126,7 @@ async fn run(root: &Path) -> ProbeResult<Value> {
     toggle_round_trip(&state, &claude).await?;
     toggle_round_trip(&state, &grok).await?;
     toggle_round_trip(&state, &codex).await?;
+    let grok_ambiguous = ambiguous_grok_disable(&state, &grok).await?;
     let pi_toggle_error = disable_plugin_inner(&state, "pi".into(), pi.name.clone(), None)
         .await
         .expect_err("Pi unexpectedly exposed plugin enable/disable");
@@ -119,8 +136,14 @@ async fn run(root: &Path) -> ProbeResult<Value> {
     )?;
 
     rejected_updates(&state, &claude, &grok).await?;
-    update_plugin_entry(&state, &claude, true).await?;
-    update_plugin_entry(&state, &grok, true).await?;
+    ensure_confirmed(
+        update_plugin_entry(&state, &claude, true).await?,
+        "Claude update",
+    )?;
+    ensure_confirmed(
+        update_plugin_entry(&state, &grok, true).await?,
+        "Grok update",
+    )?;
     let codex_update_error = update_plugin_inner(
         &state,
         "codex".into(),
@@ -142,7 +165,7 @@ async fn run(root: &Path) -> ProbeResult<Value> {
         pi_confirm_error.contains("needs confirmation"),
         "Pi update confirmation error changed",
     )?;
-    update_pi_plugins_inner(&state, true).await?;
+    ensure_pi_scope_unconfirmed(update_pi_plugins_inner(&state, true).await?)?;
     let pi_update_result = fs::read_to_string(root.join("fixture-state/pi-update-result.json"))
         .map_err(|error| format!("read Pi update result: {error}"))?;
     let pi_update_result: Value = serde_json::from_str(&pi_update_result)
@@ -159,7 +182,10 @@ async fn run(root: &Path) -> ProbeResult<Value> {
         "Pi update did not receive the installed eligible extension",
     )?;
     for agent in [AgentId::Claude, AgentId::Grok, AgentId::Codex] {
-        refresh_plugin_marketplace_inner(&state, agent.as_str().into()).await?;
+        ensure_marketplace_unconfirmed(
+            refresh_plugin_marketplace_inner(&state, agent.as_str().into()).await?,
+            agent,
+        )?;
     }
 
     let rollback = vec![
@@ -177,15 +203,18 @@ async fn run(root: &Path) -> ProbeResult<Value> {
     uninstall_entry(&state, &claude).await?;
     uninstall_entry(&state, &grok).await?;
     uninstall_entry(&state, &codex).await?;
-    uninstall_plugin_inner(
-        &state,
-        "pi".into(),
-        pi.name.clone(),
-        None,
-        Some(pi_source),
-        Some(true),
-    )
-    .await?;
+    ensure_confirmed(
+        uninstall_plugin_inner(
+            &state,
+            "pi".into(),
+            pi.name.clone(),
+            None,
+            Some(pi_source),
+            Some(true),
+        )
+        .await?,
+        "Pi uninstall",
+    )?;
 
     let final_inventory = list_plugin_inventory_inner(&state).await?;
     ensure_uninstalled(&final_inventory, &[&claude, &grok, &codex, &pi])?;
@@ -214,10 +243,12 @@ async fn run(root: &Path) -> ProbeResult<Value> {
             "install": 4,
             "inventoryScans": 10,
             "toggleRoundTrips": 3,
+            "grokAmbiguousMutation": grok_ambiguous,
             "unsupportedPiToggle": pi_toggle_error,
             "individualUpdates": 2,
             "marketplaceRefreshes": 3,
-            "piBulkUpdate": true,
+            "piBulkUpdate": { "scope": "agent", "status": "unconfirmed" },
+            "lockBoundMutationOutcomes": true,
             "failureRollbacks": rollback,
             "uninstall": 4
         },
@@ -262,22 +293,97 @@ async fn rejected_install(state: &AppState, agent: AgentId, source: String) -> P
 }
 
 async fn toggle_round_trip(state: &AppState, entry: &PluginEntry) -> ProbeResult<()> {
-    disable_plugin_inner(
-        state,
-        entry.agent.as_str().into(),
-        entry.name.clone(),
-        entry.marketplace.clone(),
-    )
-    .await?;
+    ensure_confirmed(
+        disable_plugin_inner(
+            state,
+            entry.agent.as_str().into(),
+            entry.name.clone(),
+            entry.marketplace.clone(),
+        )
+        .await?,
+        &format!("{} disable", entry.agent.as_str()),
+    )?;
     ensure_enabled_state(state, entry, false).await?;
-    enable_plugin_inner(
+    ensure_confirmed(
+        enable_plugin_inner(
+            state,
+            entry.agent.as_str().into(),
+            entry.name.clone(),
+            entry.marketplace.clone(),
+        )
+        .await?,
+        &format!("{} enable", entry.agent.as_str()),
+    )?;
+    ensure_enabled_state(state, entry, true).await
+}
+
+async fn ambiguous_grok_disable(state: &AppState, entry: &PluginEntry) -> ProbeResult<Value> {
+    ensure(
+        entry.agent == AgentId::Grok,
+        "ambiguous probe requires Grok",
+    )?;
+    std::env::set_var(GROK_AMBIGUOUS_ENV, "1");
+    let outcome = disable_plugin_inner(
         state,
         entry.agent.as_str().into(),
         entry.name.clone(),
         entry.marketplace.clone(),
     )
-    .await?;
-    ensure_enabled_state(state, entry, true).await
+    .await;
+    std::env::remove_var(GROK_AMBIGUOUS_ENV);
+    let outcome = outcome?;
+    match outcome {
+        PluginMutationOutcome::Unconfirmed {
+            action: PluginMutationAction::Disable,
+            agent: AgentId::Grok,
+            reason: PluginMutationUnconfirmedReason::AmbiguousTarget,
+            inventory,
+            reinventory,
+            ..
+        } => {
+            ensure(
+                reinventory.scope == PluginMutationReinventoryScope::Target,
+                "ambiguous Grok outcome did not report a target re-inventory",
+            )?;
+            let candidates = inventory
+                .plugins
+                .iter()
+                .filter(|row| row.agent == AgentId::Grok && row.name == entry.name)
+                .collect::<Vec<_>>();
+            ensure(
+                candidates.len() == 2,
+                "ambiguous Grok fixture did not return two same-name candidates",
+            )?;
+            let sources = candidates
+                .iter()
+                .filter_map(|row| row.install_source.as_deref())
+                .collect::<std::collections::BTreeSet<_>>();
+            ensure(
+                sources.len() == 2,
+                "ambiguous Grok candidates did not retain distinct install sources",
+            )?;
+            let candidate_ids = candidates
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<std::collections::BTreeSet<_>>();
+            let scanned_ids = reinventory
+                .scanned_plugin_ids
+                .iter()
+                .map(String::as_str)
+                .collect::<std::collections::BTreeSet<_>>();
+            ensure(
+                candidate_ids == scanned_ids,
+                "ambiguous Grok outcome did not report every candidate it scanned",
+            )?;
+            Ok(json!({
+                "action": "disable",
+                "status": "unconfirmed",
+                "reason": "ambiguousTarget",
+                "candidateCount": candidates.len(),
+            }))
+        }
+        _ => Err("Grok same-name mutation must return AmbiguousTarget/unconfirmed".into()),
+    }
 }
 
 async fn ensure_enabled_state(
@@ -326,7 +432,7 @@ async fn update_plugin_entry(
     state: &AppState,
     entry: &PluginEntry,
     confirmed: bool,
-) -> ProbeResult<()> {
+) -> ProbeResult<PluginMutationOutcome> {
     update_plugin_inner(
         state,
         entry.agent.as_str().into(),
@@ -408,15 +514,56 @@ async fn failed_pi_update_restores(state: &AppState, fail_key: &str) -> ProbeRes
 }
 
 async fn uninstall_entry(state: &AppState, entry: &PluginEntry) -> ProbeResult<()> {
-    uninstall_plugin_inner(
-        state,
-        entry.agent.as_str().into(),
-        entry.name.clone(),
-        entry.marketplace.clone(),
-        entry.install_source.clone(),
-        Some(true),
+    ensure_confirmed(
+        uninstall_plugin_inner(
+            state,
+            entry.agent.as_str().into(),
+            entry.name.clone(),
+            entry.marketplace.clone(),
+            entry.install_source.clone(),
+            Some(true),
+        )
+        .await?,
+        &format!("{} uninstall", entry.agent.as_str()),
     )
-    .await
+}
+
+fn ensure_confirmed(outcome: PluginMutationOutcome, label: &str) -> ProbeResult<()> {
+    ensure(
+        outcome.is_confirmed(),
+        &format!("{label} command succeeded without a confirmed re-inventory outcome"),
+    )
+}
+
+fn ensure_marketplace_unconfirmed(
+    outcome: PluginMutationOutcome,
+    agent: AgentId,
+) -> ProbeResult<()> {
+    match outcome {
+        PluginMutationOutcome::Unconfirmed { reinventory, .. }
+            if reinventory.scope == PluginMutationReinventoryScope::Marketplace => ensure(
+                !reinventory.scanned_plugin_ids.is_empty() || reinventory.marketplace_entries == Some(Vec::new()),
+                &format!("{} marketplace result did not report its re-inventory", agent.as_str()),
+            ),
+        _ => Err(format!(
+            "{} marketplace command should remain unconfirmed when fixture catalog entries are unchanged",
+            agent.as_str()
+        )),
+    }
+}
+
+fn ensure_pi_scope_unconfirmed(outcome: PluginMutationOutcome) -> ProbeResult<()> {
+    match outcome {
+        PluginMutationOutcome::Unconfirmed { reinventory, .. }
+            if reinventory.scope == PluginMutationReinventoryScope::Agent =>
+        {
+            ensure(
+                !reinventory.scanned_plugin_ids.is_empty(),
+                "Pi update outcome did not report the Agent-wide re-inventory range",
+            )
+        }
+        _ => Err("Pi bulk update must not claim a single-package confirmation".into()),
+    }
 }
 
 fn entry_source(entry: &PluginEntry) -> ProbeResult<String> {

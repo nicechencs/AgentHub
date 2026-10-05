@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { resetBackend } from '@/app/runtime';
+import { addMockPluginFixtureForTests } from '@/dev/mocks/plugins';
 import {
   disablePlugin,
   enablePlugin,
@@ -47,19 +48,48 @@ describe('plugin inventory and enable/disable (browser mock)', () => {
   });
 
   it('round-trips enable then disable for listed Claude, Codex, and Grok packs', async () => {
-    await disablePlugin('claude', 'demo', 'official');
-    await disablePlugin('codex', 'workflows', 'openai-curated');
-    await enablePlugin('grok', 'gdrive', 'xAI Official');
+    const claudeDisabled = await disablePlugin('claude', 'demo', 'official');
+    const codexDisabled = await disablePlugin('codex', 'workflows', 'openai-curated');
+    const grokEnabled = await enablePlugin('grok', 'gdrive', 'xAI Official');
+    expect([claudeDisabled, codexDisabled, grokEnabled].every((outcome) => outcome.status === 'confirmed')).toBe(true);
     let inv = await listPluginInventory();
     expect(inv.plugins.find((p) => p.agent === 'claude')?.enabled).toBe(false);
     expect(inv.plugins.find((p) => p.agent === 'grok')?.enabled).toBe(true);
     expect(inv.plugins.find((p) => p.agent === 'codex')?.enabled).toBe(false);
 
-    await enablePlugin('claude', 'demo', 'official');
-    await disablePlugin('grok', 'gdrive', 'xAI Official');
+    expect((await enablePlugin('claude', 'demo', 'official')).status).toBe('confirmed');
+    expect((await disablePlugin('grok', 'gdrive', 'xAI Official')).status).toBe('confirmed');
     inv = await listPluginInventory();
     expect(inv.plugins.find((p) => p.agent === 'claude')?.enabled).toBe(true);
     expect(inv.plugins.find((p) => p.agent === 'grok')?.enabled).toBe(false);
+  });
+
+  it('does not confirm a Grok name-only mutation when local rows are ambiguous', async () => {
+    // Materialize the mock backend before adding this offline inventory fixture;
+    // its factory resets all mock domains on first use.
+    await listPluginInventory();
+    addMockPluginFixtureForTests({
+      id: 'grok:gdrive#~/.grok/plugins/gdrive-local',
+      agent: 'grok',
+      name: 'gdrive',
+      installSource: '~/src/gdrive-local',
+      source: 'live',
+      components: [],
+    });
+
+    await expect(enablePlugin('grok', 'gdrive', 'xAI Official')).resolves.toMatchObject({
+      status: 'unconfirmed',
+      action: 'enable',
+      agent: 'grok',
+      reason: 'ambiguousTarget',
+      reinventory: {
+        scope: 'target',
+        scannedPluginIds: [
+          'grok:gdrive',
+          'grok:gdrive#~/.grok/plugins/gdrive-local',
+        ],
+      },
+    });
   });
 
   it('rejects enable/disable for planned and unsupported agents', async () => {
@@ -95,13 +125,15 @@ describe('plugin inventory and enable/disable (browser mock)', () => {
   it('installs then uninstalls a Grok marketplace pack', async () => {
     const preview = await previewPluginInstall('grok', 'superpowers');
     expect(preview.components.some((c) => c.kind === 'skills')).toBe(true);
-    await installPlugin('grok', 'superpowers', { confirmed: true });
+    const installed = await installPlugin('grok', 'superpowers', { confirmed: true });
+    expect(installed).toMatchObject({ status: 'confirmed', action: 'install', agent: 'grok' });
     let inv = await listPluginInventory();
     expect(inv.plugins.some((p) => p.agent === 'grok' && p.name === 'superpowers')).toBe(true);
 
-    await uninstallPlugin('grok', 'superpowers', 'xAI Official', 'superpowers', {
+    const removed = await uninstallPlugin('grok', 'superpowers', 'xAI Official', 'superpowers', {
       keepData: true,
     });
+    expect(removed).toMatchObject({ status: 'confirmed', action: 'uninstall', agent: 'grok' });
     inv = await listPluginInventory();
     expect(inv.plugins.some((p) => p.name === 'superpowers')).toBe(false);
     expect(inv.plugins.some((p) => p.name === 'gdrive')).toBe(true);
@@ -120,8 +152,8 @@ describe('plugin inventory and enable/disable (browser mock)', () => {
     await expect(previewPluginInstall('pi', '~/src/local-pack')).resolves.toMatchObject({
       installSource: '~/src/local-pack',
     });
-    await installPlugin('codex', 'release-tools@openai-curated', { confirmed: true });
-    await installPlugin('pi', 'npm:new-pack@1.2', { confirmed: true });
+    expect((await installPlugin('codex', 'release-tools@openai-curated', { confirmed: true })).status).toBe('confirmed');
+    expect((await installPlugin('pi', 'npm:new-pack@1.2', { confirmed: true })).status).toBe('confirmed');
     let inv = await listPluginInventory();
     expect(inv.plugins.find((p) => p.agent === 'codex' && p.name === 'release-tools')).toBeTruthy();
     expect(inv.plugins.find((p) => p.name === 'new-pack')?.installSource).toBe(
@@ -131,15 +163,20 @@ describe('plugin inventory and enable/disable (browser mock)', () => {
     await expect(
       uninstallPlugin('pi', 'new-pack', null, null, { keepData: true }),
     ).rejects.toThrow(/exact install source/);
-    await uninstallPlugin('pi', 'new-pack', null, 'npm:new-pack@1.2', { keepData: true });
+    expect((await uninstallPlugin('pi', 'new-pack', null, 'npm:new-pack@1.2', { keepData: true })).status).toBe('confirmed');
     inv = await listPluginInventory();
     expect(inv.plugins.some((p) => p.name === 'new-pack')).toBe(false);
   });
 
   it('keeps marketplace refresh separate from installed-pack updates', async () => {
-    await expect(refreshPluginMarketplace('claude')).resolves.toBeUndefined();
-    await expect(refreshPluginMarketplace('codex')).resolves.toBeUndefined();
-    await expect(refreshPluginMarketplace('grok')).resolves.toBeUndefined();
+    for (const agent of ['claude', 'codex', 'grok'] as const) {
+      await expect(refreshPluginMarketplace(agent)).resolves.toMatchObject({
+        status: 'unconfirmed',
+        action: 'marketplaceRefresh',
+        agent,
+        reason: 'marketplaceEntriesUnchanged',
+      });
+    }
     await expect(refreshPluginMarketplace('pi')).rejects.toThrow(/Claude, Codex, and Grok/);
 
     await expect(
@@ -154,14 +191,18 @@ describe('plugin inventory and enable/disable (browser mock)', () => {
     await expect(
       updatePlugin('grok', 'bad\nname', null, 'user', { confirmed: true }),
     ).rejects.toThrow(/invalid plugin name/);
-    await updatePlugin('claude', 'demo', 'official', 'user', { confirmed: true });
+    await expect(
+      updatePlugin('claude', 'demo', 'official', 'user', { confirmed: true }),
+    ).resolves.toMatchObject({ status: 'confirmed', action: 'update', agent: 'claude' });
     const inv = await listPluginInventory();
     expect(inv.plugins.find((p) => p.agent === 'claude')?.version).toBe('1.2.0-updated');
   });
 
   it('updates only unpinned Pi extensions', async () => {
     await expect(updatePiPlugins({ confirmed: false })).rejects.toThrow(/confirmation/);
-    await updatePiPlugins({ confirmed: true });
+    const outcome = await updatePiPlugins({ confirmed: true });
+    expect(outcome).toMatchObject({ status: 'confirmed', action: 'piUpdate', agent: 'pi' });
+    expect(outcome.reinventory).toMatchObject({ scope: 'agent' });
     const inv = await listPluginInventory();
     expect(inv.plugins.find((p) => p.name === 'pi-subagents')?.version).toBe(
       '0.64.0-updated',

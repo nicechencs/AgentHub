@@ -147,6 +147,23 @@ assert all(expected <= operations.get(agent, set()) for agent, expected in requi
 assert any(row["exitCode"] == 73 for row in invocations), "failure injection was not exercised"
 probe_reported_ok = re.search(r'"status"\s*:\s*"ok"', output) is not None or "PASS" in output
 assert probe_reported_ok, output
+probe_report = next(
+    (
+        parsed
+        for line in output.splitlines()
+        if line.lstrip().startswith("{")
+        for parsed in [json.loads(line)]
+        if parsed.get("schemaVersion") == 1
+    ),
+    None,
+)
+assert probe_report is not None, output
+assert probe_report["coverage"]["grokAmbiguousMutation"] == {
+    "action": "disable",
+    "status": "unconfirmed",
+    "reason": "ambiguousTarget",
+    "candidateCount": 2,
+}, probe_report
 
 root = Path(root_path)
 source_paths = [
@@ -184,6 +201,7 @@ summary = {
     "sourceFingerprint": fingerprint.hexdigest(),
     "invocationCount": len(invocations),
     "probeReportedOk": probe_reported_ok,
+    "grokAmbiguousTargetUnconfirmed": True,
 }
 with open(evidence_path, "w", encoding="utf-8") as handle:
     json.dump(summary, handle, indent=2, sort_keys=True)

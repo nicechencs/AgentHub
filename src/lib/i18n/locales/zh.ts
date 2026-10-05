@@ -3751,6 +3751,9 @@ export const zh = {
       ok: '市场已刷新',
       failed: '市场刷新失败',
     },
+    outcome: {
+      unconfirmed: '未能从本机配置确认插件结果',
+    },
     update: {
       button: '更新',
       piButton: '更新已装插件',

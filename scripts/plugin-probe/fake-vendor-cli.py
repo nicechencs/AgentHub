@@ -365,10 +365,26 @@ def grok() -> None:
                 "status": "installed",
                 "trusted": True,
                 "enabled": bool(state["enabled"]),
-                "installSource": state["installSource"],
+                "installSource": str(FIXTURE_DIR / "grok-plugin"),
                 "path": str(installed_path),
                 "components": [{"type": "skills", "name": "agenthub-grok-probe"}],
             })
+            # Grok mutates by package name only.  The desktop probe enables
+            # this fixture row around one mutation to prove a successful CLI
+            # exit cannot be presented as success when the follow-up list has
+            # two same-name, different-source candidates.
+            if os.environ.get("AGENTHUB_PLUGIN_FIXTURE_GROK_AMBIGUOUS") == "1":
+                rows.append({
+                    "name": name,
+                    "version": state["version"],
+                    "scope": "user",
+                    "status": "installed",
+                    "trusted": True,
+                    "enabled": bool(state["enabled"]),
+                    "installSource": str(FIXTURE_DIR / "grok-plugin" / "skills" / "agenthub-probe"),
+                    "path": str(HOME / "plugins" / f"{name}-local"),
+                    "components": [{"type": "skills", "name": "agenthub-grok-probe"}],
+                })
         print(json.dumps({"plugins": rows}))
         return
     if OPERATION == "install":

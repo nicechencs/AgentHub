@@ -3,6 +3,7 @@ import type {
   PluginEntry,
   PluginInstallOptions,
   PluginInventory,
+  PluginMutationOutcome,
   PluginUninstallOptions,
   PluginUpdateOptions,
 } from '@/lib/backend/contracts/plugin-types';
@@ -40,7 +41,7 @@ export function createTauriPluginPort(): PluginPort {
     },
     async install(agent: AgentKey, source: string, options: PluginInstallOptions) {
       try {
-        await invoke<void>('install_plugin', {
+        return await invoke<PluginMutationOutcome>('install_plugin', {
           agent,
           source,
           confirmed: options.confirmed,
@@ -58,7 +59,7 @@ export function createTauriPluginPort(): PluginPort {
       options: PluginUninstallOptions,
     ) {
       try {
-        await invoke<void>('uninstall_plugin', {
+        return await invoke<PluginMutationOutcome>('uninstall_plugin', {
           agent,
           name,
           marketplace: marketplace ?? null,
@@ -72,7 +73,7 @@ export function createTauriPluginPort(): PluginPort {
     },
     async enable(agent: AgentKey, name: string, marketplace?: string | null) {
       try {
-        await invoke<void>('enable_plugin', {
+        return await invoke<PluginMutationOutcome>('enable_plugin', {
           agent,
           name,
           marketplace: marketplace ?? null,
@@ -84,7 +85,7 @@ export function createTauriPluginPort(): PluginPort {
     },
     async disable(agent: AgentKey, name: string, marketplace?: string | null) {
       try {
-        await invoke<void>('disable_plugin', {
+        return await invoke<PluginMutationOutcome>('disable_plugin', {
           agent,
           name,
           marketplace: marketplace ?? null,
@@ -96,7 +97,7 @@ export function createTauriPluginPort(): PluginPort {
     },
     async refreshMarketplace(agent: AgentKey) {
       try {
-        await invoke<void>('refresh_plugin_marketplace', { agent });
+        return await invoke<PluginMutationOutcome>('refresh_plugin_marketplace', { agent });
       } catch (e) {
         log.error('refreshMarketplace failed', e);
         throw e;
@@ -110,7 +111,7 @@ export function createTauriPluginPort(): PluginPort {
       options: PluginUpdateOptions,
     ) {
       try {
-        await invoke<void>('update_plugin', {
+        return await invoke<PluginMutationOutcome>('update_plugin', {
           agent,
           name,
           marketplace: marketplace ?? null,
@@ -124,7 +125,7 @@ export function createTauriPluginPort(): PluginPort {
     },
     async updatePi(options: PluginUpdateOptions) {
       try {
-        await invoke<void>('update_pi_plugins', { confirmed: options.confirmed });
+        return await invoke<PluginMutationOutcome>('update_pi_plugins', { confirmed: options.confirmed });
       } catch (e) {
         log.error('updatePi failed', e);
         throw e;
