@@ -95,7 +95,7 @@ jobs:
     if: github.event_name == 'pull_request'
     name: Windows cargo check
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
@@ -115,6 +115,11 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Setup Go
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version-file: go/agenthub-adapterd/go.mod
+
       - name: Rust cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -131,6 +136,10 @@ jobs:
           bash scripts/cargo-ci.sh parallel \
             'cargo check -p agenthub-core --locked' \
             'cargo check -p agenthub-gui --locked'
+
+      - name: Windows Product Go real-process probe
+        shell: pwsh
+        run: ./scripts/route-runtime-probe/product-mode-isolated.ps1
 
   check-macos:
     if: github.event_name == 'pull_request'

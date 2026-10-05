@@ -5,7 +5,7 @@
 //! synthetic upstream.
 
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Barrier};
@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use agenthub_core::models::{AdapterSourceKind, AgentId, ProviderInput, RouteDownstreamSurface};
 use agenthub_core::AgentHub;
+use base64::Engine as _;
 use serde_json::{json, Value};
 
 use crate::go_route_isolated::{GoRouteIsolatedHost, GoRouteRequiredReloadResult, GoRouteRunMode};
@@ -34,10 +35,29 @@ pub fn main_entry() -> ProbeResult<()> {
         .next()
         .and_then(|value| value.into_string().ok())
         .ok_or_else(|| "loopback upstream URL is required".to_string())?;
+    let option = match args.next() {
+        None => ProbeOption::Full {
+            hold_evidence: None,
+        },
+        Some(value) if value == "--hold-after-ready" => ProbeOption::Full {
+            hold_evidence: Some(
+                args.next()
+                    .map(PathBuf::from)
+                    .ok_or_else(|| "--hold-after-ready requires an evidence path".to_string())?,
+            ),
+        },
+        Some(value) if value == "--windows-reparse-preflight" => {
+            ProbeOption::WindowsReparsePreflight
+        }
+        Some(_) => return Err("unexpected probe option".into()),
+    };
     if args.next().is_some() {
         return Err("unexpected extra arguments".into());
     }
-    let evidence = run(root, upstream)?;
+    let evidence = match option {
+        ProbeOption::Full { hold_evidence } => run(root, upstream, hold_evidence)?,
+        ProbeOption::WindowsReparsePreflight => run_windows_reparse_preflight(root, upstream)?,
+    };
     println!(
         "{}",
         serde_json::to_string(&evidence).map_err(|error| format!("encode evidence: {error}"))?
@@ -45,45 +65,25 @@ pub fn main_entry() -> ProbeResult<()> {
     Ok(())
 }
 
-fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
+enum ProbeOption {
+    Full { hold_evidence: Option<PathBuf> },
+    WindowsReparsePreflight,
+}
+
+fn run(root: PathBuf, upstream: String, hold_evidence: Option<PathBuf>) -> ProbeResult<Value> {
     let root = validate_root(&root)?;
     ensure_loopback_url(&upstream)?;
+    let hold_evidence = hold_evidence
+        .as_deref()
+        .map(|path| validate_hold_evidence_path(&root, path))
+        .transpose()?;
     let data_dir = root.join("data");
     let skills_dir = root.join("skills");
     create_private_dir(&data_dir)?;
     create_private_dir(&skills_dir)?;
-
-    let hub = Arc::new(
-        AgentHub::open_with_skills_root(Some(&data_dir), Some(&skills_dir))
-            .map_err(|error| format!("open disposable AgentHub: {error}"))?,
-    );
     set_existing_data_dir_probe_mode(&data_dir)?;
     let data_mode_before = directory_mode(&data_dir)?;
-    hub.providers()
-        .create(&ProviderInput {
-            id: SOURCE_ID.into(),
-            agent_id: AgentId::WorkBuddy,
-            name: "Product Go route probe source".into(),
-            settings_config: json!({
-                "api_key": SOURCE_KEY,
-                "base_url": upstream,
-                "model": "probe-model",
-            }),
-            meta: json!({"preset": "deepseek-api"}),
-            is_current: false,
-        })
-        .map_err(|error| format!("create synthetic provider: {error}"))?;
-    let pool = hub
-        .route_pools()
-        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
-        .map_err(|error| format!("create route pool: {error}"))?;
-    hub.route_pools()
-        .add_member(&pool.id, AdapterSourceKind::Provider, SOURCE_ID)
-        .map_err(|error| format!("attach synthetic provider: {error}"))?;
-    let pool = hub
-        .route_pools()
-        .enroll_unified_gateway_as_default(&pool.id, PRODUCT_PORT)
-        .map_err(|error| format!("save product port: {error}"))?;
+    let (hub, pool) = initialize_product_probe_hub(&data_dir, &skills_dir, &upstream)?;
     ensure(
         pool.gateway_port == Some(PRODUCT_PORT),
         "saved product port was not retained",
@@ -222,6 +222,10 @@ fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
         "runtime files exposed synthetic secrets",
     )?;
 
+    if let Some(path) = hold_evidence {
+        hold_after_ready(&path, first_pid, &product_home)?;
+    }
+
     host.probe_kill_process()?;
     let recovering = host.status();
     ensure(
@@ -340,6 +344,173 @@ fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
         "runtime_secret_scan": true,
         "data_dir_mode_unchanged": true,
     }))
+}
+
+fn initialize_product_probe_hub(
+    data_dir: &Path,
+    skills_dir: &Path,
+    upstream: &str,
+) -> ProbeResult<(Arc<AgentHub>, agenthub_core::models::RoutePool)> {
+    let hub = Arc::new(
+        AgentHub::open_with_skills_root(Some(data_dir), Some(skills_dir))
+            .map_err(|error| format!("open disposable AgentHub: {error}"))?,
+    );
+    hub.providers()
+        .create(&ProviderInput {
+            id: SOURCE_ID.into(),
+            agent_id: AgentId::WorkBuddy,
+            name: "Product Go route probe source".into(),
+            settings_config: json!({
+                "api_key": SOURCE_KEY,
+                "base_url": upstream,
+                "model": "probe-model",
+            }),
+            meta: json!({"preset": "deepseek-api"}),
+            is_current: false,
+        })
+        .map_err(|error| format!("create synthetic provider: {error}"))?;
+    let pool = hub
+        .route_pools()
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .map_err(|error| format!("create route pool: {error}"))?;
+    hub.route_pools()
+        .add_member(&pool.id, AdapterSourceKind::Provider, SOURCE_ID)
+        .map_err(|error| format!("attach synthetic provider: {error}"))?;
+    let pool = hub
+        .route_pools()
+        .enroll_unified_gateway_as_default(&pool.id, PRODUCT_PORT)
+        .map_err(|error| format!("save product port: {error}"))?;
+    Ok((hub, pool))
+}
+
+#[cfg(windows)]
+fn run_windows_reparse_preflight(root: PathBuf, upstream: String) -> ProbeResult<Value> {
+    let root = validate_root(&root)?;
+    ensure_loopback_url(&upstream)?;
+    let data_dir = root.join("data");
+    let runtime_dir = data_dir.join("runtime");
+    let skills_dir = root.join("skills");
+    ensure(
+        data_dir.is_dir() && !windows_path_is_reparse_point(&data_dir)?,
+        "Windows reparse preflight requires a plain pre-created data directory",
+    )?;
+    ensure(
+        runtime_dir.is_dir() && windows_path_is_reparse_point(&runtime_dir)?,
+        "Windows reparse preflight requires a runtime junction",
+    )?;
+    create_private_dir(&skills_dir)?;
+    let (hub, _) = initialize_product_probe_hub(&data_dir, &skills_dir, &upstream)?;
+    let host = GoRouteIsolatedHost::new(Some(hub));
+    let prepared = host.prepare_product_plan()?;
+    let started = host.start_prepared_product(prepared);
+    ensure(
+        started.state == "failed" && !started.listen_ready,
+        "runtime junction did not reject Product startup",
+    )?;
+    ensure(
+        host.probe_session_process().is_err(),
+        "runtime junction allowed a Product Go process to start",
+    )?;
+    let port_available = wait_for_port_release(PRODUCT_PORT, Duration::from_secs(1));
+    ensure(
+        port_available,
+        "runtime junction rejection left the saved Product port bound",
+    )?;
+    let stopped = host.stop();
+    ensure(
+        stopped.state == "stopped" && !stopped.listen_ready,
+        "runtime junction rejection did not converge to stopped",
+    )?;
+    Ok(json!({
+        "schema": "go-route-product-reparse-preflight.v1",
+        "status": "ok",
+        "port": PRODUCT_PORT,
+        "runtime_junction_rejected": true,
+        "go_process_not_started": true,
+        "port_available": port_available,
+    }))
+}
+
+#[cfg(not(windows))]
+fn run_windows_reparse_preflight(_root: PathBuf, _upstream: String) -> ProbeResult<Value> {
+    Err("--windows-reparse-preflight requires Windows".into())
+}
+
+#[cfg(windows)]
+fn windows_path_is_reparse_point(path: &Path) -> ProbeResult<bool> {
+    use std::os::windows::fs::MetadataExt;
+    use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+
+    Ok(fs::symlink_metadata(path)
+        .map_err(|error| format!("inspect {}: {error}", path.display()))?
+        .file_attributes()
+        & FILE_ATTRIBUTE_REPARSE_POINT
+        != 0)
+}
+
+fn hold_after_ready(path: &Path, go_pid: u32, product_home: &Path) -> ProbeResult<()> {
+    let evidence = json!({
+        "schema": "go-route-product-ready-hold.v1",
+        "status": "ready",
+        "rust_pid": std::process::id(),
+        "go_pid": go_pid,
+        "port": PRODUCT_PORT,
+        "product_home": product_home,
+    });
+    let (mut file, temporary_path) = create_hold_evidence_temp(path)?;
+    let written = (|| -> ProbeResult<()> {
+        serde_json::to_writer(&mut file, &evidence)
+            .map_err(|error| format!("encode hold evidence: {error}"))?;
+        file.write_all(b"\n")
+            .and_then(|()| file.sync_all())
+            .map_err(|error| format!("write hold evidence {}: {error}", path.display()))?;
+        drop(file);
+        fs::rename(&temporary_path, path).map_err(|error| {
+            format!(
+                "publish hold evidence {} from {}: {error}",
+                path.display(),
+                temporary_path.display()
+            )
+        })
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    written?;
+    loop {
+        std::thread::sleep(Duration::from_secs(1));
+    }
+}
+
+fn create_hold_evidence_temp(path: &Path) -> ProbeResult<(fs::File, PathBuf)> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "hold evidence path has no parent directory".to_string())?;
+    for _ in 0..8 {
+        let mut nonce = [0_u8; 16];
+        getrandom::getrandom(&mut nonce)
+            .map_err(|_| "generate hold evidence temporary name".to_string())?;
+        let temporary_path = parent.join(format!(
+            ".agenthub-product-ready-{}-{}.tmp",
+            std::process::id(),
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(nonce),
+        ));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary_path)
+        {
+            Ok(file) => return Ok((file, temporary_path)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(format!(
+                    "create hold evidence temporary file {}: {error}",
+                    temporary_path.display()
+                ))
+            }
+        }
+    }
+    Err("create unique hold evidence temporary file".into())
 }
 
 fn ensure_ready(
@@ -485,6 +656,25 @@ fn validate_root(root: &Path) -> ProbeResult<PathBuf> {
         "scratch must be a disposable child of the operating-system temp directory",
     )?;
     Ok(root)
+}
+
+fn validate_hold_evidence_path(root: &Path, path: &Path) -> ProbeResult<PathBuf> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "hold evidence path has no parent directory".to_string())?;
+    let parent = fs::canonicalize(parent)
+        .map_err(|error| format!("canonicalize hold evidence parent: {error}"))?;
+    ensure(
+        parent == root,
+        "hold evidence must be a new file directly inside the scratch directory",
+    )?;
+    let name = path
+        .file_name()
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| "hold evidence path has no file name".to_string())?;
+    let path = parent.join(name);
+    ensure(!path.exists(), "hold evidence path already exists")?;
+    Ok(path)
 }
 
 fn create_private_dir(path: &Path) -> ProbeResult<()> {
