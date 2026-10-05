@@ -33,6 +33,11 @@ path = "examples/go_route_product_e2e_probe.rs"
 required-features = ["go-route-product-probe"]
 
 [[example]]
+name = "route_runtime_product_handoff_probe"
+path = "examples/route_runtime_product_handoff_probe.rs"
+required-features = ["route-runtime-product-handoff-probe"]
+
+[[example]]
 name = "plugin_write_e2e_probe"
 path = "examples/plugin_write_e2e_probe.rs"
 required-features = ["plugin-write-probe"]

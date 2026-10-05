@@ -15,6 +15,8 @@ pub mod go_route_product_probe;
 #[cfg(feature = "plugin-write-probe")]
 pub mod plugin_write_probe;
 mod route_runtime;
+#[cfg(feature = "route-runtime-product-handoff-probe")]
+pub mod route_runtime_product_handoff_probe;
 mod shell_open_chat;
 mod skill_watch;
 mod state;

@@ -53,6 +53,13 @@ impl std::fmt::Display for ProductHandoffTrialError {
     }
 }
 
+/// In-process-only probe hook invoked while Product Go is running. The hook
+/// can only return a pass/fail result, so no configuration or Key material can
+/// escape through the trial result.
+#[cfg(feature = "route-runtime-product-handoff-probe")]
+pub(crate) type ProductHandoffTrialRuntimeProbe =
+    Box<dyn FnOnce(&GoRouteIsolatedHost) -> bool + Send>;
+
 /// Product runtime implementations known by the desktop shell.
 ///
 /// This is deliberately not persisted in phase one. `GoProduct` describes a
@@ -135,34 +142,71 @@ impl RouteRuntimeManager {
         self: &Arc<Self>,
         lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
         coordinator: Arc<AdapterSagaCoordinator>,
-        health_bearer: String,
+        health_bearers: Vec<String>,
+        runtime_probe: Option<ProductHandoffTrialRuntimeProbe>,
+    ) -> tauri::async_runtime::JoinHandle<Result<ProductHandoffTrialReport, ProductHandoffTrialError>>
+    {
+        self.spawn_product_handoff_trial_with_completion(
+            lifecycle_barrier,
+            coordinator,
+            health_bearers,
+            runtime_probe,
+            None,
+        )
+    }
+
+    /// The completion sender is probe-only evidence that a detached caller's
+    /// task ran through its full compensation path. It cannot cross a product
+    /// boundary and carries no configuration or bearer material.
+    #[cfg(feature = "route-runtime-product-handoff-probe")]
+    pub(crate) fn spawn_product_handoff_trial_with_completion(
+        self: &Arc<Self>,
+        lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+        coordinator: Arc<AdapterSagaCoordinator>,
+        health_bearers: Vec<String>,
+        runtime_probe: Option<ProductHandoffTrialRuntimeProbe>,
+        completion: Option<
+            tokio::sync::oneshot::Sender<
+                Result<ProductHandoffTrialReport, ProductHandoffTrialError>,
+            >,
+        >,
     ) -> tauri::async_runtime::JoinHandle<Result<ProductHandoffTrialReport, ProductHandoffTrialError>>
     {
         let runtime = Arc::clone(self);
         tauri::async_runtime::spawn(async move {
-            let _lifecycle_permit =
-                lifecycle_barrier
-                    .enter()
+            let result = async {
+                let _lifecycle_permit =
+                    lifecycle_barrier
+                        .enter()
+                        .await
+                        .map_err(|_| ProductHandoffTrialError {
+                            stage: "lifecycle_barrier",
+                            go_stopped: true,
+                            rust_restored: true,
+                        })?;
+                let _gateway_guard = coordinator.lock_local_gateway().await;
+                runtime
+                    .run_product_handoff_trial(health_bearers, runtime_probe)
                     .await
-                    .map_err(|_| ProductHandoffTrialError {
-                        stage: "lifecycle_barrier",
-                        go_stopped: true,
-                        rust_restored: true,
-                    })?;
-            let _gateway_guard = coordinator.lock_local_gateway().await;
-            runtime.run_product_handoff_trial(health_bearer).await
+            }
+            .await;
+            if let Some(completion) = completion {
+                let _ = completion.send(result);
+            }
+            result
         })
     }
 
     #[cfg(feature = "route-runtime-product-handoff-probe")]
     async fn run_product_handoff_trial(
         &self,
-        health_bearer: String,
+        health_bearers: Vec<String>,
+        runtime_probe: Option<ProductHandoffTrialRuntimeProbe>,
     ) -> Result<ProductHandoffTrialReport, ProductHandoffTrialError> {
-        if health_bearer.trim().is_empty()
-            || health_bearer
-                .bytes()
-                .any(|byte| byte <= b' ' || byte == 0x7f)
+        if health_bearers.is_empty()
+            || health_bearers.iter().any(|bearer| {
+                bearer.trim().is_empty() || bearer.bytes().any(|byte| byte <= b' ' || byte == 0x7f)
+            })
         {
             return Err(ProductHandoffTrialError {
                 stage: "health_input",
@@ -250,6 +294,11 @@ impl RouteRuntimeManager {
                 .compensate_product_handoff(&snapshot, port, "start_go")
                 .await);
         }
+        if runtime_probe.is_some_and(|probe| !probe(&self.isolated_go)) {
+            return Err(self
+                .compensate_product_handoff(&snapshot, port, "runtime_secret_scan")
+                .await);
+        }
         let prepared_hash_matched = self.isolated_go.probe_config_hash().as_deref()
             == Some(prepared_summary.expected_config_hash.as_str());
         if !prepared_hash_matched {
@@ -257,22 +306,25 @@ impl RouteRuntimeManager {
                 .compensate_product_handoff(&snapshot, port, "prepared_hash")
                 .await);
         }
-        let health = match tauri::async_runtime::spawn_blocking(move || {
-            GoRouteIsolatedHost::probe_data_plane_health(port, &health_bearer)
-        })
-        .await
-        {
-            Ok(Ok(health)) => health,
-            Ok(Err(_)) | Err(_) => {
-                return Err(self
-                    .compensate_product_handoff(&snapshot, port, "product_health_task")
-                    .await)
-            }
-        };
-        let product_health_ready = health.http_status == 200
-            && health.listen_ready == Some(true)
-            && health.member_count.is_some_and(|count| count >= 1)
-            && health.healthy_member_count.is_some_and(|count| count >= 1);
+        let mut product_health_ready = true;
+        for health_bearer in health_bearers {
+            let health = match tauri::async_runtime::spawn_blocking(move || {
+                GoRouteIsolatedHost::probe_data_plane_health(port, &health_bearer)
+            })
+            .await
+            {
+                Ok(Ok(health)) => health,
+                Ok(Err(_)) | Err(_) => {
+                    return Err(self
+                        .compensate_product_handoff(&snapshot, port, "product_health_task")
+                        .await)
+                }
+            };
+            product_health_ready &= health.http_status == 200
+                && health.listen_ready == Some(true)
+                && health.member_count.is_some_and(|count| count >= 1)
+                && health.healthy_member_count.is_some_and(|count| count >= 1);
+        }
         if !product_health_ready {
             return Err(self
                 .compensate_product_handoff(&snapshot, port, "product_health")
