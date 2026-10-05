@@ -51,6 +51,11 @@ impl LifecycleShutdownBarrier {
         }
     }
 
+    #[cfg(feature = "route-runtime-product-handoff-probe")]
+    pub(crate) fn new_product_handoff_probe() -> Self {
+        Self::new()
+    }
+
     pub(crate) async fn enter(&self) -> Result<OwnedRwLockReadGuard<()>, String> {
         if self.closed.load(Ordering::SeqCst) {
             return Err("bridge lifecycle is shutting down".into());

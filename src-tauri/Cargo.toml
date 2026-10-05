@@ -14,6 +14,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 default = []
 go-route-bind-probe = []
 go-route-product-probe = []
+route-runtime-product-handoff-probe = ["go-route-product-probe"]
 go-route-tcp-control-probe = []
 plugin-write-probe = []
 

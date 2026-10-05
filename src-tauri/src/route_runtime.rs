@@ -7,17 +7,51 @@
 
 use std::sync::Arc;
 
+#[cfg(feature = "route-runtime-product-handoff-probe")]
+use agenthub_core::adapter_control::AdapterSagaCoordinator;
 use agenthub_core::bridge::host::{
     BridgeGatewayRestoreError, BridgeGatewaySnapshot, BridgeGatewayStopReport, BridgeHostError,
     RouteTraceDeleteResult, RouteTracePage, RouteTraceQuery,
 };
+#[cfg(feature = "route-runtime-product-handoff-probe")]
+use agenthub_core::bridge::host::{BridgeGatewaySnapshotState, BridgeGatewayStopState};
 use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::logging::{self, targets};
 use agenthub_core::models::RouteSchedulePolicy;
 use agenthub_core::services::account_quota::MemberQuotaHint;
 use agenthub_core::AgentHub;
 
+#[cfg(feature = "route-runtime-product-handoff-probe")]
+use crate::exit_coordinator::LifecycleShutdownBarrier;
 use crate::go_route_isolated::GoRouteIsolatedHost;
+
+#[cfg(feature = "route-runtime-product-handoff-probe")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ProductHandoffTrialReport {
+    pub port: u16,
+    pub rust_entry_count: usize,
+    pub prepared_hash_matched: bool,
+    pub rust_stopped_before_go: bool,
+    pub rust_mutator_blocked: bool,
+    pub product_health_ready: bool,
+    pub go_stopped_before_restore: bool,
+    pub rust_exact_restored: bool,
+}
+
+#[cfg(feature = "route-runtime-product-handoff-probe")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ProductHandoffTrialError {
+    pub stage: &'static str,
+    pub go_stopped: bool,
+    pub rust_restored: bool,
+}
+
+#[cfg(feature = "route-runtime-product-handoff-probe")]
+impl std::fmt::Display for ProductHandoffTrialError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "Product handoff trial failed at {}", self.stage)
+    }
+}
 
 /// Product runtime implementations known by the desktop shell.
 ///
@@ -81,6 +115,283 @@ impl RouteRuntimeManager {
             rust: Arc::new(rust),
             isolated_go,
         }
+    }
+
+    /// Probe-only constructor that cannot write route traces or usage into the
+    /// user's normal data directory.
+    #[cfg(feature = "route-runtime-product-handoff-probe")]
+    pub(crate) fn new_product_handoff_probe(hub: Arc<AgentHub>) -> Self {
+        Self {
+            rust: Arc::new(BridgeRuntimeHost::new()),
+            isolated_go: GoRouteIsolatedHost::new(Some(hub)),
+        }
+    }
+
+    /// Spawn an owned, cancellation-safe Rust -> Product Go -> Rust trial.
+    /// Dropping the returned handle detaches the task; the task keeps both
+    /// lifecycle guards and the stopped Rust snapshot until compensation ends.
+    #[cfg(feature = "route-runtime-product-handoff-probe")]
+    pub(crate) fn spawn_product_handoff_trial(
+        self: &Arc<Self>,
+        lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+        coordinator: Arc<AdapterSagaCoordinator>,
+        health_bearer: String,
+    ) -> tauri::async_runtime::JoinHandle<Result<ProductHandoffTrialReport, ProductHandoffTrialError>>
+    {
+        let runtime = Arc::clone(self);
+        tauri::async_runtime::spawn(async move {
+            let _lifecycle_permit =
+                lifecycle_barrier
+                    .enter()
+                    .await
+                    .map_err(|_| ProductHandoffTrialError {
+                        stage: "lifecycle_barrier",
+                        go_stopped: true,
+                        rust_restored: true,
+                    })?;
+            let _gateway_guard = coordinator.lock_local_gateway().await;
+            runtime.run_product_handoff_trial(health_bearer).await
+        })
+    }
+
+    #[cfg(feature = "route-runtime-product-handoff-probe")]
+    async fn run_product_handoff_trial(
+        &self,
+        health_bearer: String,
+    ) -> Result<ProductHandoffTrialReport, ProductHandoffTrialError> {
+        if health_bearer.trim().is_empty()
+            || health_bearer
+                .bytes()
+                .any(|byte| byte <= b' ' || byte == 0x7f)
+        {
+            return Err(ProductHandoffTrialError {
+                stage: "health_input",
+                go_stopped: true,
+                rust_restored: true,
+            });
+        }
+
+        let prepared =
+            self.isolated_go
+                .prepare_product_plan()
+                .map_err(|_| ProductHandoffTrialError {
+                    stage: "prepare_product",
+                    go_stopped: true,
+                    rust_restored: true,
+                })?;
+        let prepared_summary = GoRouteIsolatedHost::probe_prepared_product_summary(&prepared)
+            .map_err(|_| ProductHandoffTrialError {
+                stage: "prepared_summary",
+                go_stopped: true,
+                rust_restored: true,
+            })?;
+        let snapshot = self
+            .capture_active_gateway()
+            .map_err(|_| ProductHandoffTrialError {
+                stage: "capture_rust",
+                go_stopped: true,
+                rust_restored: true,
+            })?;
+        let port = snapshot.port();
+        let entry_count = snapshot.entry_count();
+        if port == 0 || prepared_summary.expected_port != port {
+            return Err(ProductHandoffTrialError {
+                stage: "port_mismatch",
+                go_stopped: true,
+                rust_restored: true,
+            });
+        }
+
+        let stop_report = match self.stop_active_gateway_snapshot(&snapshot).await {
+            Ok(report) => report,
+            Err(_) => {
+                return Err(self
+                    .compensate_product_handoff(&snapshot, port, "stop_rust")
+                    .await)
+            }
+        };
+        if stop_report.state != BridgeGatewayStopState::Stopped
+            || stop_report.stop_error_count != 0
+            || self.rust.gateway_port().ok().flatten().is_some()
+            || self
+                .rust
+                .statuses()
+                .map(|statuses| !statuses.is_empty())
+                .unwrap_or(true)
+        {
+            return Err(self
+                .compensate_product_handoff(&snapshot, port, "strict_rust_stop")
+                .await);
+        }
+        let rust_mutator_blocked = matches!(
+            self.rust.set_gateway_port(port).await,
+            Err(BridgeHostError::GatewayTransitionActive)
+        );
+        if !rust_mutator_blocked {
+            return Err(self
+                .compensate_product_handoff(&snapshot, port, "rust_mutator_gate")
+                .await);
+        }
+
+        let go = Arc::clone(&self.isolated_go);
+        let started =
+            match tauri::async_runtime::spawn_blocking(move || go.start_prepared_product(prepared))
+                .await
+            {
+                Ok(status) => status,
+                Err(_) => {
+                    return Err(self
+                        .compensate_product_handoff(&snapshot, port, "start_go_task")
+                        .await)
+                }
+            };
+        if started.state != "ready" || !started.listen_ready || started.port != Some(port) {
+            return Err(self
+                .compensate_product_handoff(&snapshot, port, "start_go")
+                .await);
+        }
+        let prepared_hash_matched = self.isolated_go.probe_config_hash().as_deref()
+            == Some(prepared_summary.expected_config_hash.as_str());
+        if !prepared_hash_matched {
+            return Err(self
+                .compensate_product_handoff(&snapshot, port, "prepared_hash")
+                .await);
+        }
+        let health = match tauri::async_runtime::spawn_blocking(move || {
+            GoRouteIsolatedHost::probe_data_plane_health(port, &health_bearer)
+        })
+        .await
+        {
+            Ok(Ok(health)) => health,
+            Ok(Err(_)) | Err(_) => {
+                return Err(self
+                    .compensate_product_handoff(&snapshot, port, "product_health_task")
+                    .await)
+            }
+        };
+        let product_health_ready = health.http_status == 200
+            && health.listen_ready == Some(true)
+            && health.member_count.is_some_and(|count| count >= 1)
+            && health.healthy_member_count.is_some_and(|count| count >= 1);
+        if !product_health_ready {
+            return Err(self
+                .compensate_product_handoff(&snapshot, port, "product_health")
+                .await);
+        }
+
+        self.stop_go_before_restore(port, "stop_go").await?;
+        self.restore_and_verify_rust(&snapshot, port, entry_count, "restore_rust")
+            .await?;
+        Ok(ProductHandoffTrialReport {
+            port,
+            rust_entry_count: entry_count,
+            prepared_hash_matched,
+            rust_stopped_before_go: true,
+            rust_mutator_blocked,
+            product_health_ready,
+            go_stopped_before_restore: true,
+            rust_exact_restored: true,
+        })
+    }
+
+    #[cfg(feature = "route-runtime-product-handoff-probe")]
+    async fn compensate_product_handoff(
+        &self,
+        snapshot: &BridgeGatewaySnapshot,
+        port: u16,
+        stage: &'static str,
+    ) -> ProductHandoffTrialError {
+        if self.stop_go_before_restore(port, stage).await.is_err() {
+            return ProductHandoffTrialError {
+                stage,
+                go_stopped: false,
+                rust_restored: false,
+            };
+        }
+        let entry_count = snapshot.entry_count();
+        match self
+            .restore_and_verify_rust(snapshot, port, entry_count, stage)
+            .await
+        {
+            Ok(()) => ProductHandoffTrialError {
+                stage,
+                go_stopped: true,
+                rust_restored: true,
+            },
+            Err(_) => ProductHandoffTrialError {
+                stage,
+                go_stopped: true,
+                rust_restored: false,
+            },
+        }
+    }
+
+    #[cfg(feature = "route-runtime-product-handoff-probe")]
+    async fn stop_go_before_restore(
+        &self,
+        port: u16,
+        stage: &'static str,
+    ) -> Result<(), ProductHandoffTrialError> {
+        let go = Arc::clone(&self.isolated_go);
+        let stopped = tauri::async_runtime::spawn_blocking(move || go.stop())
+            .await
+            .map_err(|_| ProductHandoffTrialError {
+                stage,
+                go_stopped: false,
+                rust_restored: false,
+            })?;
+        if stopped.state != "stopped" || stopped.listen_ready || stopped.port.is_some() {
+            return Err(ProductHandoffTrialError {
+                stage,
+                go_stopped: false,
+                rust_restored: false,
+            });
+        }
+        let listener = std::net::TcpListener::bind(("127.0.0.1", port)).map_err(|_| {
+            ProductHandoffTrialError {
+                stage,
+                go_stopped: false,
+                rust_restored: false,
+            }
+        })?;
+        drop(listener);
+        Ok(())
+    }
+
+    #[cfg(feature = "route-runtime-product-handoff-probe")]
+    async fn restore_and_verify_rust(
+        &self,
+        snapshot: &BridgeGatewaySnapshot,
+        port: u16,
+        entry_count: usize,
+        stage: &'static str,
+    ) -> Result<(), ProductHandoffTrialError> {
+        self.restore_active_gateway_snapshot(snapshot)
+            .await
+            .map_err(|_| ProductHandoffTrialError {
+                stage,
+                go_stopped: true,
+                rust_restored: false,
+            })?;
+        let statuses = self.rust.statuses().map_err(|_| ProductHandoffTrialError {
+            stage,
+            go_stopped: true,
+            rust_restored: false,
+        })?;
+        if snapshot.state() != BridgeGatewaySnapshotState::Restored
+            || self.rust.gateway_port().ok().flatten() != Some(port)
+            || statuses.len() != entry_count
+            || statuses
+                .iter()
+                .any(|status| !status.running || status.port != port)
+        {
+            return Err(ProductHandoffTrialError {
+                stage,
+                go_stopped: true,
+                rust_restored: false,
+            });
+        }
+        Ok(())
     }
 
     pub(crate) fn active_backend(&self) -> RuntimeBackend {
