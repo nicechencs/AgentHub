@@ -412,7 +412,7 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 		if downstreamStream {
 			if convertChatResponse {
 				streamFailed := false
-				outcome := dispatchConvertedChatStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy, &streamFailed)
+				outcome := dispatchConvertedChatStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy, usage, &streamFailed)
 				if streamFailed {
 					usage.markFailure(edgeStatusUpstreamUnavailable)
 				}
@@ -433,7 +433,7 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 				}
 				var streamAffinity officialStreamAffinity
 				streamFailed := false
-				outcome := dispatchOfficialResponsesStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy, sanitizer, &streamAffinity, &streamFailed)
+				outcome := dispatchOfficialResponsesStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy, sanitizer, &streamAffinity, usage, &streamFailed)
 				if streamFailed {
 					usage.markFailure(edgeStatusUpstreamUnavailable)
 				}
@@ -464,7 +464,7 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 				}
 				var streamAffinity officialStreamAffinity
 				streamFailed := false
-				outcome := dispatchGrokResponsesStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy, sanitizer, &streamAffinity, &streamFailed)
+				outcome := dispatchGrokResponsesStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy, sanitizer, &streamAffinity, usage, &streamFailed)
 				if streamFailed {
 					usage.markFailure(edgeStatusUpstreamUnavailable)
 				}
@@ -487,7 +487,7 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 				return
 			}
 			streamFailed := false
-			outcome := dispatchMemberStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy, &streamFailed)
+			outcome := dispatchMemberStream(w, r, pool, member, model, resp, &excluded, &lastStatus, &lastHeader, &lastBody, &hasLast, rt.httpPolicy, usage, &streamFailed)
 			if streamFailed {
 				usage.markFailure(edgeStatusUpstreamUnavailable)
 			}
@@ -615,6 +615,7 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 			}
 		}
 		pool.ReportSuccess(member.ID)
+		usage.observeResponseJSON(respBody)
 		writeClientResponse(w, resp.StatusCode, resp.Header, respBody, false)
 		return
 	}
@@ -641,6 +642,7 @@ func dispatchConvertedChatStream(
 	lastBody *[]byte,
 	hasLast *bool,
 	policy routeHTTPSafetyPolicy,
+	usage *usageCapture,
 	streamFailed *bool,
 ) int {
 	defer resp.Body.Close()
@@ -733,6 +735,7 @@ func dispatchConvertedChatStream(
 					return failStream()
 				}
 				if len(translated) > 0 {
+					usage.observeSSEChunk(translated)
 					if int64(outputBytes+len(translated)) > policy.SSEBodyBytes {
 						_ = resp.Body.Close()
 						return failStream()
@@ -825,6 +828,7 @@ func dispatchMemberStream(
 	lastBody *[]byte,
 	hasLast *bool,
 	policy routeHTTPSafetyPolicy,
+	usage *usageCapture,
 	streamFailed *bool,
 ) int {
 	defer resp.Body.Close()
@@ -842,7 +846,7 @@ func dispatchMemberStream(
 		writeSafeUpstreamResponse(w, resp.StatusCode, resp.Header)
 		return dispatchDone
 	}
-	committed, relayErr := relayBoundedSSE(w, r, resp, policy)
+	committed, relayErr := relayBoundedSSE(w, r, resp, policy, usage.observeSSEChunk)
 	if relayErr == nil {
 		pool.ReportSuccess(member.ID)
 		return dispatchDone

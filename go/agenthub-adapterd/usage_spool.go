@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -16,24 +19,26 @@ import (
 // sessions, URLs, request/response payloads, and login material do not belong
 // in the sidecar spool.
 type gatewayUsageEvent struct {
-	RequestID       string  `json:"request_id"`
-	Timestamp       string  `json:"ts"`
-	ProfileID       string  `json:"profile_id"`
-	Surface         string  `json:"surface"`
-	UpstreamChannel *string `json:"upstream_channel,omitempty"`
-	TicketID        *string `json:"ticket_id,omitempty"`
-	AccountKind     *string `json:"account_source_kind,omitempty"`
-	AccountID       *string `json:"account_source_id,omitempty"`
-	Model           *string `json:"model,omitempty"`
-	UpstreamModel   *string `json:"upstream_model,omitempty"`
-	InputTokens     uint64  `json:"input_tokens"`
-	OutputTokens    uint64  `json:"output_tokens"`
-	Status          string  `json:"status"`
-	StatusCode      *uint16 `json:"status_code,omitempty"`
-	ErrorClass      *string `json:"error_class,omitempty"`
-	LatencyMS       *uint64 `json:"latency_ms,omitempty"`
-	TTFTMS          *uint64 `json:"ttft_ms,omitempty"`
-	Attempts        *uint32 `json:"attempts,omitempty"`
+	RequestID         string  `json:"request_id"`
+	Timestamp         string  `json:"ts"`
+	ProfileID         string  `json:"profile_id"`
+	Surface           string  `json:"surface"`
+	UpstreamChannel   *string `json:"upstream_channel,omitempty"`
+	TicketID          *string `json:"ticket_id,omitempty"`
+	AccountKind       *string `json:"account_source_kind,omitempty"`
+	AccountID         *string `json:"account_source_id,omitempty"`
+	Model             *string `json:"model,omitempty"`
+	UpstreamModel     *string `json:"upstream_model,omitempty"`
+	InputTokens       uint64  `json:"input_tokens"`
+	OutputTokens      uint64  `json:"output_tokens"`
+	CachedInputTokens *uint64 `json:"cached_input_tokens,omitempty"`
+	ReasoningTokens   *uint64 `json:"reasoning_tokens,omitempty"`
+	Status            string  `json:"status"`
+	StatusCode        *uint16 `json:"status_code,omitempty"`
+	ErrorClass        *string `json:"error_class,omitempty"`
+	LatencyMS         *uint64 `json:"latency_ms,omitempty"`
+	TTFTMS            *uint64 `json:"ttft_ms,omitempty"`
+	Attempts          *uint32 `json:"attempts,omitempty"`
 }
 
 // usageSpool owns exactly one append writer for its configured directory.
@@ -127,7 +132,35 @@ type usageCapture struct {
 	attempts        uint32
 	streaming       bool
 	failureClass    string
+	tokens          capturedGatewayUsage
+	sse             usageSSECapture
 }
+
+// capturedGatewayUsage carries only validated numeric counters. Response
+// payloads are decoded briefly at the protocol boundary and never retained in
+// the spool, status, or sidecar log.
+type capturedGatewayUsage struct {
+	input     uint64
+	output    uint64
+	cached    *uint64
+	reasoning *uint64
+	valid     bool
+}
+
+// usageSSECapture stores a bounded incomplete frame while the response is in
+// flight. It is cleared when the request completes; it must never become a
+// durable part of a usage event.
+type usageSSECapture struct {
+	pending   []byte
+	invalid   bool
+	input     *uint64
+	output    *uint64
+	cached    *uint64
+	reasoning *uint64
+	chat      *capturedGatewayUsage
+}
+
+const maxUsageSSEFrameBytes = 64 << 10
 
 func (rt *Runtime) beginUsageCapture(edge *RuntimeEdge, surface string) *usageCapture {
 	if edge == nil || edge.ID == "" {
@@ -165,6 +198,11 @@ func (capture *usageCapture) observeAttempt(member *PoolMember, model string) {
 	if capture == nil || member == nil {
 		return
 	}
+	// A capture represents the final client outcome. A pre-commit failover may
+	// have observed an unusable upstream payload, so never carry its counters
+	// into the member that ultimately serves (or fails) the request.
+	capture.tokens = capturedGatewayUsage{}
+	capture.sse = usageSSECapture{}
 	capture.attempts++
 	capture.ticketID = usageOptionalString(member.TicketID)
 	capture.accountKind = usageOptionalString(member.SourceKind)
@@ -194,10 +232,359 @@ func (capture *usageCapture) markFailure(class string) {
 	}
 }
 
+// observeResponseJSON accepts only a complete JSON object with exact numeric
+// usage fields. It is called after any protocol conversion, so a Responses
+// request routed through Chat Completions is captured in the public Responses
+// shape exactly as returned to the caller.
+func (capture *usageCapture) observeResponseJSON(raw []byte) {
+	if capture == nil {
+		return
+	}
+	root, ok := decodeUsageJSONObject(raw)
+	if !ok {
+		return
+	}
+	if usage, ok := capturedUsageFromObject(root); ok {
+		capture.tokens = usage
+	}
+}
+
+// observeResponsesSSEEvent is the zero-copy hook used by the strict official
+// Responses dispatchers. `event` has already passed their protocol validator;
+// this method retains only terminal numeric usage.
+func (capture *usageCapture) observeResponsesSSEEvent(kind string, event map[string]any) {
+	if capture == nil || kind != "response.completed" || event == nil {
+		return
+	}
+	if response, ok := event["response"].(map[string]any); ok {
+		if usage, ok := capturedUsageFromObject(response); ok {
+			capture.tokens = usage
+		}
+		return
+	}
+	if usage, ok := capturedUsageFromObject(event); ok {
+		capture.tokens = usage
+	}
+}
+
+// observeSSEChunk accepts raw SSE only while forwarding. It recognizes just
+// the terminal usage carriers for the three supported public surfaces. Missing
+// or malformed usage is deliberately left invalid/empty, which becomes zeros
+// in the one final event.
+func (capture *usageCapture) observeSSEChunk(chunk []byte) {
+	if capture == nil || len(chunk) == 0 || capture.sse.invalid {
+		return
+	}
+	if len(capture.sse.pending)+len(chunk) > maxUsageSSEFrameBytes {
+		capture.sse.pending = nil
+		capture.sse.invalid = true
+		return
+	}
+	capture.sse.pending = append(capture.sse.pending, chunk...)
+	for {
+		end, width := usageSSEFrameEnd(capture.sse.pending)
+		if end < 0 {
+			return
+		}
+		frame := capture.sse.pending[:end]
+		capture.sse.pending = capture.sse.pending[end+width:]
+		capture.observeSSEFrame(frame)
+		if capture.sse.invalid {
+			capture.sse.pending = nil
+			return
+		}
+	}
+}
+
+func (capture *usageCapture) observeSSEFrame(frame []byte) {
+	event, data, hasData, ok := parseUsageSSEFrame(frame)
+	if !ok {
+		capture.sse.invalid = true
+		return
+	}
+	if !hasData {
+		return
+	}
+	if bytes.Equal(data, []byte("[DONE]")) {
+		if capture.surface == "chat" && capture.sse.chat != nil {
+			capture.tokens = *capture.sse.chat
+		}
+		return
+	}
+	root, ok := decodeUsageJSONObject(data)
+	if !ok {
+		// Only structured terminal/value-carrying frames participate in the
+		// usage result. Ordinary extension frames can be ignored safely.
+		return
+	}
+	switch capture.surface {
+	case "messages":
+		capture.observeMessagesSSE(event, root)
+	case "responses":
+		if event == "response.completed" {
+			capture.observeResponsesSSEEvent(event, root)
+		}
+	case "chat":
+		if _, exists := root["usage"]; exists {
+			usage, valid := capturedUsageFromObject(root)
+			if !valid {
+				capture.sse.invalid = true
+				return
+			}
+			capture.sse.chat = &usage
+		}
+	}
+}
+
+func (capture *usageCapture) observeMessagesSSE(event string, root map[string]any) {
+	if capture == nil {
+		return
+	}
+	switch event {
+	case "message_start":
+		message, ok := root["message"].(map[string]any)
+		if !ok {
+			capture.sse.invalid = true
+			return
+		}
+		usage, exists := message["usage"]
+		if !exists {
+			capture.sse.invalid = true
+			return
+		}
+		parsed, present, valid := capturedPartialUsage(usage, true, false)
+		if !present || !valid || !capture.sse.setInput(parsed.input) || !capture.sse.setOptionalCached(parsed.cached) {
+			capture.sse.invalid = true
+		}
+	case "message_delta":
+		usage, exists := root["usage"]
+		if !exists {
+			capture.sse.invalid = true
+			return
+		}
+		parsed, present, valid := capturedPartialUsage(usage, false, true)
+		if !present || !valid || !capture.sse.setOutput(parsed.output) || !capture.sse.setOptionalReasoning(parsed.reasoning) {
+			capture.sse.invalid = true
+		}
+	case "message_stop":
+		if capture.sse.input == nil || capture.sse.output == nil {
+			capture.sse.invalid = true
+			return
+		}
+		capture.tokens = capturedGatewayUsage{
+			input: *capture.sse.input, output: *capture.sse.output,
+			cached: capture.sse.cached, reasoning: capture.sse.reasoning, valid: true,
+		}
+	}
+}
+
+func (capture *usageSSECapture) setInput(value uint64) bool {
+	return capture.set(&capture.input, value)
+}
+
+func (capture *usageSSECapture) setOutput(value uint64) bool {
+	return capture.set(&capture.output, value)
+}
+
+func (capture *usageSSECapture) setOptionalCached(value *uint64) bool {
+	if value == nil {
+		return true
+	}
+	return capture.set(&capture.cached, *value)
+}
+
+func (capture *usageSSECapture) setOptionalReasoning(value *uint64) bool {
+	if value == nil {
+		return true
+	}
+	return capture.set(&capture.reasoning, *value)
+}
+
+func (capture *usageSSECapture) set(target **uint64, value uint64) bool {
+	if *target != nil && **target != value {
+		return false
+	}
+	copy := value
+	*target = &copy
+	return true
+}
+
+func usageSSEFrameEnd(raw []byte) (int, int) {
+	if index := bytes.Index(raw, []byte("\n\n")); index >= 0 {
+		return index, 2
+	}
+	if index := bytes.Index(raw, []byte("\r\n\r\n")); index >= 0 {
+		return index, 4
+	}
+	return -1, 0
+}
+
+func parseUsageSSEFrame(frame []byte) (string, []byte, bool, bool) {
+	normalized := strings.ReplaceAll(strings.ReplaceAll(string(frame), "\r\n", "\n"), "\r", "\n")
+	var event string
+	var data []string
+	for _, line := range strings.Split(normalized, "\n") {
+		if line == "" || strings.HasPrefix(line, ":") {
+			continue
+		}
+		field, value, found := strings.Cut(line, ":")
+		if !found {
+			return "", nil, false, false
+		}
+		value = strings.TrimPrefix(value, " ")
+		switch field {
+		case "event":
+			if event != "" && event != value {
+				return "", nil, false, false
+			}
+			event = value
+		case "data":
+			data = append(data, value)
+		}
+	}
+	if len(data) == 0 {
+		return event, nil, false, true
+	}
+	return event, []byte(strings.Join(data, "\n")), true, true
+}
+
+func decodeUsageJSONObject(raw []byte) (map[string]any, bool) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var root map[string]any
+	if err := decoder.Decode(&root); err != nil || root == nil {
+		return nil, false
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, false
+	}
+	return root, true
+}
+
+func capturedUsageFromObject(root map[string]any) (capturedGatewayUsage, bool) {
+	if root == nil {
+		return capturedGatewayUsage{}, false
+	}
+	usage, present, valid := capturedPartialUsage(root["usage"], true, true)
+	return usage, present && valid
+}
+
+func capturedPartialUsage(raw any, needInput, needOutput bool) (capturedGatewayUsage, bool, bool) {
+	usage, ok := raw.(map[string]any)
+	if !ok || usage == nil {
+		return capturedGatewayUsage{}, false, false
+	}
+	result := capturedGatewayUsage{}
+	if needInput {
+		input, present, valid := capturedUsageToken(usage, []string{"input_tokens", "prompt_tokens"}, nil)
+		if !present || !valid {
+			return capturedGatewayUsage{}, false, false
+		}
+		result.input = input
+	}
+	if needOutput {
+		output, present, valid := capturedUsageToken(usage, []string{"output_tokens", "completion_tokens"}, nil)
+		if !present || !valid {
+			return capturedGatewayUsage{}, false, false
+		}
+		result.output = output
+	}
+	cached, cachedPresent, cachedValid := capturedUsageToken(usage, []string{"cached_input_tokens", "cache_read_input_tokens"}, [][2]string{{"input_tokens_details", "cached_tokens"}, {"prompt_tokens_details", "cached_tokens"}})
+	if !cachedValid {
+		return capturedGatewayUsage{}, false, false
+	}
+	if cachedPresent {
+		result.cached = usageUintPointer(cached)
+	}
+	reasoning, reasoningPresent, reasoningValid := capturedUsageToken(usage, []string{"reasoning_tokens", "reasoning_output_tokens"}, [][2]string{{"output_tokens_details", "reasoning_tokens"}, {"completion_tokens_details", "reasoning_tokens"}})
+	if !reasoningValid {
+		return capturedGatewayUsage{}, false, false
+	}
+	if reasoningPresent {
+		result.reasoning = usageUintPointer(reasoning)
+	}
+	result.valid = needInput && needOutput
+	return result, true, true
+}
+
+// capturedUsageToken accepts equivalent numeric aliases only when every
+// supplied value is a non-negative exact integer. It never derives a value
+// from total_tokens or response text.
+func capturedUsageToken(usage map[string]any, direct []string, nested [][2]string) (uint64, bool, bool) {
+	var value uint64
+	present := false
+	observe := func(raw any) bool {
+		parsed, ok := capturedUsageUint(raw)
+		if !ok {
+			return false
+		}
+		if present && value != parsed {
+			return false
+		}
+		value = parsed
+		present = true
+		return true
+	}
+	for _, key := range direct {
+		if raw, exists := usage[key]; exists && !observe(raw) {
+			return 0, false, false
+		}
+	}
+	for _, path := range nested {
+		container, exists := usage[path[0]]
+		if !exists {
+			continue
+		}
+		object, ok := container.(map[string]any)
+		if !ok {
+			return 0, false, false
+		}
+		if raw, exists := object[path[1]]; exists && !observe(raw) {
+			return 0, false, false
+		}
+	}
+	return value, present, true
+}
+
+func capturedUsageUint(raw any) (uint64, bool) {
+	switch value := raw.(type) {
+	case json.Number:
+		if strings.ContainsAny(value.String(), ".eE+-") {
+			return 0, false
+		}
+		parsed, err := value.Int64()
+		return uint64(parsed), err == nil && parsed >= 0
+	case uint64:
+		return value, true
+	case uint:
+		return uint64(value), true
+	case uint32:
+		return uint64(value), true
+	case int:
+		return uint64(value), value >= 0
+	case int64:
+		return uint64(value), value >= 0
+	case float64:
+		if value < 0 || value > (1<<53)-1 || value != float64(uint64(value)) {
+			return 0, false
+		}
+		return uint64(value), true
+	default:
+		return 0, false
+	}
+}
+
+func usageUintPointer(value uint64) *uint64 {
+	copy := value
+	return &copy
+}
+
 func (capture *usageCapture) finish(rt *Runtime, observed *edgeStatusResponseWriter, requestCanceled bool) {
 	if capture == nil || observed == nil {
 		return
 	}
+	defer func() { capture.sse.pending = nil }()
 	completed := time.Now().UTC()
 	statusCode := observed.statusCode()
 	writeFailed := observed.downstreamWriteFailed()
@@ -240,6 +627,12 @@ func (capture *usageCapture) finish(rt *Runtime, observed *edgeStatusResponseWri
 	}
 	if succeeded {
 		event.Status = "ok"
+		if capture.tokens.valid {
+			event.InputTokens = capture.tokens.input
+			event.OutputTokens = capture.tokens.output
+			event.CachedInputTokens = capture.tokens.cached
+			event.ReasoningTokens = capture.tokens.reasoning
+		}
 	} else {
 		errorClass := capture.failureClass
 		if errorClass == "" {

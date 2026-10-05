@@ -132,7 +132,13 @@ class Handler(BaseHTTPRequestHandler):
                 "message": {"role":"assistant", "content":RESPONSE_MARKER},
                 "finish_reason": "stop",
             }],
-            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+			"usage": {
+				"prompt_tokens": 17,
+				"completion_tokens": 11,
+				"total_tokens": 28,
+				"prompt_tokens_details": {"cached_tokens": 5},
+				"completion_tokens_details": {"reasoning_tokens": 3},
+			},
         })
         print(json.dumps({"event":"responses"}), flush=True)
 ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()

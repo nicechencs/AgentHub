@@ -59,6 +59,7 @@ func dispatchOfficialResponsesStream(
 	policy routeHTTPSafetyPolicy,
 	sanitize officialSSEEventSanitizer,
 	affinity *officialStreamAffinity,
+	usage *usageCapture,
 	streamFailed *bool,
 ) int {
 	defer resp.Body.Close()
@@ -73,7 +74,7 @@ func dispatchOfficialResponsesStream(
 	}
 
 	var observed officialStreamAffinity
-	committed, safeSequence, relayErr := relayStrictResponsesSSE(w, r, resp, policy, sanitize, &observed)
+	committed, safeSequence, relayErr := relayStrictResponsesSSE(w, r, resp, policy, sanitize, &observed, usage)
 	if relayErr == nil {
 		if affinity != nil {
 			*affinity = observed
@@ -113,7 +114,7 @@ func dispatchOfficialResponsesStream(
 	return dispatchContinue
 }
 
-func relayStrictResponsesSSE(w http.ResponseWriter, r *http.Request, resp *http.Response, policy routeHTTPSafetyPolicy, sanitize officialSSEEventSanitizer, affinity *officialStreamAffinity) (bool, uint64, error) {
+func relayStrictResponsesSSE(w http.ResponseWriter, r *http.Request, resp *http.Response, policy routeHTTPSafetyPolicy, sanitize officialSSEEventSanitizer, affinity *officialStreamAffinity, usage *usageCapture) (bool, uint64, error) {
 	streamCtx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	lines := scanConvertedSSELines(streamCtx, resp.Body, policy.SSEBodyBytes)
@@ -143,6 +144,7 @@ func relayStrictResponsesSSE(w http.ResponseWriter, r *http.Request, resp *http.
 			return errOfficialResponsesFailure
 		}
 		observeOfficialStreamAffinity(affinity, event.Type, event.Value)
+		usage.observeResponsesSSEEvent(event.Type, event.Value)
 		safeSequence = event.SequenceNumber + 1
 		if sanitize != nil {
 			_, payload, hasData, parseErr := parseResponsesSSEFields(frame)
@@ -237,6 +239,7 @@ func dispatchGrokResponsesStream(
 	policy routeHTTPSafetyPolicy,
 	sanitize officialSSEEventSanitizer,
 	affinity *officialStreamAffinity,
+	usage *usageCapture,
 	streamFailed *bool,
 ) int {
 	defer resp.Body.Close()
@@ -250,7 +253,7 @@ func dispatchGrokResponsesStream(
 		return dispatchContinue
 	}
 	var observed officialStreamAffinity
-	committed, safeSequence, relayErr := relayGrokResponsesSSE(w, r, resp, policy, sanitize, &observed)
+	committed, safeSequence, relayErr := relayGrokResponsesSSE(w, r, resp, policy, sanitize, &observed, usage)
 	if relayErr == nil {
 		if affinity != nil {
 			*affinity = observed
@@ -290,7 +293,7 @@ func dispatchGrokResponsesStream(
 	return dispatchContinue
 }
 
-func relayGrokResponsesSSE(w http.ResponseWriter, r *http.Request, resp *http.Response, policy routeHTTPSafetyPolicy, sanitize officialSSEEventSanitizer, affinity *officialStreamAffinity) (bool, uint64, error) {
+func relayGrokResponsesSSE(w http.ResponseWriter, r *http.Request, resp *http.Response, policy routeHTTPSafetyPolicy, sanitize officialSSEEventSanitizer, affinity *officialStreamAffinity, usage *usageCapture) (bool, uint64, error) {
 	streamCtx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	lines := scanConvertedSSELines(streamCtx, resp.Body, policy.SSEBodyBytes)
@@ -334,6 +337,7 @@ func relayGrokResponsesSSE(w http.ResponseWriter, r *http.Request, resp *http.Re
 			return errInvalidResponsesSSE
 		}
 		observeOfficialStreamAffinity(affinity, kind, eventValue)
+		usage.observeResponsesSSEEvent(kind, eventValue)
 		if sanitize != nil {
 			sanitized, sanitizeErr := sanitize(payload)
 			if sanitizeErr != nil {

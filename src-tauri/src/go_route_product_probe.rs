@@ -25,6 +25,10 @@ const WRONG_BEARER: &str = "ahb-product-probe-wrong-bearer";
 const USAGE_REQUEST_MARKER: &str = "product-usage-request-body";
 const USAGE_RESPONSE_MARKER: &str = "product-usage-response-ok";
 const MAX_PROBE_RESPONSE_BYTES: u64 = 32 * 1024;
+const USAGE_INPUT_TOKENS: u64 = 17;
+const USAGE_OUTPUT_TOKENS: u64 = 11;
+const USAGE_CACHED_INPUT_TOKENS: u64 = 5;
+const USAGE_REASONING_TOKENS: u64 = 3;
 
 type ProbeResult<T> = Result<T, String>;
 
@@ -151,7 +155,6 @@ fn run(root: PathBuf, upstream: String, hold_evidence: Option<PathBuf>) -> Probe
         .map_err(|error| format!("change synthetic route configuration: {error}"))?;
     let started = host.start_prepared_product(prepared);
     ensure_ready(&started, PRODUCT_PORT, "initial start")?;
-    let database_before = database_and_wal_snapshot(&data_dir)?;
     let (first_pid, product_home, first_staging) = host.probe_session_process()?;
     let expected_home = fs::canonicalize(&data_dir)
         .map_err(|error| format!("canonicalize data directory: {error}"))?
@@ -195,6 +198,11 @@ fn run(root: PathBuf, upstream: String, hold_evidence: Option<PathBuf>) -> Probe
         hash_before == prepared_summary.expected_config_hash,
         "prepared Product start rebuilt configuration from saved state",
     )?;
+    // Snapshot directly around the data-plane exchange. Product startup and
+    // control preflights may complete their own durable bookkeeping, but the
+    // Go request itself is constrained to its JSONL spool and must not touch
+    // the desktop database or WAL.
+    let database_before = database_and_wal_snapshot(&data_dir)?;
     ensure(
         product_usage_request_succeeds(&pool.hub_token, "probe-model"),
         "Product route did not complete the synthetic usage request",
@@ -622,6 +630,8 @@ fn verify_product_usage_spool(data_dir: &Path, expected_profile_id: &str) -> Pro
         "upstream_model",
         "input_tokens",
         "output_tokens",
+        "cached_input_tokens",
+        "reasoning_tokens",
         "status",
         "status_code",
         "error_class",
@@ -691,8 +701,12 @@ fn verify_product_usage_spool(data_dir: &Path, expected_profile_id: &str) -> Pro
             && fields.get("account_source_id").and_then(Value::as_str) == Some(SOURCE_ID)
             && fields.get("model").and_then(Value::as_str) == Some("probe-model")
             && fields.get("upstream_model").and_then(Value::as_str) == Some("probe-model")
-            && fields.get("input_tokens").and_then(Value::as_u64) == Some(0)
-            && fields.get("output_tokens").and_then(Value::as_u64) == Some(0)
+            && fields.get("input_tokens").and_then(Value::as_u64) == Some(USAGE_INPUT_TOKENS)
+            && fields.get("output_tokens").and_then(Value::as_u64) == Some(USAGE_OUTPUT_TOKENS)
+            && fields.get("cached_input_tokens").and_then(Value::as_u64)
+                == Some(USAGE_CACHED_INPUT_TOKENS)
+            && fields.get("reasoning_tokens").and_then(Value::as_u64)
+                == Some(USAGE_REASONING_TOKENS)
             && fields.get("status").and_then(Value::as_str) == Some("ok")
             && fields.get("status_code").and_then(Value::as_u64) == Some(200)
             && fields.get("latency_ms").and_then(Value::as_u64).is_some()

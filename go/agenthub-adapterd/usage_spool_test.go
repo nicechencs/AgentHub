@@ -247,6 +247,11 @@ func TestUsageSpoolRecordsSSEFailureAndCancellation(t *testing.T) {
 	if events[1].Status != "failed" || events[1].ErrorClass == nil || *events[1].ErrorClass != edgeStatusRequestCanceled || events[1].Attempts == nil || *events[1].Attempts != 1 {
 		t.Fatalf("cancellation event=%+v", events[1])
 	}
+	for _, event := range events {
+		if event.InputTokens != 0 || event.OutputTokens != 0 || event.CachedInputTokens != nil || event.ReasoningTokens != nil {
+			t.Fatalf("failed or canceled event retained usage: %+v", event)
+		}
+	}
 }
 
 func TestUsageSpoolRecordsFinalRetryAndPreservesWriterThroughHotReload(t *testing.T) {
@@ -258,7 +263,7 @@ func TestUsageSpoolRecordsFinalRetryAndPreservesWriterThroughHotReload(t *testin
 			return
 		}
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"ok":true}`))
+		_, _ = writer.Write([]byte(`{"usage":{"input_tokens":9,"output_tokens":2}}`))
 	}))
 	t.Cleanup(upstream.Close)
 	spool := t.TempDir()
@@ -273,6 +278,9 @@ func TestUsageSpoolRecordsFinalRetryAndPreservesWriterThroughHotReload(t *testin
 	events := usageEvents(t, spool)
 	if len(events) != 1 || events[0].Attempts == nil || *events[0].Attempts != 2 || events[0].TicketID == nil || *events[0].TicketID != "ticket-final" || events[0].AccountID == nil || *events[0].AccountID != "source-final" || attempts != 2 {
 		t.Fatalf("retry event=%+v attempts=%d", events, attempts)
+	}
+	if events[0].InputTokens != 9 || events[0].OutputTokens != 2 {
+		t.Fatalf("retry token event=%+v", events[0])
 	}
 
 	runtime.mu.Lock()

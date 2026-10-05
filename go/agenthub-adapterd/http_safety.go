@@ -319,7 +319,10 @@ type boundedStreamChunk struct {
 	err  error
 }
 
-func relayBoundedSSE(w http.ResponseWriter, r *http.Request, resp *http.Response, policy routeHTTPSafetyPolicy) (bool, error) {
+// observe receives transient upstream bytes before they are forwarded. Callers
+// use it only for bounded, numeric usage extraction; it must not retain or log
+// payload content.
+func relayBoundedSSE(w http.ResponseWriter, r *http.Request, resp *http.Response, policy routeHTTPSafetyPolicy, observe func([]byte)) (bool, error) {
 	if !isEventStreamMediaType(resp.Header.Get("Content-Type")) {
 		return false, errUnexpectedResponseType
 	}
@@ -394,6 +397,9 @@ func relayBoundedSSE(w http.ResponseWriter, r *http.Request, resp *http.Response
 				refreshDownstreamWriteDeadline(w, policy.DownstreamWriteTimeout)
 				setSafeSuccessHeaders(w.Header(), true)
 				w.WriteHeader(resp.StatusCode)
+			}
+			if observe != nil {
+				observe(item.data)
 			}
 			refreshDownstreamWriteDeadline(w, policy.DownstreamWriteTimeout)
 			if _, err := w.Write(item.data); err != nil {

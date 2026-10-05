@@ -292,7 +292,7 @@ try {
             [Console]::Out.WriteLine('{"event":"rejected"}')
             continue
         }
-        $json = ('{{"id":"chatcmpl_product_usage","object":"chat.completion","created":1720000000,"model":{0},"choices":[{{"index":0,"message":{{"role":"assistant","content":{1}}},"finish_reason":"stop"}}],"usage":{{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}}}' -f ($body.model | ConvertTo-Json -Compress), ($responseMarker | ConvertTo-Json -Compress))
+        $json = ('{{"id":"chatcmpl_product_usage","object":"chat.completion","created":1720000000,"model":{0},"choices":[{{"index":0,"message":{{"role":"assistant","content":{1}}},"finish_reason":"stop"}}],"usage":{{"prompt_tokens":17,"completion_tokens":11,"total_tokens":28,"prompt_tokens_details":{{"cached_tokens":5}},"completion_tokens_details":{{"reasoning_tokens":3}}}}}}' -f ($body.model | ConvertTo-Json -Compress), ($responseMarker | ConvertTo-Json -Compress))
         Write-JsonResponse -Response $context.Response -Status 200 -Json $json
         [Console]::Out.WriteLine('{"event":"responses"}')
     }
