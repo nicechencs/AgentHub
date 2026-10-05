@@ -25,8 +25,11 @@ MOCK_PID=""
 PROBE_PID=""
 RESPONSES_SOURCE_KEY="sk-product-handoff-responses-do-not-use-000000"
 MESSAGES_SOURCE_KEY="sk-product-handoff-messages-do-not-use-000000"
+CHAT_SOURCE_KEY="sk-product-handoff-chat-do-not-use-000000"
 RESPONSES_FAILURE_REQUEST="handoff-responses-upstream-failure"
 RESPONSES_FAILURE_RESPONSE="synthetic_upstream_failure"
+CHAT_REQUEST="handoff-chat-sse-request"
+CHAT_RESPONSE="handoff-chat-sse-ok"
 
 cleanup() {
   local status=$?
@@ -74,9 +77,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 RESPONSES_SOURCE_KEY = "sk-product-handoff-responses-do-not-use-000000"
 MESSAGES_SOURCE_KEY = "sk-product-handoff-messages-do-not-use-000000"
+CHAT_SOURCE_KEY = "sk-product-handoff-chat-do-not-use-000000"
 RESPONSES_REQUEST = "handoff-responses-request"
 RESPONSES_FAILURE_REQUEST = "handoff-responses-upstream-failure"
 MESSAGES_REQUEST = "handoff-messages-request"
+CHAT_REQUEST = "handoff-chat-sse-request"
+CHAT_RESPONSE = "handoff-chat-sse-ok"
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
@@ -90,7 +96,20 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def send_sse(self, frames):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        for frame in frames:
+            self.wfile.write(frame)
+        self.wfile.flush()
+
     def do_GET(self):
+        if self.path != "/v1/models":
+            self.send_json(404, {"error":"mock_request_rejected"})
+            print(json.dumps({"event":"rejected"}), flush=True)
+            return
         raw = json.dumps({"object":"list","data":[{"id":"probe-model"}]}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -152,6 +171,45 @@ class Handler(BaseHTTPRequestHandler):
             if failure_valid:
                 self.send_json(502, {"error":{"code":"synthetic_upstream_failure"}})
                 print(json.dumps({"event":"responses_failure"}), flush=True)
+                return
+
+            chat_valid = (
+                self.headers.get("Authorization") == "Bearer " + CHAT_SOURCE_KEY
+                and self.headers.get("Accept") == "text/event-stream"
+                and not self.headers.get("X-API-Key")
+                and not self.headers.get("Anthropic-Version")
+                and isinstance(model, str) and bool(model)
+                and payload == {
+                    "model": model,
+                    "messages": [{"role": "user", "content": CHAT_REQUEST}],
+                    "stream": True,
+                }
+            )
+            if chat_valid:
+                first = json.dumps({
+                    "id": "chatcmpl_handoff_stream",
+                    "object": "chat.completion.chunk",
+                    "created": 1720000000,
+                    "model": model,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {"role": "assistant", "content": CHAT_RESPONSE},
+                        "finish_reason": None,
+                    }],
+                }, separators=(",", ":")).encode()
+                second = json.dumps({
+                    "id": "chatcmpl_handoff_stream",
+                    "object": "chat.completion.chunk",
+                    "created": 1720000000,
+                    "model": model,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {},
+                        "finish_reason": "stop",
+                    }],
+                }, separators=(",", ":")).encode()
+                self.send_sse((b"data: " + first + b"\n\n", b"data: " + second + b"\n\n", b"data: [DONE]\n\n"))
+                print(json.dumps({"event":"chat_sse"}), flush=True)
                 return
 
         if self.path == "/v1/messages":
@@ -237,12 +295,13 @@ evidence = json.loads(rows[-1])
 assert evidence["schema"] == "route-runtime-product-handoff-probe.v1", evidence
 assert evidence["status"] == "ok", evidence
 assert evidence["port"] == 43121, evidence
-assert evidence["rust_entry_count"] == 2, evidence
+assert evidence["rust_entry_count"] == 3, evidence
 for key in (
     "detached_caller_drop_compensated", "health_failure_compensated",
     "product_request_failure_compensated",
     "prepared_hash_matched", "rust_stopped_before_go", "rust_mutator_blocked",
     "product_health_ready", "synthetic_protocol_requests_succeeded",
+    "chat_completions_sse_succeeded",
     "go_stopped_before_restore", "rust_exact_restored",
     "database_and_selection_unchanged", "final_port_released", "secret_free_evidence",
 ):
@@ -263,19 +322,23 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 assert events.count("responses") == 1, events
 assert events.count("responses_failure") == 1, events
 assert events.count("messages") == 1, events
+assert events.count("chat_sse") == 1, events
 assert "rejected" not in events, events
 PY
 
 if grep -F -q \
   -e "${RESPONSES_SOURCE_KEY}" \
   -e "${MESSAGES_SOURCE_KEY}" \
+  -e "${CHAT_SOURCE_KEY}" \
   -e "ahb-product-handoff-wrong-bearer" \
   -e "handoff-responses-request" \
   -e "${RESPONSES_FAILURE_REQUEST}" \
   -e "${RESPONSES_FAILURE_RESPONSE}" \
   -e "handoff-messages-request" \
+  -e "${CHAT_REQUEST}" \
   -e "handoff-responses-ok" \
   -e "handoff-messages-ok" \
+  -e "${CHAT_RESPONSE}" \
   "${RUN_LOG}" "${BUILD_LOG}" "${GO_BUILD_LOG}" "${MOCK_LOG}"; then
   echo "FAIL: synthetic Key or request data leaked into probe logs" >&2
   exit 1

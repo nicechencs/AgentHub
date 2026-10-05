@@ -24,14 +24,18 @@ use crate::route_runtime::{
 const PRODUCT_PORT: u16 = 43121;
 const RESPONSES_SOURCE_ID: &str = "product-handoff-probe-responses-source";
 const MESSAGES_SOURCE_ID: &str = "product-handoff-probe-messages-source";
+const CHAT_SOURCE_ID: &str = "product-handoff-probe-chat-source";
 const RESPONSES_SOURCE_KEY: &str = "sk-product-handoff-responses-do-not-use-000000";
 const MESSAGES_SOURCE_KEY: &str = "sk-product-handoff-messages-do-not-use-000000";
+const CHAT_SOURCE_KEY: &str = "sk-product-handoff-chat-do-not-use-000000";
 const WRONG_BEARER: &str = "ahb-product-handoff-wrong-bearer";
 const RESPONSES_REQUEST_MARKER: &str = "handoff-responses-request";
 const RESPONSES_FAILURE_REQUEST_MARKER: &str = "handoff-responses-upstream-failure";
 const MESSAGES_REQUEST_MARKER: &str = "handoff-messages-request";
+const CHAT_REQUEST_MARKER: &str = "handoff-chat-sse-request";
 const RESPONSES_RESPONSE_MARKER: &str = "handoff-responses-ok";
 const MESSAGES_RESPONSE_MARKER: &str = "handoff-messages-ok";
+const CHAT_RESPONSE_MARKER: &str = "handoff-chat-sse-ok";
 
 type ProbeResult<T> = Result<T, String>;
 
@@ -102,6 +106,20 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
             is_current: false,
         })
         .map_err(|_| "create synthetic Messages provider failed".to_string())?;
+    hub.providers()
+        .create(&ProviderInput {
+            id: CHAT_SOURCE_ID.into(),
+            agent_id: AgentId::Kimi,
+            name: "Product handoff probe Chat source".into(),
+            settings_config: json!({
+                "apiKey": CHAT_SOURCE_KEY,
+                "base_url": upstream,
+                "model": "probe-model",
+            }),
+            meta: json!({"preset": "openai-compat"}),
+            is_current: false,
+        })
+        .map_err(|_| "create synthetic Chat provider failed".to_string())?;
 
     let responses_pool = configure_pool(
         hub.as_ref(),
@@ -115,27 +133,43 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
         RouteDownstreamSurface::Messages,
         MESSAGES_SOURCE_ID,
     )?;
+    let chat_pool = configure_pool(
+        hub.as_ref(),
+        AgentId::Kimi,
+        RouteDownstreamSurface::ChatCompletions,
+        CHAT_SOURCE_ID,
+    )?;
     ensure(
         !responses_pool.hub_token.trim().is_empty()
             && !messages_pool.hub_token.trim().is_empty()
+            && !chat_pool.hub_token.trim().is_empty()
             && responses_pool.hub_token != messages_pool.hub_token,
-        "dual-route probe did not receive distinct entry Keys",
+        "multi-route probe did not receive distinct entry Keys",
+    )?;
+    ensure(
+        responses_pool.hub_token != chat_pool.hub_token
+            && messages_pool.hub_token != chat_pool.hub_token,
+        "multi-route probe re-used an entry Key",
     )?;
     let secret_values = vec![
         RESPONSES_SOURCE_KEY.to_owned(),
         MESSAGES_SOURCE_KEY.to_owned(),
+        CHAT_SOURCE_KEY.to_owned(),
         WRONG_BEARER.to_owned(),
         responses_pool.hub_token.clone(),
         messages_pool.hub_token.clone(),
+        chat_pool.hub_token.clone(),
         RESPONSES_REQUEST_MARKER.to_owned(),
         RESPONSES_FAILURE_REQUEST_MARKER.to_owned(),
         MESSAGES_REQUEST_MARKER.to_owned(),
+        CHAT_REQUEST_MARKER.to_owned(),
         RESPONSES_RESPONSE_MARKER.to_owned(),
         MESSAGES_RESPONSE_MARKER.to_owned(),
+        CHAT_RESPONSE_MARKER.to_owned(),
     ];
     let flags = hub.route_pools().pair_adapter_flags();
     // Build every Rust start spec before the Product plan is prepared.
-    let specs = [&responses_pool, &messages_pool]
+    let specs = [&responses_pool, &messages_pool, &chat_pool]
         .into_iter()
         .map(|pool| hub.adapter_bridge().pool_listener_spec(pool, flags))
         .collect::<Vec<_>>();
@@ -149,6 +183,11 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
         .and_then(|spec| spec.listed_models.first())
         .cloned()
         .ok_or_else(|| "Messages route did not expose a probe model".to_string())?;
+    let chat_model = specs
+        .get(2)
+        .and_then(|spec| spec.listed_models.first())
+        .cloned()
+        .ok_or_else(|| "Chat route did not expose a probe model".to_string())?;
 
     let runtime = Arc::new(RouteRuntimeManager::new_product_handoff_probe(Arc::clone(
         &hub,
@@ -164,7 +203,7 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
             "Rust gateway did not use the saved Product port",
         )?;
     }
-    ensure_rust_restored(&runtime, 2)?;
+    ensure_rust_restored(&runtime, 3)?;
     let safe_preflight = hub
         .adapter_bridge()
         .prepare_go_product_config()
@@ -189,13 +228,16 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
             vec![
                 responses_pool.hub_token.clone(),
                 messages_pool.hub_token.clone(),
+                chat_pool.hub_token.clone(),
             ],
             Some(product_runtime_protocol_and_secret_probe(
                 secret_values.clone(),
                 responses_pool.hub_token.clone(),
                 messages_pool.hub_token.clone(),
+                chat_pool.hub_token.clone(),
                 responses_model.clone(),
                 messages_model.clone(),
+                chat_model.clone(),
             )),
         )
         .await
@@ -203,7 +245,7 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
         .map_err(|error| error.to_string())?;
     ensure(
         report.port == PRODUCT_PORT
-            && report.rust_entry_count == 2
+            && report.rust_entry_count == 3
             && report.prepared_hash_matched
             && report.rust_stopped_before_go
             && report.rust_mutator_blocked
@@ -212,7 +254,7 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
             && report.rust_exact_restored,
         "successful Product handoff trial omitted required evidence",
     )?;
-    ensure_rust_restored(&runtime, 2)?;
+    ensure_rust_restored(&runtime, 3)?;
 
     let product_request_failure_observed = Arc::new(AtomicBool::new(false));
     let product_request_failure = runtime
@@ -222,6 +264,7 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
             vec![
                 responses_pool.hub_token.clone(),
                 messages_pool.hub_token.clone(),
+                chat_pool.hub_token.clone(),
             ],
             Some(product_runtime_expected_request_failure_probe(
                 secret_values.clone(),
@@ -242,7 +285,7 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
         product_request_failure_compensated,
         "failed Product request did not compensate in the safe order",
     )?;
-    ensure_rust_restored(&runtime, 2)?;
+    ensure_rust_restored(&runtime, 3)?;
     ensure(
         critical_db_hash(&data_dir)? == db_before,
         "failed Product request changed the database or selection state",
@@ -262,7 +305,7 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
         failed.stage == "product_health" && failed.go_stopped && failed.rust_restored,
         "failed Product health did not compensate in the safe order",
     )?;
-    ensure_rust_restored(&runtime, 2)?;
+    ensure_rust_restored(&runtime, 3)?;
 
     // Drop a normal caller's handle, then require the detached task to report
     // its full result through an in-process-only completion channel. This
@@ -274,6 +317,7 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
         vec![
             responses_pool.hub_token.clone(),
             messages_pool.hub_token.clone(),
+            chat_pool.hub_token.clone(),
         ],
         Some(product_runtime_secret_probe(secret_values.clone())),
         Some(detached_completion),
@@ -288,7 +332,7 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
         detached_report.rust_exact_restored && detached_report.go_stopped_before_restore,
         "detached handoff trial omitted restoration evidence",
     )?;
-    ensure_rust_restored(&runtime, 2)?;
+    ensure_rust_restored(&runtime, 3)?;
     ensure(
         critical_db_hash(&data_dir)? == db_before,
         "handoff trial changed the database or selection state",
@@ -328,6 +372,7 @@ async fn run(root: PathBuf, upstream: String, run_log: PathBuf) -> ProbeResult<V
         "rust_mutator_blocked": report.rust_mutator_blocked,
         "product_health_ready": report.product_health_ready,
         "synthetic_protocol_requests_succeeded": true,
+        "chat_completions_sse_succeeded": true,
         "go_stopped_before_restore": report.go_stopped_before_restore,
         "rust_exact_restored": report.rust_exact_restored,
         "database_and_selection_unchanged": true,
@@ -403,15 +448,19 @@ fn product_runtime_protocol_and_secret_probe(
     secret_values: Vec<String>,
     responses_bearer: String,
     messages_bearer: String,
+    chat_bearer: String,
     responses_model: String,
     messages_model: String,
+    chat_model: String,
 ) -> ProductHandoffTrialRuntimeProbe {
     Box::new(move |host| {
         if !product_data_plane_is_ready(
             &responses_bearer,
             &messages_bearer,
+            &chat_bearer,
             &responses_model,
             &messages_model,
+            &chat_model,
         ) {
             return Err(ProductHandoffTrialProbeFailure::ProductRequest);
         }
@@ -483,8 +532,10 @@ fn runtime_secrets_are_absent(
 fn product_data_plane_is_ready(
     responses_bearer: &str,
     messages_bearer: &str,
+    chat_bearer: &str,
     responses_model: &str,
     messages_model: &str,
+    chat_model: &str,
 ) -> bool {
     let responses = post_product_json(
         "/v1/responses",
@@ -505,6 +556,15 @@ fn product_data_plane_is_ready(
             "stream": false,
         }),
     );
+    let chat_sse = post_product_sse(
+        "/v1/chat/completions",
+        chat_bearer,
+        json!({
+            "model": chat_model,
+            "messages": [{"role": "user", "content": CHAT_REQUEST_MARKER}],
+            "stream": true,
+        }),
+    );
     responses.is_some_and(|response| {
         response.get("object").and_then(Value::as_str) == Some("response")
             && response.get("status").and_then(Value::as_str) == Some("completed")
@@ -515,7 +575,75 @@ fn product_data_plane_is_ready(
             && message.get("role").and_then(Value::as_str) == Some("assistant")
             && message.get("model").and_then(Value::as_str) == Some(messages_model)
             && message_content_has_text(&message, MESSAGES_RESPONSE_MARKER)
+    }) && chat_sse.is_some_and(|(content_type, body)| {
+        content_type
+            .as_deref()
+            .is_some_and(|value| value.eq_ignore_ascii_case("text/event-stream"))
+            && chat_sse_completed(&body, chat_model)
     })
+}
+
+fn chat_sse_completed(body: &[u8], model: &str) -> bool {
+    let Ok(raw) = std::str::from_utf8(body) else {
+        return false;
+    };
+    let frames = raw
+        .split("\n\n")
+        .filter(|frame| !frame.is_empty())
+        .collect::<Vec<_>>();
+    if frames.len() != 3 {
+        return false;
+    }
+    let first = frames[0].strip_prefix("data: ").and_then(|data| {
+        serde_json::from_str::<Value>(data).ok().filter(|event| {
+            event.as_object().is_some_and(|event| event.len() == 5)
+                && event.get("id").and_then(Value::as_str) == Some("chatcmpl_handoff_stream")
+                && event.get("object").and_then(Value::as_str) == Some("chat.completion.chunk")
+                && event.get("created").and_then(Value::as_u64) == Some(1_720_000_000)
+                && event.get("model").and_then(Value::as_str) == Some(model)
+                && event
+                    .get("choices")
+                    .and_then(Value::as_array)
+                    .is_some_and(|choices| {
+                        choices.len() == 1
+                            && choices[0].get("index").and_then(Value::as_u64) == Some(0)
+                            && choices[0]
+                                .get("delta")
+                                .and_then(Value::as_object)
+                                .is_some_and(|delta| {
+                                    delta.len() == 2
+                                        && delta.get("role").and_then(Value::as_str)
+                                            == Some("assistant")
+                                        && delta.get("content").and_then(Value::as_str)
+                                            == Some(CHAT_RESPONSE_MARKER)
+                                })
+                            && choices[0].get("finish_reason").is_some_and(Value::is_null)
+                    })
+        })
+    });
+    let second = frames[1].strip_prefix("data: ").and_then(|data| {
+        serde_json::from_str::<Value>(data).ok().filter(|event| {
+            event.as_object().is_some_and(|event| event.len() == 5)
+                && event.get("id").and_then(Value::as_str) == Some("chatcmpl_handoff_stream")
+                && event.get("object").and_then(Value::as_str) == Some("chat.completion.chunk")
+                && event.get("created").and_then(Value::as_u64) == Some(1_720_000_000)
+                && event.get("model").and_then(Value::as_str) == Some(model)
+                && event
+                    .get("choices")
+                    .and_then(Value::as_array)
+                    .is_some_and(|choices| {
+                        choices.len() == 1
+                            && choices[0].get("index").and_then(Value::as_u64) == Some(0)
+                            && choices[0]
+                                .get("delta")
+                                .and_then(Value::as_object)
+                                .is_some_and(serde_json::Map::is_empty)
+                            && choices[0].get("finish_reason").and_then(Value::as_str)
+                                == Some("stop")
+                    })
+        })
+    });
+    first.is_some() && second.is_some() && frames[2] == "data: [DONE]"
 }
 
 fn product_data_plane_failure_is_observed(responses_bearer: &str, responses_model: &str) -> bool {
@@ -540,6 +668,41 @@ fn post_product_json(path: &str, bearer: &str, body: Value) -> Option<Value> {
 
 fn post_product_status(path: &str, bearer: &str, body: Value) -> Option<u16> {
     post_product_bytes(path, bearer, body).map(|(status, _)| status)
+}
+
+fn post_product_sse(path: &str, bearer: &str, body: Value) -> Option<(Option<String>, Vec<u8>)> {
+    const MAX_BODY_BYTES: u64 = 32 * 1024;
+    let request_body = serde_json::to_string(&body).ok()?;
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(2))
+        .redirects(0)
+        .try_proxy_from_env(false)
+        .build();
+    let response = match agent
+        .post(&format!("http://127.0.0.1:{PRODUCT_PORT}{path}"))
+        .set("Authorization", &format!("Bearer {bearer}"))
+        .set("Content-Type", "application/json")
+        .set("Accept", "text/event-stream")
+        .send_string(&request_body)
+    {
+        Ok(response) => response,
+        Err(ureq::Error::Status(_, response)) => response,
+        Err(ureq::Error::Transport(_)) => return None,
+    };
+    if response.status() != 200 {
+        return None;
+    }
+    let content_type = response.header("Content-Type").map(str::to_owned);
+    let mut bytes = Vec::new();
+    response
+        .into_reader()
+        .take(MAX_BODY_BYTES.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() as u64 > MAX_BODY_BYTES {
+        return None;
+    }
+    Some((content_type, bytes))
 }
 
 fn post_product_bytes(path: &str, bearer: &str, body: Value) -> Option<(u16, Vec<u8>)> {
