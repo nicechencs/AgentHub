@@ -240,6 +240,9 @@ func (rt *Runtime) replaceRuntimeConfig(config *RuntimeConfig, digest string, al
 		return fmt.Errorf("runtime config cannot change while serving")
 	}
 	previousHash := rt.configHash
+	if allowServing {
+		carryForwardRuntimeEdgeStatuses(rt.edges, edges)
+	}
 	rt.edges = edges
 	rt.configRevision = rt.configRevision + 1
 	rt.configHash = digest

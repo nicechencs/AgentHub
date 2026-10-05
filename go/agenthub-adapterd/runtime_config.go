@@ -103,6 +103,33 @@ type edgeRuntimeStatus struct {
 	lastErrorCode       string
 }
 
+type edgeStatusIdentity struct {
+	poolID  string
+	surface string
+}
+
+// carryForwardRuntimeEdgeStatuses preserves aggregate status through a serving
+// config swap. The replacement edges are unpublished when this runs, so only
+// their status pointer changes; an in-flight request can safely finish on the
+// same shared counter after the old edge table is retired.
+func carryForwardRuntimeEdgeStatuses(previous, replacement []*RuntimeEdge) {
+	previousByIdentity := make(map[edgeStatusIdentity]*edgeRuntimeStatus, len(previous))
+	for _, edge := range previous {
+		if edge == nil || edge.status == nil {
+			continue
+		}
+		previousByIdentity[edgeStatusIdentity{poolID: edge.ID, surface: edge.Surface}] = edge.status
+	}
+	for _, edge := range replacement {
+		if edge == nil {
+			continue
+		}
+		if status, ok := previousByIdentity[edgeStatusIdentity{poolID: edge.ID, surface: edge.Surface}]; ok {
+			edge.status = status
+		}
+	}
+}
+
 func (edge *RuntimeEdge) beginRequest() {
 	if edge == nil || edge.status == nil {
 		return
