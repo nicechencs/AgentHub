@@ -15,7 +15,7 @@ use agenthub_core::models::{AdapterSourceKind, AgentId, ProviderInput, RouteDown
 use agenthub_core::AgentHub;
 use serde_json::{json, Value};
 
-use crate::go_route_isolated::{GoRouteIsolatedHost, GoRouteRunMode};
+use crate::go_route_isolated::{GoRouteIsolatedHost, GoRouteRequiredReloadResult, GoRouteRunMode};
 
 const PRODUCT_PORT: u16 = 43121;
 const SOURCE_ID: &str = "product-go-route-probe-source";
@@ -89,12 +89,63 @@ fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
     )?;
 
     let host = GoRouteIsolatedHost::new(Some(Arc::clone(&hub)));
-    let (preflight_port, preflight_home, config_bytes) = host.probe_product_preflight()?;
+    let unprepared_product = host.start_mode(GoRouteRunMode::Product);
+    ensure(
+        unprepared_product.state == "failed"
+            && unprepared_product.lifecycle.as_deref() == Some("prepared_product_required"),
+        "direct Product start bypassed the prepared Product plan",
+    )?;
+    let dropped_prepared = host.prepare_product_plan()?;
+    drop(dropped_prepared);
+    let stopped_prepared = host.prepare_product_plan()?;
+    let reservation_stopped = host.stop();
+    ensure(
+        reservation_stopped.state == "stopped" && !reservation_stopped.listen_ready,
+        "stop did not cancel the prepared Product reservation",
+    )?;
+    let stopped_prepared_start = host.start_prepared_product(stopped_prepared);
+    ensure(
+        stopped_prepared_start.state == "failed"
+            && stopped_prepared_start.lifecycle.as_deref() == Some("mode_conflict"),
+        "stopped Product reservation remained startable",
+    )?;
+    let invalidated_prepared = host.prepare_product_plan()?;
+    let reserved_start = host.start();
+    ensure(
+        reserved_start.state == "failed"
+            && reserved_start.lifecycle.as_deref() == Some("mode_conflict"),
+        "direct start stole a prepared Product reservation",
+    )?;
+    let reserved_reload = host.reload();
+    ensure(
+        reserved_reload.state == "failed"
+            && reserved_reload.lifecycle.as_deref() == Some("mode_conflict"),
+        "direct reload stole a prepared Product reservation",
+    )?;
+    ensure(
+        matches!(
+            host.reload_required_after_write(),
+            GoRouteRequiredReloadResult::Failed { .. }
+        ),
+        "required reload did not invalidate the prepared Product reservation",
+    )?;
+    let invalidated_start = host.start_prepared_product(invalidated_prepared);
+    ensure(
+        invalidated_start.state == "failed"
+            && invalidated_start.lifecycle.as_deref() == Some("mode_conflict"),
+        "invalidated Product reservation remained startable",
+    )?;
+    let prepared = host.prepare_product_plan()?;
+    let (preflight_port, preflight_home, config_bytes, prepared_hash) =
+        GoRouteIsolatedHost::probe_prepared_product_summary(&prepared)?;
     ensure(
         preflight_port == PRODUCT_PORT && config_bytes > 0,
         "Product preflight did not retain the saved port and configuration",
     )?;
-    let started = host.start_mode(GoRouteRunMode::Product);
+    hub.route_pools()
+        .create_local_token(&pool.id, "Product probe additional key")
+        .map_err(|error| format!("change synthetic route configuration: {error}"))?;
+    let started = host.start_prepared_product(prepared);
     ensure_ready(&started, PRODUCT_PORT, "initial start")?;
     let (first_pid, product_home, first_staging) = host.probe_session_process()?;
     let expected_home = fs::canonicalize(&data_dir)
@@ -123,9 +174,10 @@ fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
     let hash_before = host
         .probe_config_hash()
         .ok_or_else(|| "initial committed config hash is missing".to_string())?;
-    hub.route_pools()
-        .create_local_token(&pool.id, "Product probe additional key")
-        .map_err(|error| format!("change synthetic route configuration: {error}"))?;
+    ensure(
+        hash_before == prepared_hash,
+        "prepared Product start rebuilt configuration from saved state",
+    )?;
     let reloaded = host.reload();
     ensure_ready(&reloaded, PRODUCT_PORT, "reload")?;
     let hash_after = host
@@ -252,6 +304,12 @@ fn run(root: PathBuf, upstream: String) -> ProbeResult<Value> {
         "status": "ok",
         "port": PRODUCT_PORT,
         "saved_port_preserved": true,
+        "prepared_drop_released": true,
+        "unprepared_product_rejected": true,
+        "prepared_stop_cancelled": true,
+        "prepared_write_invalidated": true,
+        "prepared_reservation_exclusive": true,
+        "prepared_plan_preserved": true,
         "active_mode_change_rejected": true,
         "recovery_mode_change_rejected": true,
         "concurrent_stop_converged": true,

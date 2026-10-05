@@ -23,9 +23,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(any(unix, windows))]
 use std::sync::Condvar;
-#[cfg(any(unix, windows))]
-use std::sync::Weak;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 #[cfg(unix)]
 use std::{os::unix::fs::MetadataExt, os::unix::fs::OpenOptionsExt};
@@ -80,6 +78,9 @@ const ERROR_START_FAILED: &str = "Go route could not start";
 const ERROR_CONTROL_UNAVAILABLE: &str = "Go route status is unavailable";
 #[cfg(any(unix, windows))]
 const ERROR_MODE_ACTIVE: &str = "Go route is already active in another mode";
+#[cfg(any(unix, windows))]
+const ERROR_PREPARED_PRODUCT_REQUIRED: &str =
+    "Product Go route must start from a prepared Product plan";
 #[cfg(any(unix, windows))]
 const ERROR_REQUIRED_RELOAD_FAILED: &str = "go.route.required_reload_failed";
 #[cfg(any(unix, windows))]
@@ -180,6 +181,7 @@ struct Inner {
     active_mode: Option<GoRouteRunMode>,
     lifecycle_generation: u64,
     lifecycle_in_flight: bool,
+    prepared_product_generation: Option<u64>,
     desired: bool,
     stopping: bool,
     recovery_budget_used: u32,
@@ -197,6 +199,33 @@ struct RuntimePlan {
     port: u16,
     product_home: Option<ProductHomeLocation>,
     mode: GoRouteRunMode,
+}
+
+/// Opaque, single-use Product startup input.
+///
+/// The configuration bytes and Product home identity are captured together by
+/// [`GoRouteIsolatedHost::prepare_product_plan`]. Keeping the fields private and
+/// deliberately omitting `Clone`, `Debug`, and serialization prevents callers
+/// from copying or exposing the in-memory login material.
+#[allow(dead_code)]
+pub(crate) struct PreparedProductPlan {
+    host: Weak<GoRouteIsolatedHost>,
+    generation: u64,
+    plan: Option<RuntimePlan>,
+    reservation_active: bool,
+}
+
+#[cfg(any(unix, windows))]
+impl Drop for PreparedProductPlan {
+    fn drop(&mut self) {
+        if !self.reservation_active {
+            return;
+        }
+        if let Some(host) = self.host.upgrade() {
+            host.release_product_reservation(self.generation);
+        }
+        self.reservation_active = false;
+    }
 }
 
 #[cfg(any(unix, windows))]
@@ -419,6 +448,23 @@ fn mode_conflict_status() -> GoRouteIsolatedStatus {
     }
 }
 
+#[cfg(any(unix, windows))]
+fn prepared_product_required_status() -> GoRouteIsolatedStatus {
+    GoRouteIsolatedStatus {
+        state: "failed".into(),
+        listen_ready: false,
+        port: None,
+        last_error: Some(ERROR_PREPARED_PRODUCT_REQUIRED.into()),
+        home: None,
+        lifecycle: Some("prepared_product_required".into()),
+        in_flight_count: 0,
+        member_count: 0,
+        healthy_member_count: 0,
+        recovering: false,
+        restart_count: 0,
+    }
+}
+
 impl GoRouteIsolatedHost {
     pub fn new(hub: Option<Arc<AgentHub>>) -> Arc<Self> {
         #[cfg(any(unix, windows))]
@@ -431,6 +477,7 @@ impl GoRouteIsolatedHost {
                 active_mode: None,
                 lifecycle_generation: 0,
                 lifecycle_in_flight: false,
+                prepared_product_generation: None,
                 desired: false,
                 stopping: false,
                 recovery_budget_used: 0,
@@ -535,18 +582,19 @@ impl GoRouteIsolatedHost {
     }
 
     #[cfg(feature = "go-route-product-probe")]
-    pub(crate) fn probe_product_preflight(&self) -> Result<(u16, PathBuf, usize), String> {
-        let hub = self
-            .hub
+    pub(crate) fn probe_prepared_product_summary(
+        prepared: &PreparedProductPlan,
+    ) -> Result<(u16, PathBuf, usize, String), String> {
+        let plan = prepared
+            .plan
             .as_ref()
-            .ok_or_else(|| "Go route hub is unavailable".to_string())?;
-        let plan = build_runtime_plan(hub, GoRouteRunMode::Product)?;
+            .ok_or_else(|| "Prepared Product plan was already consumed".to_string())?;
         let home = plan
             .product_home
             .as_ref()
             .map(|location| location.home.clone())
             .ok_or_else(|| "Product home is unavailable".to_string())?;
-        Ok((plan.port, home, plan.config.len()))
+        Ok((plan.port, home, plan.config.len(), plan.config_hash.clone()))
     }
 
     #[cfg(feature = "go-route-product-probe")]
@@ -652,6 +700,124 @@ impl GoRouteIsolatedHost {
         self.start_mode(GoRouteRunMode::Isolated)
     }
 
+    /// Reserves this idle host and captures one complete Product startup input.
+    /// Starting the returned plan never rebuilds its configuration from the
+    /// database; normal runtime reloads remain responsible for later writes.
+    /// Dropping an unconsumed plan releases the reservation.
+    #[allow(dead_code)]
+    pub(crate) fn prepare_product_plan(self: &Arc<Self>) -> Result<PreparedProductPlan, String> {
+        #[cfg(not(any(unix, windows)))]
+        {
+            Err(ERROR_ISOLATED_UNAVAILABLE.into())
+        }
+        #[cfg(any(unix, windows))]
+        {
+            let generation = {
+                let mut inner = self.lock();
+                refresh_locked(&mut inner);
+                if inner.stopping
+                    || inner.lifecycle_in_flight
+                    || inner.prepared_product_generation.is_some()
+                    || inner.session.is_some()
+                    || inner.desired
+                    || inner.active_mode.is_some()
+                    || inner.committed_plan.is_some()
+                {
+                    return Err(ERROR_MODE_ACTIVE.into());
+                }
+                inner.lifecycle_generation = inner.lifecycle_generation.wrapping_add(1);
+                let generation = inner.lifecycle_generation;
+                inner.prepared_product_generation = Some(generation);
+                inner.active_mode = Some(GoRouteRunMode::Product);
+                generation
+            };
+            let mut prepared = PreparedProductPlan {
+                host: Arc::downgrade(self),
+                generation,
+                plan: None,
+                reservation_active: true,
+            };
+            let hub = self
+                .hub
+                .as_ref()
+                .ok_or_else(|| ERROR_ISOLATED_UNAVAILABLE.to_string())?;
+            let (port, config) = prepare_product_runtime(hub)?;
+            let plan = RuntimePlan {
+                config_hash: sha256_hex(&config),
+                config,
+                port,
+                product_home: Some(resolve_product_home(hub)?),
+                mode: GoRouteRunMode::Product,
+            };
+            {
+                let inner = self.lock();
+                if inner.prepared_product_generation != Some(generation)
+                    || inner.active_mode != Some(GoRouteRunMode::Product)
+                    || inner.lifecycle_generation != generation
+                {
+                    return Err("Prepared Product plan was invalidated during preparation".into());
+                }
+            }
+            prepared.plan = Some(plan);
+            Ok(prepared)
+        }
+    }
+
+    /// Starts an idle host from the exact single-use Product plan captured by
+    /// [`Self::prepare_product_plan`]. The plan is consumed even when the host
+    /// is no longer idle, so stale login material cannot be retried implicitly.
+    #[allow(dead_code)]
+    pub(crate) fn start_prepared_product(
+        self: &Arc<Self>,
+        mut prepared: PreparedProductPlan,
+    ) -> GoRouteIsolatedStatus {
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = prepared;
+            platform_unavailable_status()
+        }
+        #[cfg(any(unix, windows))]
+        {
+            let Some(prepared_host) = prepared.host.upgrade() else {
+                return unavailable_status();
+            };
+            if !Arc::ptr_eq(self, &prepared_host) {
+                return mode_conflict_status();
+            }
+            drop(prepared_host);
+            let Some(plan) = prepared.plan.take() else {
+                return mode_conflict_status();
+            };
+            let generation = prepared.generation;
+            {
+                let mut inner = self.lock();
+                refresh_locked(&mut inner);
+                if inner.prepared_product_generation != Some(generation)
+                    || inner.lifecycle_generation != generation
+                    || inner.active_mode != Some(GoRouteRunMode::Product)
+                    || inner.stopping
+                    || inner.lifecycle_in_flight
+                    || inner.session.is_some()
+                    || inner.desired
+                    || inner.committed_plan.is_some()
+                {
+                    return mode_conflict_status();
+                }
+                inner.prepared_product_generation = None;
+                inner.desired = true;
+                inner.recovery_budget_used = 0;
+                inner.stable_since = None;
+                inner.next_restart_at = None;
+                inner.status.state = "starting".into();
+                inner.status.last_error = None;
+                inner.status.listen_ready = false;
+                inner.lifecycle_in_flight = true;
+            }
+            prepared.reservation_active = false;
+            self.finish_start(false, generation, Some(plan))
+        }
+    }
+
     /// Starts this single process host in the requested mode. A live session
     /// or desired automatic recovery owns its mode until it is fully stopped.
     pub(crate) fn start_mode(&self, mode: GoRouteRunMode) -> GoRouteIsolatedStatus {
@@ -662,9 +828,15 @@ impl GoRouteIsolatedHost {
         }
         #[cfg(any(unix, windows))]
         {
+            if mode == GoRouteRunMode::Product {
+                return prepared_product_required_status();
+            }
             let start_generation = {
                 let mut inner = self.lock();
                 refresh_locked(&mut inner);
+                if inner.prepared_product_generation.is_some() {
+                    return mode_conflict_status();
+                }
                 if inner.stopping {
                     return mode_conflict_status();
                 }
@@ -703,7 +875,7 @@ impl GoRouteIsolatedHost {
                 }
             };
             match start_generation {
-                Some(generation) => self.finish_start(false, generation),
+                Some(generation) => self.finish_start(false, generation, None),
                 None => self.reload(),
             }
         }
@@ -729,6 +901,9 @@ impl GoRouteIsolatedHost {
             let (config_stdin, control, port, mode) = {
                 let mut inner = self.lock();
                 refresh_locked(&mut inner);
+                if inner.prepared_product_generation.is_some() {
+                    return mode_conflict_status();
+                }
                 let Some(session) = inner.session.as_ref() else {
                     return inner.status.clone();
                 };
@@ -829,6 +1004,11 @@ impl GoRouteIsolatedHost {
             let session = {
                 let mut inner = self.lock();
                 refresh_locked(&mut inner);
+                if clear_product_reservation_locked(&mut inner) {
+                    return GoRouteRequiredReloadResult::Failed {
+                        code: ERROR_REQUIRED_RELOAD_FAILED.into(),
+                    };
+                }
                 if inner.desired && !inner.stopping {
                     inner.session.as_ref().map(|session| {
                         (
@@ -981,6 +1161,11 @@ impl GoRouteIsolatedHost {
     #[cfg(any(unix, windows))]
     fn fail_required_reload(&self) -> GoRouteRequiredReloadResult {
         let mut inner = self.lock();
+        if clear_product_reservation_locked(&mut inner) {
+            return GoRouteRequiredReloadResult::Failed {
+                code: ERROR_REQUIRED_RELOAD_FAILED.into(),
+            };
+        }
         // Another lifecycle owner can have removed its session before doing
         // blocking process cleanup. It remains responsible for releasing the
         // mode: releasing it here would permit another mode to claim the
@@ -1065,7 +1250,13 @@ impl GoRouteIsolatedHost {
     }
 
     #[cfg(any(unix, windows))]
-    fn finish_start(&self, recovering: bool, generation: u64) -> GoRouteIsolatedStatus {
+    fn finish_start(
+        &self,
+        recovering: bool,
+        generation: u64,
+        prepared_plan: Option<RuntimePlan>,
+    ) -> GoRouteIsolatedStatus {
+        let prepared_start = prepared_plan.is_some();
         let (existing_plan, active_mode) = {
             let inner = self.lock();
             if inner.lifecycle_generation != generation {
@@ -1073,15 +1264,17 @@ impl GoRouteIsolatedHost {
             }
             (inner.committed_plan.clone(), inner.active_mode)
         };
-        let plan = existing_plan.map(Ok).unwrap_or_else(|| {
-            active_mode
-                .ok_or_else(|| ERROR_ISOLATED_UNAVAILABLE.to_string())
-                .and_then(|mode| {
-                    self.hub
-                        .as_ref()
-                        .ok_or_else(|| ERROR_ISOLATED_UNAVAILABLE.to_string())
-                        .and_then(|hub| build_runtime_plan(hub, mode))
-                })
+        let plan = prepared_plan.map(Ok).unwrap_or_else(|| {
+            existing_plan.map(Ok).unwrap_or_else(|| {
+                active_mode
+                    .ok_or_else(|| ERROR_ISOLATED_UNAVAILABLE.to_string())
+                    .and_then(|mode| {
+                        self.hub
+                            .as_ref()
+                            .ok_or_else(|| ERROR_ISOLATED_UNAVAILABLE.to_string())
+                            .and_then(|hub| build_runtime_plan(hub, mode))
+                    })
+            })
         });
         let result = plan.and_then(|plan| start_session(&plan).map(|session| (session, plan)));
         match result {
@@ -1149,8 +1342,14 @@ impl GoRouteIsolatedHost {
                 inner.recovery_budget_used = inner.recovery_budget_used.saturating_add(1);
                 inner.lifecycle_in_flight = false;
                 inner.stable_since = None;
-                inner.next_restart_at =
-                    Some(Instant::now() + restart_backoff(inner.recovery_budget_used));
+                if prepared_start {
+                    inner.desired = false;
+                    inner.active_mode = None;
+                    inner.next_restart_at = None;
+                } else {
+                    inner.next_restart_at =
+                        Some(Instant::now() + restart_backoff(inner.recovery_budget_used));
+                }
                 let status = GoRouteIsolatedStatus {
                     state: "failed".into(),
                     listen_ready: false,
@@ -1161,7 +1360,8 @@ impl GoRouteIsolatedHost {
                     in_flight_count: 0,
                     member_count: 0,
                     healthy_member_count: 0,
-                    recovering: inner.desired
+                    recovering: !prepared_start
+                        && inner.desired
                         && !inner.stopping
                         && inner.recovery_budget_used < MAX_RECOVERY_BUDGET,
                     restart_count: inner.status.restart_count,
@@ -1181,6 +1381,12 @@ impl GoRouteIsolatedHost {
         {
             let owns_stop = {
                 let mut inner = self.lock();
+                if clear_product_reservation_locked(&mut inner) {
+                    let restart_count = inner.status.restart_count;
+                    inner.status = stopped_status();
+                    inner.status.restart_count = restart_count;
+                    return inner.status.clone();
+                }
                 if inner.stopping {
                     false
                 } else {
@@ -1259,6 +1465,15 @@ impl GoRouteIsolatedHost {
     }
 
     #[cfg(any(unix, windows))]
+    #[allow(dead_code)]
+    fn release_product_reservation(&self, generation: u64) {
+        let mut inner = self.lock();
+        if inner.prepared_product_generation == Some(generation) {
+            clear_product_reservation_locked(&mut inner);
+        }
+    }
+
+    #[cfg(any(unix, windows))]
     fn spawn_monitor(host: Weak<Self>) {
         std::thread::spawn(move || loop {
             std::thread::sleep(Duration::from_millis(500));
@@ -1313,6 +1528,7 @@ impl GoRouteIsolatedHost {
                 let should = inner.desired
                     && !inner.stopping
                     && !inner.lifecycle_in_flight
+                    && inner.prepared_product_generation.is_none()
                     && inner.session.is_none()
                     && inner.status.state != "starting"
                     && inner.recovery_budget_used < MAX_RECOVERY_BUDGET
@@ -1331,7 +1547,7 @@ impl GoRouteIsolatedHost {
                 }
             };
             if let Some(generation) = restart_generation {
-                let _ = host.finish_start(true, generation);
+                let _ = host.finish_start(true, generation, None);
             }
         });
     }
@@ -2228,6 +2444,16 @@ fn platform_unavailable_status() -> GoRouteIsolatedStatus {
 }
 
 #[cfg(any(unix, windows))]
+fn clear_product_reservation_locked(inner: &mut Inner) -> bool {
+    if inner.prepared_product_generation.take().is_none() {
+        return false;
+    }
+    inner.lifecycle_generation = inner.lifecycle_generation.wrapping_add(1);
+    inner.active_mode = None;
+    true
+}
+
+#[cfg(any(unix, windows))]
 fn refresh_locked(inner: &mut Inner) {
     let Some(session) = inner.session.as_mut() else {
         return;
@@ -2415,6 +2641,9 @@ fn prepare_product_runtime(hub: &AgentHub) -> Result<(u16, Vec<u8>), String> {
 
 #[cfg(any(unix, windows))]
 fn start_session(plan: &RuntimePlan) -> Result<Session, String> {
+    if sha256_hex(&plan.config) != plan.config_hash {
+        return Err("Go route plan configuration changed after preparation".into());
+    }
     let scratch = create_scratch_home()?;
     let staging_home = scratch.home;
     let mut scratch_guard = ScratchHomeGuard {
