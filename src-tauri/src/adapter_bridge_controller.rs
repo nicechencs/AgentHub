@@ -791,7 +791,8 @@ pub(crate) fn restore_adapter_bridges(
                 LocalGatewayStartMode::RestoreBestEffort,
             )
             .await;
-            let bearer_sync = sync_extra_local_bearers(hub.clone(), &host).await;
+            let bearer_sync =
+                sync_active_gateway_accepted_bearers(hub.clone(), runtime.as_ref()).await;
             Ok::<_, String>((status, bearer_sync))
         }
         .await;
@@ -1671,7 +1672,7 @@ pub(crate) async fn start_local_gateway(
     if remember {
         write_local_gateway_desired_running(hub.clone(), true).await;
     }
-    let bearer_sync = sync_extra_local_bearers(hub.clone(), &host).await;
+    let bearer_sync = sync_active_gateway_accepted_bearers(hub.clone(), runtime.as_ref()).await;
     observe_local_gateway_lifecycle(hub, host.as_ref(), true, &bearer_sync).await;
     bearer_sync?;
     drop(_restarting_guard);
@@ -1961,7 +1962,8 @@ pub(crate) async fn create_local_gateway_token(
     let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_local_gateway().await;
-    recover_pending_local_gateway_restarts(hub.clone(), &host, &coordinator).await?;
+    recover_pending_local_gateway_restarts(hub.clone(), runtime.as_ref(), &host, &coordinator)
+        .await?;
     // Read restart intent before the create transaction. After persistence,
     // every fallible step is handled as publish/recovery so retry cannot create
     // a second Key for an operation that already committed.
@@ -1973,7 +1975,7 @@ pub(crate) async fn create_local_gateway_token(
     })
     .await?;
     let publish = async {
-        sync_extra_local_bearers(hub.clone(), &host).await?;
+        sync_active_gateway_accepted_bearers(hub.clone(), runtime.as_ref()).await?;
         if should_start {
             start_pool_listener_if_listed(hub.clone(), &host, record.pool_id.clone()).await?;
         }
@@ -2050,6 +2052,7 @@ async fn local_gateway_pool_should_run(
 /// each stopped pool from that current state.
 async fn recover_pending_local_gateway_restarts(
     hub: Arc<AgentHub>,
+    runtime: &RouteRuntimeManager,
     host: &BridgeRuntimeHost,
     coordinator: &AdapterSagaCoordinator,
 ) -> Result<HashSet<String>, String> {
@@ -2057,7 +2060,7 @@ async fn recover_pending_local_gateway_restarts(
     if pending.is_empty() {
         return Ok(HashSet::new());
     }
-    sync_extra_local_bearers(hub.clone(), host).await?;
+    sync_active_gateway_accepted_bearers(hub.clone(), runtime).await?;
     let mut recovered_operations = HashSet::new();
     let mut recovered_pools = HashSet::new();
     for (_, pool_id, _, _, restart_required) in &pending {
@@ -2170,7 +2173,8 @@ pub(crate) async fn set_local_gateway_token(
     let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_local_gateway().await;
-    recover_pending_local_gateway_restarts(hub.clone(), &host, &coordinator).await?;
+    recover_pending_local_gateway_restarts(hub.clone(), runtime.as_ref(), &host, &coordinator)
+        .await?;
     if token.trim().is_empty() {
         return Err("入口 Key 不能为空。".to_owned());
     }
@@ -2222,7 +2226,7 @@ pub(crate) async fn set_local_gateway_token(
         })
         .await?
     };
-    sync_extra_local_bearers(hub.clone(), &host).await?;
+    sync_active_gateway_accepted_bearers(hub.clone(), runtime.as_ref()).await?;
     if restart_required {
         start_pool_listener_if_listed(hub, &host, record.pool_id.clone()).await?;
     }
@@ -2242,7 +2246,8 @@ pub(crate) async fn delete_local_gateway_token(
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_local_gateway().await;
     let recovered =
-        recover_pending_local_gateway_restarts(hub.clone(), &host, &coordinator).await?;
+        recover_pending_local_gateway_restarts(hub.clone(), runtime.as_ref(), &host, &coordinator)
+            .await?;
     if recovered.contains(&id) {
         return Ok(());
     }
@@ -2300,7 +2305,7 @@ pub(crate) async fn delete_local_gateway_token(
     // Keep the affected pool stopped while rebuilding the accepted-bearer
     // table. If this read or the subsequent start fails, no old key can be
     // accepted by a still-running edge.
-    sync_extra_local_bearers(hub.clone(), &host).await?;
+    sync_active_gateway_accepted_bearers(hub.clone(), runtime.as_ref()).await?;
     if restart_required {
         start_pool_listener_if_listed(hub, &host, context.pool_id).await?;
     }
@@ -2568,9 +2573,9 @@ async fn surface_shared_restore_failure(hub: Arc<AgentHub>, error: &str) {
     );
 }
 
-pub(crate) async fn sync_extra_local_bearers(
+async fn sync_active_gateway_accepted_bearers(
     hub: Arc<AgentHub>,
-    host: &BridgeRuntimeHost,
+    runtime: &RouteRuntimeManager,
 ) -> Result<(), String> {
     let rows = with_hub_blocking(hub, move |hub| {
         hub.route_pools()
@@ -2578,7 +2583,8 @@ pub(crate) async fn sync_extra_local_bearers(
             .map_err(|error| map_err_string("list_accepted_local_bearers", error))
     })
     .await?;
-    host.set_extra_local_bearers(rows)
+    runtime
+        .sync_active_gateway_accepted_bearers(rows)
         .map_err(map_bridge_host_error)
 }
 

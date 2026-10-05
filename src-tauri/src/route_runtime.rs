@@ -132,6 +132,17 @@ impl RouteRuntimeManager {
         }
     }
 
+    /// Test-only manager with a bare in-memory Rust host. It intentionally
+    /// does not resolve application data paths or enable usage/trace
+    /// persistence, so test fixtures cannot touch a user's data directory.
+    #[cfg(test)]
+    pub(crate) fn new_test(rust: BridgeRuntimeHost) -> Self {
+        Self {
+            rust: Arc::new(rust),
+            isolated_go: GoRouteIsolatedHost::new(None),
+        }
+    }
+
     /// Probe-only constructor that cannot write route traces or usage into the
     /// user's normal data directory.
     #[cfg(feature = "route-runtime-product-handoff-probe")]
@@ -607,6 +618,20 @@ impl RouteRuntimeManager {
                 hint.credit,
             )
             .map_err(|error| error.to_string())
+    }
+
+    /// Publish the saved local entry Key set to the fixed active runtime.
+    ///
+    /// The controller reads the durable rows while holding its gateway saga
+    /// lock; this method is the only production seam that writes the
+    /// process-local accepted-bearer table.  Product Go remains unavailable,
+    /// so the active backend is deliberately still the Rust host.
+    pub(crate) fn sync_active_gateway_accepted_bearers(
+        &self,
+        rows: Vec<(String, String)>,
+    ) -> Result<(), BridgeHostError> {
+        debug_assert_eq!(self.active_backend(), RuntimeBackend::Rust);
+        self.rust.set_extra_local_bearers(rows)
     }
 
     pub(crate) fn query_route_traces(&self, query: RouteTraceQuery) -> RouteTracePage {

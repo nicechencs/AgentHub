@@ -92,15 +92,15 @@ fn local_gateway_restarting_flag_flips_without_app_handle() {
 
 #[test]
 fn local_gateway_status_includes_restarting_flag() {
-    let host = BridgeRuntimeHost::new();
+    let runtime = RouteRuntimeManager::new_test(BridgeRuntimeHost::new());
     let flag = AtomicBool::new(true);
-    let status = local_gateway_status(&host, &flag).unwrap();
+    let status = local_gateway_status(&runtime, &flag).unwrap();
     assert!(status.restarting);
     assert!(!status.running);
     let json = serde_json::to_value(&status).unwrap();
     assert_eq!(json["restarting"], true);
     flag.store(false, Ordering::SeqCst);
-    let idle = local_gateway_status(&host, &flag).unwrap();
+    let idle = local_gateway_status(&runtime, &flag).unwrap();
     assert!(!idle.restarting);
 }
 
@@ -214,7 +214,8 @@ fn startup_entry_restore_starts_demoted_manual_dsh_pool() {
                 .is_default
         );
 
-        let host = Arc::new(BridgeRuntimeHost::new());
+        let runtime = Arc::new(RouteRuntimeManager::new_test(BridgeRuntimeHost::new()));
+        let host = runtime.rust_host_for_bridge_saga();
         let status = start_local_gateway_entries(
             hub.clone(),
             host.clone(),
@@ -223,7 +224,7 @@ fn startup_entry_restore_starts_demoted_manual_dsh_pool() {
         )
         .await
         .unwrap();
-        sync_extra_local_bearers(hub.clone(), host.as_ref())
+        sync_active_gateway_accepted_bearers(hub.clone(), runtime.as_ref())
             .await
             .unwrap();
 
@@ -239,7 +240,7 @@ fn startup_entry_restore_starts_demoted_manual_dsh_pool() {
         );
         assert!(status.port.is_some(), "shared listener must bind");
 
-        host.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
     });
 }
 
@@ -406,12 +407,13 @@ fn deleting_entry_keys_restarts_its_pool_and_retires_bearers() {
             .route_pools()
             .create_local_token(&pool.id, "晋升入口")
             .unwrap();
-        let host = Arc::new(BridgeRuntimeHost::new());
+        let runtime = Arc::new(RouteRuntimeManager::new_test(BridgeRuntimeHost::new()));
+        let host = runtime.rust_host_for_bridge_saga();
         let spec = hub
             .adapter_bridge()
             .pool_listener_spec(&pool, hub.route_pools().pair_adapter_flags());
         let started = host.start(spec).await.unwrap();
-        sync_extra_local_bearers(hub.clone(), host.as_ref())
+        sync_active_gateway_accepted_bearers(hub.clone(), runtime.as_ref())
             .await
             .unwrap();
         let primary_token = host.local_token(&pool.id).unwrap().unwrap();
@@ -427,7 +429,7 @@ fn deleting_entry_keys_restarts_its_pool_and_retires_bearers() {
         let exit = crate::exit_coordinator::ExitCoordinator::new();
         delete_local_gateway_token(
             hub.clone(),
-            host.clone(),
+            runtime.clone(),
             Arc::clone(&coordinator),
             exit.lifecycle_barrier(),
             extra.id,
@@ -449,7 +451,7 @@ fn deleting_entry_keys_restarts_its_pool_and_retires_bearers() {
 
         delete_local_gateway_token(
             hub.clone(),
-            host.clone(),
+            runtime.clone(),
             Arc::clone(&coordinator),
             exit.lifecycle_barrier(),
             pool.id.clone(),
@@ -468,7 +470,7 @@ fn deleting_entry_keys_restarts_its_pool_and_retires_bearers() {
 
         delete_local_gateway_token(
             hub.clone(),
-            host.clone(),
+            runtime.clone(),
             coordinator,
             exit.lifecycle_barrier(),
             pool.id.clone(),
@@ -485,7 +487,7 @@ fn deleting_entry_keys_restarts_its_pool_and_retires_bearers() {
             .unwrap()
             .iter()
             .any(|(token, id)| token == &promoted.token && id == &pool.id));
-        host.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
     });
 }
 
@@ -501,7 +503,8 @@ fn deleting_entry_key_restores_listener_when_persistence_fails() {
             .get(&profile.id)
             .unwrap()
             .expect("seeded route pool");
-        let host = Arc::new(BridgeRuntimeHost::new());
+        let runtime = Arc::new(RouteRuntimeManager::new_test(BridgeRuntimeHost::new()));
+        let host = runtime.rust_host_for_bridge_saga();
         let spec = hub
             .adapter_bridge()
             .pool_listener_spec(&pool, hub.route_pools().pair_adapter_flags());
@@ -514,7 +517,7 @@ fn deleting_entry_key_restores_listener_when_persistence_fails() {
 
         let result = delete_local_gateway_token(
             hub.clone(),
-            host.clone(),
+            runtime.clone(),
             Arc::new(AdapterSagaCoordinator::new()),
             crate::exit_coordinator::ExitCoordinator::new().lifecycle_barrier(),
             pool.id.clone(),
@@ -530,7 +533,7 @@ fn deleting_entry_key_restores_listener_when_persistence_fails() {
             hub.route_pools().list_local_tokens().unwrap()[0].token,
             before
         );
-        host.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
     });
 }
 
@@ -1562,7 +1565,7 @@ fn direct_remove_waits_for_the_same_target_coordinator() {
         let mut pending = tauri::async_runtime::spawn(async move {
             remove_adapter_with_bridge_cleanup(
                 waiter_hub,
-                Arc::new(BridgeRuntimeHost::new()),
+                Arc::new(RouteRuntimeManager::new_test(BridgeRuntimeHost::new())),
                 waiter_coordinator,
                 barrier,
                 "direct-remove-profile".into(),
@@ -2327,12 +2330,12 @@ fn apply_local_bridge_from_grok_oauth_does_not_occupy_claude_current() {
         seed_current_target_provider(&hub, AgentId::Claude);
         let source_auth_before = std::fs::read(&source_adapter.auth_path).unwrap();
         let hub = Arc::new(hub);
-        let host = Arc::new(BridgeRuntimeHost::new());
+        let runtime = Arc::new(RouteRuntimeManager::new_test(BridgeRuntimeHost::new()));
         let coordinator = Arc::new(AdapterSagaCoordinator::new());
         let exit = crate::exit_coordinator::ExitCoordinator::new();
         let result = apply_local_bridge(
             Arc::clone(&hub),
-            Arc::clone(&host),
+            Arc::clone(&runtime),
             coordinator,
             exit.lifecycle_barrier(),
             AdapterBridgePrepareRequest {
@@ -2365,6 +2368,6 @@ fn apply_local_bridge_from_grok_oauth_does_not_occupy_claude_current() {
             std::fs::read(&source_adapter.auth_path).unwrap(),
             source_auth_before
         );
-        host.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
     });
 }

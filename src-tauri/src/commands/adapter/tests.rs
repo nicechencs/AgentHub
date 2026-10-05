@@ -178,9 +178,9 @@ fn persist_enroll_native_if_bound_skips_enroll_on_bind_error() {
     hub.route_pools()
         .create_legacy_pool(&profile, "ahb_secret-token", true)
         .unwrap();
-    let host = BridgeRuntimeHost::new();
-    let error =
-        persist_enroll_native_if_bound(&hub, &host, Err("adapter.port_in_use".into())).unwrap_err();
+    let runtime = crate::route_runtime::RouteRuntimeManager::new_test(BridgeRuntimeHost::new());
+    let error = persist_enroll_native_if_bound(&hub, &runtime, Err("adapter.port_in_use".into()))
+        .unwrap_err();
     assert!(error.contains("adapter.port_in_use"));
     let pool = hub.route_pools().get("bound-skip").unwrap().unwrap();
     assert!(!pool.unified_gateway_enrolled);
@@ -198,7 +198,7 @@ fn persist_enroll_native_if_bound_success_omits_hub_token() {
     AdapterProfileRepo::new(hub.db().clone())
         .create(&profile)
         .unwrap();
-    let host = BridgeRuntimeHost::new();
+    let runtime = crate::route_runtime::RouteRuntimeManager::new_test(BridgeRuntimeHost::new());
     let binding = TicketBinding {
         ticket_id: "provider:src-1".into(),
         agent_id: AgentId::Codex,
@@ -210,7 +210,7 @@ fn persist_enroll_native_if_bound_success_omits_hub_token() {
             running: true,
         }),
     };
-    let overview = persist_enroll_native_if_bound(&hub, &host, Ok(binding)).unwrap();
+    let overview = persist_enroll_native_if_bound(&hub, &runtime, Ok(binding)).unwrap();
     assert!(overview.unified_gateway_enrolled);
     assert_eq!(overview.gateway_port, Some(43155));
     let json = serde_json::to_string(&overview).unwrap();
