@@ -276,12 +276,12 @@ fn spawn_tray_bridge_batch<R: Runtime>(app: AppHandle<R>, start: bool) {
         let extracted = app.try_state::<AppState>().and_then(|state| {
             Some((
                 state.hub_arc().ok()?,
-                state.bridge_host(),
+                state.route_runtime(),
                 state.adapter_control().ok()?,
                 state.go_route_isolated(),
             ))
         });
-        let Some((hub, host, control, go_route)) = extracted else {
+        let Some((hub, runtime, control, go_route)) = extracted else {
             tracing::warn!(
                 target: "gui",
                 op = "tray_routes",
@@ -324,11 +324,10 @@ fn spawn_tray_bridge_batch<R: Runtime>(app: AppHandle<R>, start: bool) {
 
         let ids = tray_bridge_batch_ids(
             profiles.iter().map(|profile| {
-                let running = host
-                    .status(&profile.id)
+                let running = runtime
+                    .profile_observation(&profile.id)
                     .ok()
-                    .flatten()
-                    .is_some_and(|status| status.running);
+                    .is_some_and(|status| status.running == Some(true));
                 (profile.id.as_str(), running)
             }),
             start,

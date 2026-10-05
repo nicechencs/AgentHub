@@ -10,7 +10,6 @@ use agenthub_core::adapter_control::{
     resolve_bind_action, resolve_unbind_action, AdapterBridgeStatus, AdapterControl,
     AdapterSagaCoordinator, BindAction,
 };
-use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::error::AppError;
 use agenthub_core::models::{
     AdapterApplyResult, AdapterProfile, AgentId, TicketBinding, TicketUnbindRequest,
@@ -24,11 +23,12 @@ use crate::adapter_bridge_controller::{
 };
 use crate::commands::{invalidate_runtime_catalogs, map_err_string, with_hub_blocking};
 use crate::exit_coordinator::LifecycleShutdownBarrier;
+use crate::route_runtime::RouteRuntimeManager;
 
 /// In-process desktop AdapterControl: TicketBindService + bridge saga.
 pub(crate) struct DesktopAdapterControl {
     hub: Arc<AgentHub>,
-    host: Arc<BridgeRuntimeHost>,
+    runtime: Arc<RouteRuntimeManager>,
     coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
 }
@@ -36,13 +36,13 @@ pub(crate) struct DesktopAdapterControl {
 impl DesktopAdapterControl {
     pub(crate) fn new(
         hub: Arc<AgentHub>,
-        host: Arc<BridgeRuntimeHost>,
+        runtime: Arc<RouteRuntimeManager>,
         coordinator: Arc<AdapterSagaCoordinator>,
         lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     ) -> Self {
         Self {
             hub,
-            host,
+            runtime,
             coordinator,
             lifecycle_barrier,
         }
@@ -71,7 +71,7 @@ impl AdapterControl for DesktopAdapterControl {
             BindAction::LocalBridge(request) => {
                 let result = apply_local_bridge(
                     Arc::clone(&self.hub),
-                    Arc::clone(&self.host),
+                    Arc::clone(&self.runtime),
                     Arc::clone(&self.coordinator),
                     Arc::clone(&self.lifecycle_barrier),
                     request,
@@ -115,7 +115,7 @@ impl AdapterControl for DesktopAdapterControl {
         if let Some(profile_id) = action.stop_bridge_profile_id {
             unbind_local_bridge(
                 Arc::clone(&self.hub),
-                Arc::clone(&self.host),
+                Arc::clone(&self.runtime),
                 Arc::clone(&self.coordinator),
                 Arc::clone(&self.lifecycle_barrier),
                 profile_id,
@@ -143,7 +143,7 @@ impl AdapterControl for DesktopAdapterControl {
     async fn start_bridge(&self, profile_id: String) -> Result<AdapterBridgeStatus, String> {
         start_local_bridge(
             Arc::clone(&self.hub),
-            Arc::clone(&self.host),
+            Arc::clone(&self.runtime),
             Arc::clone(&self.coordinator),
             Arc::clone(&self.lifecycle_barrier),
             profile_id,
@@ -154,7 +154,7 @@ impl AdapterControl for DesktopAdapterControl {
     async fn stop_bridge(&self, profile_id: String) -> Result<AdapterBridgeStatus, String> {
         stop_local_bridge(
             Arc::clone(&self.hub),
-            Arc::clone(&self.host),
+            Arc::clone(&self.runtime),
             Arc::clone(&self.coordinator),
             Arc::clone(&self.lifecycle_barrier),
             profile_id,
@@ -163,13 +163,13 @@ impl AdapterControl for DesktopAdapterControl {
     }
 
     async fn bridge_status(&self, profile_id: String) -> Result<AdapterBridgeStatus, String> {
-        local_bridge_status(Arc::clone(&self.hub), Arc::clone(&self.host), profile_id).await
+        local_bridge_status(Arc::clone(&self.hub), Arc::clone(&self.runtime), profile_id).await
     }
 
     async fn remove(&self, profile_id: String) -> Result<(), String> {
         remove_adapter_with_bridge_cleanup(
             Arc::clone(&self.hub),
-            Arc::clone(&self.host),
+            Arc::clone(&self.runtime),
             Arc::clone(&self.coordinator),
             Arc::clone(&self.lifecycle_barrier),
             profile_id,

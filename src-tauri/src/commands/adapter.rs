@@ -6,7 +6,6 @@
 use agenthub_core::adapter_control::{
     resolve_bind_action, AdapterControl, BindAction, LocalGatewayStatus,
 };
-use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::models::{
     ticket_id, AdapterApplyPlan, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind,
@@ -86,13 +85,13 @@ pub async fn plan_adapter(
 #[tauri::command]
 pub async fn list_ticket_wallet(state: State<'_, AppState>) -> Result<TicketWallet, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    let host = state.bridge_host();
+    let runtime = state.route_runtime();
     let wallet = with_hub_blocking(hub, move |hub| {
         let mut wallet = hub
             .tickets()
             .list_wallet()
             .map_err(|err| map_err_string("list_ticket_wallet", err))?;
-        enrich_bridge_running(&host, &mut wallet);
+        enrich_bridge_running(&runtime, &mut wallet);
         Ok(wallet)
     })
     .await
@@ -294,7 +293,7 @@ pub async fn start_local_gateway(
 ) -> Result<LocalGatewayStatus, GuiError> {
     let status = start_shared_local_gateway(
         state.hub_arc().map_err(adapter_error_from_string)?,
-        state.bridge_host(),
+        state.route_runtime(),
         state.bridge_saga_coordinator(),
         state.lifecycle_shutdown_barrier(),
         state.local_gateway_restarting(),
@@ -313,7 +312,7 @@ pub async fn stop_local_gateway(
 ) -> Result<LocalGatewayStatus, GuiError> {
     stop_shared_local_gateway(
         state.hub_arc().map_err(adapter_error_from_string)?,
-        state.bridge_host(),
+        state.route_runtime(),
         state.bridge_saga_coordinator(),
         state.lifecycle_shutdown_barrier(),
         state.local_gateway_restarting(),
@@ -327,8 +326,11 @@ pub async fn stop_local_gateway(
 pub async fn get_local_gateway_status(
     state: State<'_, AppState>,
 ) -> Result<LocalGatewayStatus, GuiError> {
-    read_local_gateway_status(&state.bridge_host(), &state.local_gateway_restarting())
-        .map_err(adapter_error_from_string)
+    read_local_gateway_status(
+        state.route_runtime().as_ref(),
+        &state.local_gateway_restarting(),
+    )
+    .map_err(adapter_error_from_string)
 }
 
 #[tauri::command]
@@ -356,7 +358,7 @@ pub async fn query_route_traces(
         offset: offset.unwrap_or(0),
         limit: limit.unwrap_or(ROUTE_TRACE_QUERY_DEFAULT_LIMIT),
     };
-    Ok(state.bridge_host().query_route_traces(query))
+    Ok(state.route_runtime().query_route_traces(query))
 }
 
 #[tauri::command]
@@ -364,7 +366,7 @@ pub async fn delete_route_traces(
     state: State<'_, AppState>,
     request_ids: Vec<String>,
 ) -> Result<agenthub_core::bridge::host::RouteTraceDeleteResult, GuiError> {
-    Ok(state.bridge_host().delete_route_traces(&request_ids))
+    Ok(state.route_runtime().delete_route_traces(&request_ids))
 }
 
 /// Enable or disable background restore for an existing local bridge.
@@ -440,13 +442,13 @@ pub async fn test_local_token(
     model: Option<String>,
 ) -> Result<agenthub_core::utils::local_token_probe::LocalTokenProbeResult, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    let host = state.bridge_host();
-    let status = match read_local_gateway_status(&host, &state.local_gateway_restarting()) {
+    let runtime = state.route_runtime();
+    let status = match read_local_gateway_status(&runtime, &state.local_gateway_restarting()) {
         Ok(status) if status.running => status,
         _ => {
             let started = start_shared_local_gateway(
                 hub.clone(),
-                host.clone(),
+                runtime.clone(),
                 state.bridge_saga_coordinator(),
                 state.lifecycle_shutdown_barrier(),
                 state.local_gateway_restarting(),
@@ -559,7 +561,7 @@ pub async fn set_local_token_custom_models(
 ) -> Result<Vec<String>, GuiError> {
     let listed = set_local_gateway_custom_models(
         state.hub_arc().map_err(adapter_error_from_string)?,
-        state.bridge_host(),
+        state.route_runtime(),
         state.bridge_saga_coordinator(),
         state.lifecycle_shutdown_barrier(),
         token,
@@ -590,7 +592,7 @@ pub async fn refresh_local_token_models(
 ) -> Result<Vec<String>, GuiError> {
     let listed = refresh_local_gateway_models(
         state.hub_arc().map_err(adapter_error_from_string)?,
-        state.bridge_host(),
+        state.route_runtime(),
         state.bridge_saga_coordinator(),
         state.lifecycle_shutdown_barrier(),
         token,
@@ -609,7 +611,7 @@ pub async fn set_local_token(
 ) -> Result<LocalTokenRecord, GuiError> {
     let record = crate::adapter_bridge_controller::set_local_gateway_token(
         state.hub_arc().map_err(adapter_error_from_string)?,
-        state.bridge_host(),
+        state.route_runtime(),
         state.bridge_saga_coordinator(),
         state.lifecycle_shutdown_barrier(),
         pool_id,
@@ -628,7 +630,7 @@ pub async fn create_local_token(
 ) -> Result<LocalTokenRecord, GuiError> {
     let record = create_local_gateway_token(
         state.hub_arc().map_err(adapter_error_from_string)?,
-        state.bridge_host(),
+        state.route_runtime(),
         state.bridge_saga_coordinator(),
         state.lifecycle_shutdown_barrier(),
         pool_id,
@@ -659,7 +661,7 @@ pub async fn set_local_token_name(
 pub async fn delete_local_token(state: State<'_, AppState>, id: String) -> Result<(), GuiError> {
     let deleted = crate::adapter_bridge_controller::delete_local_gateway_token(
         state.hub_arc().map_err(adapter_error_from_string)?,
-        state.bridge_host(),
+        state.route_runtime(),
         state.bridge_saga_coordinator(),
         state.lifecycle_shutdown_barrier(),
         id,
@@ -762,7 +764,7 @@ pub async fn set_route_pool_schedule_policy(
     schedule_policy: String,
 ) -> Result<DefaultRoutePoolOverview, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
-    let host = state.bridge_host();
+    let runtime = state.route_runtime();
     let persisted = with_hub_blocking(hub.clone(), move |hub| {
         let policy = RouteSchedulePolicy::parse(&schedule_policy).ok_or_else(|| {
             "invalid schedule_policy, expected: priority_failover|round_robin".to_string()
@@ -776,7 +778,7 @@ pub async fn set_route_pool_schedule_policy(
     .await
     .map_err(adapter_error_from_string);
     let applied = match persisted {
-        Ok((overview, policy)) => host
+        Ok((overview, policy)) => runtime
             .apply_pool_schedule_policy(&overview.id, policy)
             .map_err(|err| adapter_error_from_string(err.to_string()))
             .map(|_| overview),
@@ -879,7 +881,7 @@ pub async fn enroll_native_to_gateway(
 ) -> Result<DefaultRoutePoolOverview, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     let control = state.adapter_control().map_err(adapter_error_from_string)?;
-    let host = state.bridge_host();
+    let runtime = state.route_runtime();
     let (ticket, target) = {
         let profile_id = profile_id.clone();
         with_hub_blocking(hub.clone(), move |hub| {
@@ -890,7 +892,7 @@ pub async fn enroll_native_to_gateway(
     };
     let overview = match control.bind(ticket, target).await {
         Ok(binding) => with_hub_blocking(hub, move |hub| {
-            persist_enroll_native_if_bound(hub, host.as_ref(), Ok(binding))
+            persist_enroll_native_if_bound(hub, runtime.as_ref(), Ok(binding))
         })
         .await
         .map_err(adapter_error_from_string),
@@ -1053,15 +1055,15 @@ fn prepare_enroll_native(hub: &AgentHub, profile_id: &str) -> Result<(String, Ag
 /// with `Ok`; passing `Err` leaves the pool unenrolled.
 pub(crate) fn persist_enroll_native_if_bound(
     hub: &AgentHub,
-    host: &BridgeRuntimeHost,
+    runtime: &crate::route_runtime::RouteRuntimeManager,
     bind: Result<TicketBinding, String>,
 ) -> Result<DefaultRoutePoolOverview, String> {
     let binding = bind?;
     let bound_id = binding.profile_id.clone().ok_or_else(|| {
         "bind did not persist an adapter profile [adapter.profile_missing]".to_string()
     })?;
-    let port = match host.status(&bound_id) {
-        Ok(Some(status)) if status.port > 0 => status.port,
+    let port = match runtime.profile_observation(&bound_id) {
+        Ok(status) if status.port.is_some_and(|port| port > 0) => status.port.unwrap_or(0),
         _ => binding
             .bridge
             .as_ref()
@@ -1085,7 +1087,7 @@ pub(crate) fn persist_enroll_native_if_bound(
 /// Core leaves `running=false`; this stays in the GUI command layer to avoid
 /// a core → host dependency.
 fn enrich_bridge_running(
-    host: &agenthub_core::bridge::BridgeRuntimeHost,
+    runtime: &crate::route_runtime::RouteRuntimeManager,
     wallet: &mut TicketWallet,
 ) {
     for binding in &mut wallet.bindings {
@@ -1095,13 +1097,13 @@ fn enrich_bridge_running(
         let Some(profile_id) = binding.profile_id.as_deref() else {
             continue;
         };
-        let Ok(Some(status)) = host.status(profile_id) else {
+        let Ok(status) = runtime.profile_observation(profile_id) else {
             continue;
         };
         if let Some(bridge) = binding.bridge.as_mut() {
-            bridge.running = status.running;
-            if status.running {
-                bridge.port = Some(status.port);
+            bridge.running = status.running == Some(true);
+            if bridge.running {
+                bridge.port = status.port;
             }
         }
     }

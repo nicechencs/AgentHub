@@ -4,14 +4,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::logging::{self, targets};
 use agenthub_core::AgentHub;
 
 use crate::adapter_bridge_controller::AdapterSagaCoordinator;
 use crate::adapter_control_host::DesktopAdapterControl;
 use crate::exit_coordinator::{ExitCoordinator, LifecycleShutdownBarrier};
-use crate::go_route_isolated::GoRouteIsolatedHost;
 use crate::route_runtime::RouteRuntimeManager;
 use crate::window_policy::{self, parse_bool_setting};
 
@@ -73,23 +71,9 @@ impl AppState {
         let go_route_hub = hub.as_ref().ok().map(Arc::clone);
         #[cfg(not(any(unix, windows)))]
         let go_route_hub = None;
-        let bridge_host = BridgeRuntimeHost::new();
-        // Install the durable gateway usage spool once, before any edge can
-        // start. An unresolved dir keeps capture disabled (never fails startup).
-        match agenthub_core::utils::paths::usage_gateway_dir() {
-            Ok(dir) => bridge_host.set_usage_spool_dir(dir),
-            Err(error) => logging::log_app_error(targets::GUI, "usage_gateway_dir", &error),
-        }
-        // Restore Activity/monitor traces from the disposable sqlite file.
-        match agenthub_core::utils::paths::route_traces_persist_path() {
-            Ok(path) => bridge_host.set_route_trace_persist_path(path),
-            Err(error) => logging::log_app_error(targets::GUI, "route_traces_persist_path", &error),
-        }
-        let bridge_host = Arc::new(bridge_host);
-        let go_route_isolated = GoRouteIsolatedHost::new(go_route_hub);
         Self {
             hub,
-            route_runtime: Arc::new(RouteRuntimeManager::new(bridge_host, go_route_isolated)),
+            route_runtime: Arc::new(RouteRuntimeManager::new(go_route_hub)),
             bridge_saga_coordinator: Arc::new(AdapterSagaCoordinator::new()),
             exit_coordinator: ExitCoordinator::new(),
             exit_confirmation_pending: AtomicBool::new(false),
@@ -116,12 +100,6 @@ impl AppState {
         Arc::clone(&self.route_runtime)
     }
 
-    /// Transitional Rust-only controller seam. New process-level observation
-    /// and shutdown code must use `route_runtime` instead.
-    pub(crate) fn bridge_host(&self) -> Arc<BridgeRuntimeHost> {
-        self.route_runtime.rust_host()
-    }
-
     pub(crate) fn bridge_saga_coordinator(&self) -> Arc<AdapterSagaCoordinator> {
         Arc::clone(&self.bridge_saga_coordinator)
     }
@@ -130,7 +108,7 @@ impl AppState {
     pub(crate) fn adapter_control(&self) -> Result<DesktopAdapterControl, String> {
         Ok(DesktopAdapterControl::new(
             self.hub_arc()?,
-            self.bridge_host(),
+            self.route_runtime(),
             self.bridge_saga_coordinator(),
             self.lifecycle_shutdown_barrier(),
         ))
@@ -152,7 +130,7 @@ impl AppState {
         Arc::clone(&self.local_gateway_restarting)
     }
 
-    pub(crate) fn go_route_isolated(&self) -> Arc<GoRouteIsolatedHost> {
+    pub(crate) fn go_route_isolated(&self) -> Arc<crate::go_route_isolated::GoRouteIsolatedHost> {
         self.route_runtime.isolated_go_host()
     }
 

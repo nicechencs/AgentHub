@@ -197,7 +197,7 @@ pub async fn refresh_account_quota(
     id_or_label: String,
 ) -> Result<Account, String> {
     let hub = state.hub_arc()?;
-    let host = state.bridge_host();
+    let runtime = state.route_runtime();
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     let (account, hint) = with_hub_blocking(hub.clone(), move |hub| {
@@ -209,15 +209,8 @@ pub async fn refresh_account_quota(
         Ok((account.redacted(), hint))
     })
     .await?;
-    let applied = host
-        .apply_account_quota(
-            &account.id,
-            hint.remaining_pct,
-            hint.reset_at,
-            hint.fresh_until,
-            hint.credit,
-        )
-        .map_err(|err| err.to_string())
+    let applied = runtime
+        .apply_account_quota(&account.id, hint)
         .map(|_| account);
     finish_go_route_string_write_result(&state, applied).await
 }

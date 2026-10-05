@@ -47,6 +47,7 @@ use tauri::{AppHandle, Emitter};
 use crate::commands::{map_err_string, with_hub_blocking};
 use crate::exit_coordinator::LifecycleShutdownBarrier;
 use crate::go_route_isolated::GoRouteIsolatedHost;
+use crate::route_runtime::RouteRuntimeManager;
 
 const CODE_BRIDGE_START: &str = "adapter.bridge_start";
 const CODE_BRIDGE_PROJECTION: &str = "adapter.bridge_projection";
@@ -146,11 +147,12 @@ pub(crate) type AdapterBridgeStatusDto = AdapterBridgeStatus;
 /// `AdapterApplyService`; only the local route has a listener lifecycle.
 pub(crate) async fn apply_local_bridge(
     hub: Arc<AgentHub>,
-    host: Arc<BridgeRuntimeHost>,
+    runtime: Arc<RouteRuntimeManager>,
     coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     request: AdapterBridgePrepareRequest,
 ) -> Result<AdapterApplyResult, String> {
+    let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let profile_id = bridge_profile_id_for_request(hub.clone(), request.clone()).await?;
     let _gateway_guard = coordinator.lock_local_gateway().await;
@@ -335,11 +337,12 @@ async fn apply_local_bridge_locked(
 /// background restore flow and works even when automatic restore is disabled.
 pub(crate) async fn start_local_bridge(
     hub: Arc<AgentHub>,
-    host: Arc<BridgeRuntimeHost>,
+    runtime: Arc<RouteRuntimeManager>,
     coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     profile_id: String,
 ) -> Result<AdapterBridgeStatusDto, String> {
+    let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gateway_guard = coordinator.lock_local_gateway().await;
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
@@ -376,12 +379,13 @@ pub(crate) async fn start_local_bridge(
 /// listener so the Agent is not left pointing at a dead port.
 pub(crate) async fn unbind_local_bridge(
     hub: Arc<AgentHub>,
-    host: Arc<BridgeRuntimeHost>,
+    runtime: Arc<RouteRuntimeManager>,
     coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     profile_id: String,
     request: agenthub_core::models::TicketUnbindRequest,
 ) -> Result<(), String> {
+    let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gateway_guard = coordinator.lock_local_gateway().await;
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
@@ -434,11 +438,12 @@ pub(crate) async fn unbind_local_bridge(
 /// profile back with the persisted loopback port.
 pub(crate) async fn stop_local_bridge(
     hub: Arc<AgentHub>,
-    host: Arc<BridgeRuntimeHost>,
+    runtime: Arc<RouteRuntimeManager>,
     coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     profile_id: String,
 ) -> Result<AdapterBridgeStatusDto, String> {
+    let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gateway_guard = coordinator.lock_local_gateway().await;
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
@@ -463,9 +468,10 @@ pub(crate) async fn stop_local_bridge(
 /// configuration details.
 pub(crate) async fn local_bridge_status(
     hub: Arc<AgentHub>,
-    host: Arc<BridgeRuntimeHost>,
+    runtime: Arc<RouteRuntimeManager>,
     profile_id: String,
 ) -> Result<AdapterBridgeStatusDto, String> {
+    let host = runtime.rust_host_for_bridge_saga();
     let profile = load_bridge_profile(hub, profile_id).await?;
     let status = host.status(&profile.id).map_err(map_bridge_host_error)?;
     Ok(status_dto(
@@ -512,11 +518,12 @@ pub(crate) async fn set_local_bridge_auto_start(
 /// restores previous live (including current) and deletes the projection.
 pub(crate) async fn remove_adapter_with_bridge_cleanup(
     hub: Arc<AgentHub>,
-    host: Arc<BridgeRuntimeHost>,
+    runtime: Arc<RouteRuntimeManager>,
     coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     profile_id: String,
 ) -> Result<(), String> {
+    let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gateway_guard = coordinator.lock_local_gateway().await;
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
@@ -572,13 +579,14 @@ pub(crate) async fn remove_adapter_with_bridge_cleanup(
 /// isolated to that profile and never delays the first window/tray paint.
 pub(crate) fn restore_adapter_bridges(
     hub: Arc<AgentHub>,
-    host: Arc<BridgeRuntimeHost>,
+    runtime: Arc<RouteRuntimeManager>,
     coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     restarting: Arc<AtomicBool>,
     go_route: Arc<GoRouteIsolatedHost>,
     app: AppHandle,
 ) {
+    let host = runtime.rust_host_for_bridge_saga();
     tauri::async_runtime::spawn(async move {
         let desired_running = match with_hub_blocking(hub.clone(), |hub| {
             hub.route_pools()
@@ -1642,13 +1650,14 @@ async fn bridge_profile_id_for_request(
 /// `remember` writes the board switch for the next process start.
 pub(crate) async fn start_local_gateway(
     hub: Arc<AgentHub>,
-    host: Arc<BridgeRuntimeHost>,
+    runtime: Arc<RouteRuntimeManager>,
     coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     restarting: Arc<AtomicBool>,
     app: AppHandle,
     remember: bool,
 ) -> Result<LocalGatewayStatus, String> {
+    let host = runtime.rust_host_for_bridge_saga();
     let _restarting_guard = LocalGatewayRestartingGuard::begin(restarting.clone(), Some(app));
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_local_gateway().await;
@@ -1943,12 +1952,13 @@ async fn start_local_gateway_entries(
 /// Create an extra entry key and publish the updated accepted-bearer table.
 pub(crate) async fn create_local_gateway_token(
     hub: Arc<AgentHub>,
-    host: Arc<BridgeRuntimeHost>,
+    runtime: Arc<RouteRuntimeManager>,
     coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     pool_id: String,
     name: String,
 ) -> Result<LocalTokenRecord, String> {
+    let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_local_gateway().await;
     recover_pending_local_gateway_restarts(hub.clone(), &host, &coordinator).await?;
@@ -2151,12 +2161,13 @@ fn refresh_current_generated_provider(
 /// Persist a pool loopback bearer and restart that edge if it is live.
 pub(crate) async fn set_local_gateway_token(
     hub: Arc<AgentHub>,
-    host: Arc<BridgeRuntimeHost>,
+    runtime: Arc<RouteRuntimeManager>,
     coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     pool_id: String,
     token: String,
 ) -> Result<LocalTokenRecord, String> {
+    let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_local_gateway().await;
     recover_pending_local_gateway_restarts(hub.clone(), &host, &coordinator).await?;
@@ -2222,11 +2233,12 @@ pub(crate) async fn set_local_gateway_token(
 /// Delete a listed entry key. Restarts the pool edge when the default hub token changed.
 pub(crate) async fn delete_local_gateway_token(
     hub: Arc<AgentHub>,
-    host: Arc<BridgeRuntimeHost>,
+    runtime: Arc<RouteRuntimeManager>,
     coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     id: String,
 ) -> Result<(), String> {
+    let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_local_gateway().await;
     let recovered =
@@ -2299,11 +2311,12 @@ pub(crate) async fn delete_local_gateway_token(
 /// Re-read live catalogs, then rebuild the running listener so GET /models matches.
 pub(crate) async fn refresh_local_gateway_models(
     hub: Arc<AgentHub>,
-    host: Arc<BridgeRuntimeHost>,
+    runtime: Arc<RouteRuntimeManager>,
     coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     token: String,
 ) -> Result<Vec<String>, String> {
+    let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_local_gateway().await;
     let listed = {
@@ -2322,12 +2335,13 @@ pub(crate) async fn refresh_local_gateway_models(
 /// Persist a custom catalog, then rebuild the running listener so GET /models matches.
 pub(crate) async fn set_local_gateway_custom_models(
     hub: Arc<AgentHub>,
-    host: Arc<BridgeRuntimeHost>,
+    runtime: Arc<RouteRuntimeManager>,
     coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     token: String,
     models: Vec<String>,
 ) -> Result<Vec<String>, String> {
+    let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_local_gateway().await;
     let listed = {
@@ -2474,11 +2488,12 @@ async fn start_pool_listener_from_pool(
 /// Stop every live relay edge. Does not use host shutdown (that blocks restart).
 pub(crate) async fn stop_local_gateway(
     hub: Arc<AgentHub>,
-    host: Arc<BridgeRuntimeHost>,
+    runtime: Arc<RouteRuntimeManager>,
     coordinator: Arc<AdapterSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     restarting: Arc<AtomicBool>,
 ) -> Result<LocalGatewayStatus, String> {
+    let host = runtime.rust_host_for_bridge_saga();
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_local_gateway().await;
     let ids = host.running_ids().map_err(map_bridge_host_error)?;
@@ -2586,11 +2601,12 @@ async fn write_local_gateway_desired_running(hub: Arc<AgentHub>, running: bool) 
 }
 
 pub(crate) fn local_gateway_status(
-    host: &BridgeRuntimeHost,
+    runtime: &RouteRuntimeManager,
     restarting: &AtomicBool,
 ) -> Result<LocalGatewayStatus, String> {
+    let host = runtime.rust_host_for_bridge_saga();
     let ids = host.running_ids().map_err(map_bridge_host_error)?;
-    local_gateway_status_from_host(host, ids, restarting.load(Ordering::SeqCst))
+    local_gateway_status_from_host(&host, ids, restarting.load(Ordering::SeqCst))
 }
 
 fn local_gateway_status_from_host(

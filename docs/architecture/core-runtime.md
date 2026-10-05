@@ -78,7 +78,7 @@ Tauri AppState
        └─ 127.0.0.1 监听 + 协议转换
 ```
 
-当前监听跑在 Tauri 进程内，只听 loopback。`RouteRuntimeManager` 统一持有 Rust 监听和现有 Go 隔离运行监督器，并收口状态观察、退出影响与关闭；它还没有可持久的运行实现选择，产品默认仍固定为 Rust。授权池、本机令牌和 Codex / Grok 共用 Responses 入口等行为见 [Connections、Routes 与绑定](../concepts/connections-and-routing.md#登录列表与-routes)。`native_endpoint` / `config_sync` 不依赖本机转发，也不会自动入池。
+当前监听跑在 Tauri 进程内，只听 loopback。`RouteRuntimeManager` 统一持有 Rust 监听和现有 Go 隔离运行监督器，并收口状态观察、退出影响、关闭、调度/配额热更新和路由记录。命令层、托盘、自动恢复和 `DesktopAdapterControl` 只传这个 manager；目前的绑定补偿内部仍由 controller 通过明确的过渡入口使用 Rust host。manager 还没有可持久的运行实现选择，产品默认仍固定为 Rust。授权池、本机令牌和 Codex / Grok 共用 Responses 入口等行为见 [Connections、Routes 与绑定](../concepts/connections-and-routing.md#登录列表与-routes)。`native_endpoint` / `config_sync` 不依赖本机转发，也不会自动入池。
 
 把监听拆到独立 sidecar 进程（`agenthub-adapterd`）仍是[提案](../proposals/adapter-sidecar.md)，不是当前部署。开发态已有隔离监督器：core 可从保存结果生成 loopback 路由及官方 Anthropic API Key 的 Messages 路由配置，经 stdin 启动非默认端口上的 Go 进程，并展示状态、排空退出和有限恢复。另一条独立 probe 只在 scratch Claude 目录用合成登录运行 core bind/unbind 与持久化失败补偿，覆盖真实文件写入，不覆盖 Tauri 监督器、Go 进程、桌面端到端或真实上游；两者都不替代上述进程内监听。
 

@@ -86,7 +86,7 @@ pub fn run() {
             if let Ok(hub) = app.state::<AppState>().hub_arc() {
                 adapter_bridge_controller::restore_adapter_bridges(
                     hub,
-                    app.state::<AppState>().bridge_host(),
+                    app.state::<AppState>().route_runtime(),
                     app.state::<AppState>().bridge_saga_coordinator(),
                     app.state::<AppState>().lifecycle_shutdown_barrier(),
                     app.state::<AppState>().local_gateway_restarting(),

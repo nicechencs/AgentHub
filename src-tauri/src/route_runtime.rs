@@ -7,7 +7,12 @@
 
 use std::sync::Arc;
 
+use agenthub_core::bridge::host::{RouteTraceDeleteResult, RouteTracePage, RouteTraceQuery};
 use agenthub_core::bridge::BridgeRuntimeHost;
+use agenthub_core::logging::{self, targets};
+use agenthub_core::models::RouteSchedulePolicy;
+use agenthub_core::services::account_quota::MemberQuotaHint;
+use agenthub_core::AgentHub;
 
 use crate::go_route_isolated::GoRouteIsolatedHost;
 
@@ -55,8 +60,24 @@ pub(crate) struct RouteRuntimeManager {
 }
 
 impl RouteRuntimeManager {
-    pub(crate) fn new(rust: Arc<BridgeRuntimeHost>, isolated_go: Arc<GoRouteIsolatedHost>) -> Self {
-        Self { rust, isolated_go }
+    pub(crate) fn new(go_route_hub: Option<Arc<AgentHub>>) -> Self {
+        let rust = BridgeRuntimeHost::new();
+        // Install the durable gateway usage spool once, before any edge can
+        // start. An unresolved dir keeps capture disabled (never fails startup).
+        match agenthub_core::utils::paths::usage_gateway_dir() {
+            Ok(dir) => rust.set_usage_spool_dir(dir),
+            Err(error) => logging::log_app_error(targets::GUI, "usage_gateway_dir", &error),
+        }
+        // Restore Activity/monitor traces from the disposable sqlite file.
+        match agenthub_core::utils::paths::route_traces_persist_path() {
+            Ok(path) => rust.set_route_trace_persist_path(path),
+            Err(error) => logging::log_app_error(targets::GUI, "route_traces_persist_path", &error),
+        }
+        let isolated_go = GoRouteIsolatedHost::new(go_route_hub);
+        Self {
+            rust: Arc::new(rust),
+            isolated_go,
+        }
     }
 
     pub(crate) fn active_backend(&self) -> RuntimeBackend {
@@ -73,6 +94,17 @@ impl RouteRuntimeManager {
     /// Observe the fixed active backend.
     pub(crate) fn observe(&self, scope: RuntimeScope) -> Result<RuntimeSnapshot, String> {
         self.observe_backend(self.active_backend(), scope)
+    }
+
+    pub(crate) fn profile_observation(
+        &self,
+        profile_id: impl Into<String>,
+    ) -> Result<RuntimeSnapshot, String> {
+        self.observe(RuntimeScope::Profile(profile_id.into()))
+    }
+
+    pub(crate) fn gateway_observation(&self) -> Result<RuntimeSnapshot, String> {
+        self.observe(RuntimeScope::Gateway)
     }
 
     /// Observe one product backend without changing selection or starting it.
@@ -100,11 +132,12 @@ impl RouteRuntimeManager {
                     .rust
                     .gateway_port()
                     .map_err(|error| error.to_string())?;
+                let running = port.is_some() && statuses.iter().any(|status| status.running);
                 Ok(RuntimeSnapshot {
                     backend,
                     scope,
                     availability,
-                    running: Some(!statuses.is_empty()),
+                    running: Some(running),
                     active_route_count: Some(statuses.len()),
                     port,
                 })
@@ -129,9 +162,45 @@ impl RouteRuntimeManager {
     /// Exit-impact count for the active product runtime. Observation failure
     /// stays unknown so the caller can fail closed and show confirmation.
     pub(crate) fn exit_impact_count(&self) -> Option<usize> {
-        self.observe(RuntimeScope::Gateway)
+        self.gateway_observation()
             .ok()
             .and_then(|snapshot| snapshot.active_route_count)
+    }
+
+    /// Hot-apply one pool schedule without changing the selected runtime.
+    pub(crate) fn apply_pool_schedule_policy(
+        &self,
+        pool_id: &str,
+        policy: RouteSchedulePolicy,
+    ) -> Result<usize, String> {
+        self.rust
+            .apply_pool_schedule_policy(pool_id, policy)
+            .map_err(|error| error.to_string())
+    }
+
+    /// Hot-apply one account quota snapshot without restarting listeners.
+    pub(crate) fn apply_account_quota(
+        &self,
+        source_id: &str,
+        hint: MemberQuotaHint,
+    ) -> Result<usize, String> {
+        self.rust
+            .apply_account_quota(
+                source_id,
+                hint.remaining_pct,
+                hint.reset_at,
+                hint.fresh_until,
+                hint.credit,
+            )
+            .map_err(|error| error.to_string())
+    }
+
+    pub(crate) fn query_route_traces(&self, query: RouteTraceQuery) -> RouteTracePage {
+        self.rust.query_route_traces(query)
+    }
+
+    pub(crate) fn delete_route_traces(&self, request_ids: &[String]) -> RouteTraceDeleteResult {
+        self.rust.delete_route_traces(request_ids)
     }
 
     /// Stop all process-owned route runtimes. The isolated Go host is not a
@@ -159,7 +228,7 @@ impl RouteRuntimeManager {
 
     /// Transitional bridge-controller seam. Bind/unbind stays on the Rust host
     /// until the controller accepts backend-neutral desired snapshots.
-    pub(crate) fn rust_host(&self) -> Arc<BridgeRuntimeHost> {
+    pub(crate) fn rust_host_for_bridge_saga(&self) -> Arc<BridgeRuntimeHost> {
         Arc::clone(&self.rust)
     }
 
