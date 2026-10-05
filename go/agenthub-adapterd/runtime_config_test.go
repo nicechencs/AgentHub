@@ -541,6 +541,162 @@ func TestRuntimeConfigRoutesThreeSurfacesAndAuthModes(t *testing.T) {
 	}
 }
 
+func TestRuntimeStatusReportsSafePerEdgeRequestAggregation(t *testing.T) {
+	const privateUpstreamBody = "private-upstream-body-must-not-reach-status"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" {
+			t.Errorf("upstream path=%s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"response-status","object":"response","status":"completed","private":"`+privateUpstreamBody+`"}`)
+	}))
+	defer upstream.Close()
+
+	rt, epoch, term, port := configuredRuntime(t, threeEdgeConfig(upstream.URL))
+	send := func(model string) int {
+		req, err := http.NewRequest(
+			http.MethodPost,
+			"http://127.0.0.1:"+strconv.Itoa(port)+"/v1/responses",
+			strings.NewReader(`{"model":"`+model+`"}`),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+configIngressResponses)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+	if got := send("gpt-config-response"); got != http.StatusOK {
+		t.Fatalf("success request status=%d", got)
+	}
+	if got := send("missing-model"); got != http.StatusNotFound {
+		t.Fatalf("missing-model request status=%d", got)
+	}
+
+	reply := controlJSON(t, rt, map[string]any{
+		"type": typeStatus, "request_id": "edge-status", "instance_epoch": epoch,
+		"owner_id": "config-owner", "owner_term": term, "app_data_dir": rt.Home(), "payload": map[string]any{},
+	})
+	if !reply.OK {
+		t.Fatalf("status: %+v", reply.Error)
+	}
+	if bytes.Contains(reply.Payload, []byte(privateUpstreamBody)) {
+		t.Fatalf("status leaked upstream response body: %s", reply.Payload)
+	}
+	for _, secret := range []string{configIngressResponses, configUpstreamResponse} {
+		if bytes.Contains(reply.Payload, []byte(secret)) {
+			t.Fatalf("status leaked secret: %s", reply.Payload)
+		}
+	}
+	var snapshot StatusSuccess
+	if err := json.Unmarshal(reply.Payload, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.InFlightCount != 0 || snapshot.MemberCount != 3 || snapshot.HealthyMemberCount != 3 {
+		t.Fatalf("legacy global counts changed: %+v", snapshot)
+	}
+	if len(snapshot.EdgeStatuses) != 3 {
+		t.Fatalf("edge statuses=%+v", snapshot.EdgeStatuses)
+	}
+	byPoolID := make(map[string]EdgeStatus, len(snapshot.EdgeStatuses))
+	for _, edge := range snapshot.EdgeStatuses {
+		byPoolID[edge.PoolID] = edge
+	}
+	responses := byPoolID["responses-edge"]
+	if responses.Surface != surfaceResponses || responses.MemberCount != 1 || responses.HealthyMemberCount != 1 ||
+		responses.InFlightCount != 0 || responses.RequestSuccessCount != 1 || responses.RequestFailureCount != 1 ||
+		responses.LastErrorCode == nil || *responses.LastErrorCode != edgeStatusRequestNotFound {
+		t.Fatalf("responses edge status=%+v", responses)
+	}
+	for _, poolID := range []string{"messages-edge", "chat-edge"} {
+		edge, ok := byPoolID[poolID]
+		if !ok || edge.RequestSuccessCount != 0 || edge.RequestFailureCount != 0 || edge.LastErrorCode != nil {
+			t.Fatalf("unrelated edge %q status=%+v", poolID, edge)
+		}
+	}
+}
+
+func TestRuntimeStatusReportsPerEdgeInFlightWhileRequestIsServing(t *testing.T) {
+	upstreamStarted := make(chan struct{})
+	releaseUpstream := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseUpstream) }) }
+	t.Cleanup(release)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(upstreamStarted)
+		<-releaseUpstream
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"response-in-flight","object":"response","status":"completed"}`)
+	}))
+	defer upstream.Close()
+
+	rt, epoch, term, port := configuredRuntime(t, threeEdgeConfig(upstream.URL))
+	requestDone := make(chan error, 1)
+	go func() {
+		req, err := http.NewRequest(
+			http.MethodPost,
+			"http://127.0.0.1:"+strconv.Itoa(port)+"/v1/responses",
+			strings.NewReader(`{"model":"gpt-config-response"}`),
+		)
+		if err != nil {
+			requestDone <- err
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+configIngressResponses)
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				err = fmt.Errorf("response status=%d", resp.StatusCode)
+			}
+		}
+		requestDone <- err
+	}()
+	select {
+	case <-upstreamStarted:
+	case <-time.After(time.Second):
+		t.Fatal("request did not reach upstream")
+	}
+
+	reply := controlJSON(t, rt, map[string]any{
+		"type": typeStatus, "request_id": "edge-in-flight", "instance_epoch": epoch,
+		"owner_id": "config-owner", "owner_term": term, "app_data_dir": rt.Home(), "payload": map[string]any{},
+	})
+	if !reply.OK {
+		t.Fatalf("status: %+v", reply.Error)
+	}
+	var snapshot StatusSuccess
+	if err := json.Unmarshal(reply.Payload, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.InFlightCount != 1 {
+		t.Fatalf("global in_flight_count=%d", snapshot.InFlightCount)
+	}
+	for _, edge := range snapshot.EdgeStatuses {
+		if edge.PoolID == "responses-edge" {
+			if edge.InFlightCount != 1 || edge.RequestSuccessCount != 0 || edge.RequestFailureCount != 0 {
+				t.Fatalf("responses edge while serving=%+v", edge)
+			}
+			release()
+			select {
+			case err := <-requestDone:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("request did not finish")
+			}
+			return
+		}
+	}
+	release()
+	t.Fatal("responses edge status missing")
+}
+
 func TestRuntimeConfigConvertsResponsesToChatWithoutLeakingBadUpstreamBody(t *testing.T) {
 	const upstreamSecret = "upstream-body-secret-must-not-escape"
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

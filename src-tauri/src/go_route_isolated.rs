@@ -106,8 +106,25 @@ pub struct GoRouteIsolatedStatus {
     pub in_flight_count: u64,
     pub member_count: u64,
     pub healthy_member_count: u64,
+    pub edge_statuses: Vec<GoRouteEdgeStatus>,
     pub recovering: bool,
     pub restart_count: u32,
+}
+
+/// Sanitized per-pool runtime status from Go control. It is informational for
+/// future backend selection only: the process boundary never returns ingress
+/// keys, request bodies, login data, or upstream messages.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoRouteEdgeStatus {
+    pub pool_id: String,
+    pub surface: String,
+    pub member_count: u64,
+    pub healthy_member_count: u64,
+    pub in_flight_count: u64,
+    pub request_success_count: u64,
+    pub request_failure_count: u64,
+    pub last_error_code: Option<String>,
 }
 
 /// Result of synchronizing a committed product write into the optional Go
@@ -426,6 +443,7 @@ fn stopped_status() -> GoRouteIsolatedStatus {
         in_flight_count: 0,
         member_count: 0,
         healthy_member_count: 0,
+        edge_statuses: Vec::new(),
         recovering: false,
         restart_count: 0,
     }
@@ -442,6 +460,7 @@ fn unavailable_status() -> GoRouteIsolatedStatus {
         in_flight_count: 0,
         member_count: 0,
         healthy_member_count: 0,
+        edge_statuses: Vec::new(),
         recovering: false,
         restart_count: 0,
     }
@@ -459,6 +478,7 @@ fn mode_conflict_status() -> GoRouteIsolatedStatus {
         in_flight_count: 0,
         member_count: 0,
         healthy_member_count: 0,
+        edge_statuses: Vec::new(),
         recovering: false,
         restart_count: 0,
     }
@@ -476,6 +496,7 @@ fn prepared_product_required_status() -> GoRouteIsolatedStatus {
         in_flight_count: 0,
         member_count: 0,
         healthy_member_count: 0,
+        edge_statuses: Vec::new(),
         recovering: false,
         restart_count: 0,
     }
@@ -1275,6 +1296,7 @@ impl GoRouteIsolatedHost {
             in_flight_count: 0,
             member_count: 0,
             healthy_member_count: 0,
+            edge_statuses: Vec::new(),
             recovering: false,
             restart_count,
         };
@@ -1382,6 +1404,7 @@ impl GoRouteIsolatedHost {
                     in_flight_count: 0,
                     member_count: 0,
                     healthy_member_count: 0,
+                    edge_statuses: Vec::new(),
                     recovering: false,
                     restart_count: inner.status.restart_count + u32::from(recovering),
                 };
@@ -1433,6 +1456,7 @@ impl GoRouteIsolatedHost {
                     in_flight_count: 0,
                     member_count: 0,
                     healthy_member_count: 0,
+                    edge_statuses: Vec::new(),
                     recovering: !prepared_start
                         && inner.desired
                         && !inner.stopping
@@ -2511,6 +2535,7 @@ fn platform_unavailable_status() -> GoRouteIsolatedStatus {
         in_flight_count: 0,
         member_count: 0,
         healthy_member_count: 0,
+        edge_statuses: Vec::new(),
         recovering: false,
         restart_count: 0,
     }
@@ -4966,9 +4991,76 @@ fn status_with_supervisor(
             .get("healthy_member_count")
             .and_then(Value::as_u64)
             .unwrap_or(0),
+        edge_statuses: edge_statuses_from_supervisor(&payload),
         recovering: previous.recovering,
         restart_count: previous.restart_count,
     }
+}
+
+fn edge_statuses_from_supervisor(payload: &Value) -> Vec<GoRouteEdgeStatus> {
+    let Some(items) = payload.get("edge_statuses").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|item| {
+            let pool_id = item.get("pool_id").and_then(Value::as_str)?;
+            if pool_id.is_empty()
+                || pool_id.len() > 256
+                || !pool_id.bytes().all(|byte| byte.is_ascii_graphic())
+            {
+                return None;
+            }
+            let surface = match item.get("surface").and_then(Value::as_str)? {
+                "messages" | "responses" | "chat_completions" => {
+                    item.get("surface").and_then(Value::as_str)?.to_owned()
+                }
+                _ => return None,
+            };
+            Some(GoRouteEdgeStatus {
+                pool_id: pool_id.to_owned(),
+                surface,
+                member_count: item
+                    .get("member_count")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0),
+                healthy_member_count: item
+                    .get("healthy_member_count")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0),
+                in_flight_count: item
+                    .get("in_flight_count")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0),
+                request_success_count: item
+                    .get("request_success_count")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0),
+                request_failure_count: item
+                    .get("request_failure_count")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0),
+                last_error_code: item
+                    .get("last_error_code")
+                    .and_then(Value::as_str)
+                    .filter(|code| {
+                        matches!(
+                            *code,
+                            "route_busy"
+                                | "request_canceled"
+                                | "downstream_write_failed"
+                                | "invalid_request"
+                                | "request_unauthorized"
+                                | "request_not_found"
+                                | "request_too_large"
+                                | "upstream_unavailable"
+                                | "request_failed"
+                        )
+                    })
+                    .map(str::to_owned),
+            })
+        })
+        .collect()
 }
 
 fn restart_backoff(attempt: u32) -> Duration {

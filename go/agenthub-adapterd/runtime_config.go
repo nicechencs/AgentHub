@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 )
 
 const (
@@ -88,6 +89,79 @@ type RuntimeEdge struct {
 	Pool                     *Pool
 	GrokReplay               *grokOfficialReasoningReplay
 	GrokAffinity             *grokOfficialAffinity
+	status                   *edgeRuntimeStatus
+}
+
+// edgeRuntimeStatus deliberately records only aggregate counters and a fixed
+// local error code. It must never retain an ingress key, a request body, or an
+// upstream error because Status replies cross the process boundary.
+type edgeRuntimeStatus struct {
+	mu                  sync.Mutex
+	inFlightCount       int
+	requestSuccessCount uint64
+	requestFailureCount uint64
+	lastErrorCode       string
+}
+
+func (edge *RuntimeEdge) beginRequest() {
+	if edge == nil || edge.status == nil {
+		return
+	}
+	edge.status.mu.Lock()
+	edge.status.inFlightCount++
+	edge.status.mu.Unlock()
+}
+
+func (edge *RuntimeEdge) finishRequest(statusCode int, requestCanceled, downstreamWriteFailed bool) {
+	if edge == nil || edge.status == nil {
+		return
+	}
+	edge.status.mu.Lock()
+	if edge.status.inFlightCount > 0 {
+		edge.status.inFlightCount--
+	}
+	if statusCode >= 200 && statusCode < 300 && !requestCanceled && !downstreamWriteFailed {
+		edge.status.requestSuccessCount++
+	} else {
+		edge.status.requestFailureCount++
+		edge.status.lastErrorCode = edgeRequestStatusErrorCode(statusCode, requestCanceled, downstreamWriteFailed)
+	}
+	edge.status.mu.Unlock()
+}
+
+func (edge *RuntimeEdge) rejectRequest(code string) {
+	if edge == nil || edge.status == nil {
+		return
+	}
+	edge.status.mu.Lock()
+	edge.status.requestFailureCount++
+	edge.status.lastErrorCode = safeEdgeStatusErrorCode(code)
+	edge.status.mu.Unlock()
+}
+
+func (edge *RuntimeEdge) statusSnapshot(pool PoolSnapshot) EdgeStatus {
+	if edge == nil {
+		return EdgeStatus{}
+	}
+	status := EdgeStatus{
+		PoolID:             edge.ID,
+		Surface:            edge.Surface,
+		MemberCount:        pool.MemberCount,
+		HealthyMemberCount: pool.HealthyMemberCount,
+	}
+	if edge.status == nil {
+		return status
+	}
+	edge.status.mu.Lock()
+	defer edge.status.mu.Unlock()
+	status.InFlightCount = edge.status.inFlightCount
+	status.RequestSuccessCount = edge.status.requestSuccessCount
+	status.RequestFailureCount = edge.status.requestFailureCount
+	if edge.status.lastErrorCode != "" {
+		code := edge.status.lastErrorCode
+		status.LastErrorCode = &code
+	}
+	return status
 }
 
 func (edge *RuntimeEdge) acceptsIngressKey(candidate string) bool {
@@ -400,6 +474,7 @@ func runtimeEdges(config *RuntimeConfig) ([]*RuntimeEdge, error) {
 			Pool:                     pool,
 			GrokReplay:               newGrokOfficialReasoningReplay(),
 			GrokAffinity:             newGrokOfficialAffinity(),
+			status:                   &edgeRuntimeStatus{},
 		})
 	}
 	return edges, nil

@@ -12,6 +12,102 @@ import (
 	"time"
 )
 
+const (
+	edgeStatusRouteBusy           = "route_busy"
+	edgeStatusRequestCanceled     = "request_canceled"
+	edgeStatusDownstreamWrite     = "downstream_write_failed"
+	edgeStatusInvalidRequest      = "invalid_request"
+	edgeStatusRequestUnauthorized = "request_unauthorized"
+	edgeStatusRequestNotFound     = "request_not_found"
+	edgeStatusRequestTooLarge     = "request_too_large"
+	edgeStatusUpstreamUnavailable = "upstream_unavailable"
+	edgeStatusRequestFailed       = "request_failed"
+)
+
+// edgeStatusResponseWriter observes only the downstream status class. It
+// does not buffer, retain, or inspect response bodies, so request and login
+// material cannot enter the per-edge status counters.
+type edgeStatusResponseWriter struct {
+	http.ResponseWriter
+	status    int
+	writeFail bool
+}
+
+func newEdgeStatusResponseWriter(w http.ResponseWriter) *edgeStatusResponseWriter {
+	return &edgeStatusResponseWriter{ResponseWriter: w}
+}
+
+func (w *edgeStatusResponseWriter) WriteHeader(status int) {
+	if w.status == 0 {
+		w.status = status
+	}
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *edgeStatusResponseWriter) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	n, err := w.ResponseWriter.Write(body)
+	if err != nil {
+		w.writeFail = true
+	}
+	return n, err
+}
+
+func (w *edgeStatusResponseWriter) Flush() {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (w *edgeStatusResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
+func (w *edgeStatusResponseWriter) statusCode() int {
+	return w.status
+}
+
+func (w *edgeStatusResponseWriter) downstreamWriteFailed() bool {
+	return w.writeFail
+}
+
+func edgeRequestStatusErrorCode(status int, requestCanceled, downstreamWriteFailed bool) string {
+	if requestCanceled {
+		return edgeStatusRequestCanceled
+	}
+	if downstreamWriteFailed {
+		return edgeStatusDownstreamWrite
+	}
+	switch status {
+	case http.StatusBadRequest:
+		return edgeStatusInvalidRequest
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return edgeStatusRequestUnauthorized
+	case http.StatusNotFound:
+		return edgeStatusRequestNotFound
+	case http.StatusRequestEntityTooLarge:
+		return edgeStatusRequestTooLarge
+	case http.StatusServiceUnavailable, http.StatusBadGateway, http.StatusGatewayTimeout:
+		return edgeStatusUpstreamUnavailable
+	default:
+		return edgeStatusRequestFailed
+	}
+}
+
+func safeEdgeStatusErrorCode(code string) string {
+	switch code {
+	case edgeStatusRouteBusy:
+		return code
+	default:
+		return edgeStatusRequestFailed
+	}
+}
+
 func (rt *Runtime) messagesMux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/messages", rt.handleMessages)
@@ -59,13 +155,27 @@ func (rt *Runtime) forwardSameProtocol(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 	if !rt.tryAcquireRequestSlot() {
+		edge.rejectRequest(edgeStatusRouteBusy)
 		w.Header().Set("Retry-After", "1")
 		writeMessagesError(w, http.StatusServiceUnavailable, "route_busy", "The local route is busy. Try again shortly.", "api_error")
 		return
 	}
 	defer rt.releaseRequestSlot()
+	observed := newEdgeStatusResponseWriter(w)
+	w = observed
+	// OAuth refresh can replace edge for an upstream retry. Status remains
+	// attributed to the authenticated ingress edge that accepted this request.
+	statusEdge := edge
 	rt.addInFlight(1)
-	defer rt.addInFlight(-1)
+	statusEdge.beginRequest()
+	defer func() {
+		rt.addInFlight(-1)
+		statusEdge.finishRequest(
+			observed.statusCode(),
+			r.Context().Err() != nil,
+			observed.downstreamWriteFailed(),
+		)
+	}()
 
 	body, err := readStrictRequestBody(w, r, rt.httpPolicy.IngressBodyBytes)
 	if err != nil {

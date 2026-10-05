@@ -653,9 +653,13 @@ func (rt *Runtime) statusSnapshot() (StatusSuccess, error) {
 		activeHash = &hash
 	}
 	var memberCount, healthyCount int
+	var edgeStatuses []EdgeStatus
 	if len(rt.edges) > 0 {
+		edgeStatuses = make([]EdgeStatus, 0, len(rt.edges))
+		now := time.Now()
 		for _, edge := range rt.edges {
-			snap := edge.Pool.Snapshot(time.Now())
+			snap := edge.Pool.Snapshot(now)
+			edgeStatuses = append(edgeStatuses, edge.statusSnapshot(snap))
 			memberCount += snap.MemberCount
 			healthyCount += snap.HealthyMemberCount
 			if schedule == "" {
@@ -686,6 +690,7 @@ func (rt *Runtime) statusSnapshot() (StatusSuccess, error) {
 		SchedulePolicy:     schedule,
 		MemberCount:        memberCount,
 		HealthyMemberCount: healthyCount,
+		EdgeStatuses:       edgeStatuses,
 	}, nil
 }
 

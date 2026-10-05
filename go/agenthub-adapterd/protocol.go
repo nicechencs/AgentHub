@@ -145,6 +145,22 @@ type StatusSuccess struct {
 	SchedulePolicy     string          `json:"schedule_policy,omitempty"`
 	MemberCount        int             `json:"member_count,omitempty"`
 	HealthyMemberCount int             `json:"healthy_member_count,omitempty"`
+	EdgeStatuses       []EdgeStatus    `json:"edge_statuses,omitempty"`
+}
+
+// EdgeStatus is the non-secret, per-pool portion of a Status reply. PoolID is
+// the stable RuntimeEdgeConfig.ID assigned by the desktop side; ingress keys,
+// upstream identities, request bodies, and upstream messages never leave the
+// runtime through this structure.
+type EdgeStatus struct {
+	PoolID              string  `json:"pool_id"`
+	Surface             string  `json:"surface"`
+	MemberCount         int     `json:"member_count"`
+	HealthyMemberCount  int     `json:"healthy_member_count"`
+	InFlightCount       int     `json:"in_flight_count"`
+	RequestSuccessCount uint64  `json:"request_success_count"`
+	RequestFailureCount uint64  `json:"request_failure_count"`
+	LastErrorCode       *string `json:"last_error_code,omitempty"`
 }
 
 type LastError struct {
