@@ -3,7 +3,7 @@ title: Go 路由替换方案
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-10-05
+updated: 2026-10-09
 ---
 
 # Go 路由替换方案
@@ -22,7 +22,7 @@ updated: 2026-10-05
 - Rust 本机路由已有不透明的内存交接快照：只在单一非零运行端口、全部路由正在运行时捕获，严格排空并停止后可在不写数据库的前提下恢复原端口、全部路由、入口 Key、调度/配额/健康和上游状态。交接期间启动、停止、换端口和热更新等变更全部被拒绝；排空不完整、部分恢复、健康检查失败或调用被取消时保持失败关闭。`gateway-snapshot-isolated.sh` 已覆盖原端口恢复、端口被占后重试、部分启动清理、健康失败清理、严格排空、显式提交和敏感信息扫描。专用 feature 探针已把这个快照接到一次真实的 Rust → Product Go → Rust 交接：停止 Rust 后以原端口启动预检查过的 Go、检查三种入口健康与合成 Responses / Messages / Chat Completions SSE 请求，再停止 Go、释放端口并精确恢复 Rust。它还覆盖错误授权、受控上游 5xx、调用方丢弃完成句柄、数据库/WAL 不变，以及运行目录、进程参数、控制授权和日志的敏感信息扫描；它没有接入运行实现选择或默认切换。
 - `scripts/route-runtime-probe/*-isolated.sh` 都使用临时测试根目录、合成 Key 和受控 loopback 上游；`product-mode-isolated.sh` 与 `product-handoff-trial-isolated.sh` 明确使用保存的 43121，其余现有探针使用临时端口。`existing-flow-isolated.sh` 检查多入口隔离、两种上游认证、排空和敏感信息扫描，`config-stream-isolated.sh` 检查同一进程和端口的有效更新、无效更新保留上一版与敏感信息扫描，`http-safety-isolated.sh` 检查请求、响应、SSE、并发、错误与响应头边界。`product-handoff-trial-isolated.sh` 还严格验证 Codex Responses 到 Chat、Claude Messages 和 Kimi Chat Completions SSE 的上游路径、认证头与请求体转换各一次；任一阶段失败均停止 Go、释放端口并恢复 Rust。`external-policy-isolated.sh` 把 core 生成的配置交给真实 Go 进程，覆盖 8 个允许和 11 个拒绝案例，并确认配置哈希、秘密扫描和端口释放；它不发送路由请求，外部请求为 0，不代表任何真实外部服务验收。`ticket-bind-saga-isolated.sh` 在 scratch Claude 目录检查 core 的真实文件写入和补偿；`bind-go-e2e-isolated.sh` 已把桌面 `plan`、首次 `bind`、选中生成的 Codex 供应商、Go 请求、运行中 `unbind` 与逐字节恢复串成真实进程链路，并让真实桌面监督器走 TCP 控制、stdin 授权和全部控制请求。断开后连接池及成员按设计保留，Go 确认配置未变并保持原端口；探针检查启动授权未进入子进程环境、命令行或运行目录，最后停止 Go 并确认两个监听端口释放。
 
-现行功能仍以[本机路由 API](../reference/local-route-api.md)、[路由兼容性](../reference/route-compatibility.md)和 [STATUS](../STATUS.md)为准。
+现行功能仍以[本机路由 API](../reference/local-route-api.md)、[路由兼容性](../reference/route-compatibility.md)和 [STATUS](../STATUS.md)为准。外部库 [RelayKit](relaykit-protocol-conversion.md) 只作协议转换参考。它不能链进本程序来替换现有转换：许可证与 MIT 分发冲突，而且本仓库已经自己实现了 Responses、Messages、Chat Completions 互转；该库多出来的主要是 Gemini，不在当前支持范围。
 
 ## 目标
 
